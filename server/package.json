@@ -1,0 +1,9 @@
+{
+  "name": "hermes-mission-control-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Backend scaffold bridging the UI to a real Hermes install.",
+  "scripts": { "dev": "node src/index.js" },
+  "dependencies": { "express": "^4.21.2", "cors": "^2.8.5" }
+}
