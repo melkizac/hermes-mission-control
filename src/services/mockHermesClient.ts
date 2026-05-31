@@ -1,4 +1,4 @@
-import type { Agent, Approval, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, ProjectsResponse, Skill, SkillsHubResponse } from "../types";
+import type { Agent, Approval, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, ProjectsResponse, SecondBrainResponse, Skill, SkillsHubResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
 import { seedAgents, seedApprovals } from "../data/mockData";
 
@@ -246,6 +246,25 @@ export class MockHermesClient implements HermesClient {
   async listProjects(): Promise<ProjectsResponse> {
     await delay(90);
     return { projects: [], summary: { total: 0, active: 0, open_actions: 0, blocked: 0, knowledge: 0, workspaces: 0 }, kinds: [], sources: [] };
+  }
+
+  async getSecondBrain(): Promise<SecondBrainResponse> {
+    await delay(90);
+    return {
+      root: "mock://second-brain",
+      wiki_path: "mock://second-brain/wiki",
+      raw_path: "mock://second-brain/raw",
+      schema_path: "mock://second-brain/schema/WORKFLOW.md",
+      summary: { title: "Mock Second Brain", description: "Mock Karpathy-style LLM Wiki cockpit.", wiki_pages: 0, raw_sources: 0, sections: 0, log_entries: 0, last_updated: "now", health: "healthy" },
+      sections: [],
+      wiki: [],
+      raw_sources: [],
+      schema: { path: "mock://schema", updated_at: "now", preview: "# Workflow" },
+      index: { path: "mock://index", updated_at: "now", preview: "# Index" },
+      log: { path: "mock://log", updated_at: "now", preview: "# Log", entries: [] },
+      command_center: null,
+      health: { status: "healthy", checks: [] },
+    };
   }
 
   async listBoard(): Promise<BoardResponse> {

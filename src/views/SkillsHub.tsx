@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { SkillHubRecord, SkillsHubResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
+import { formatSingaporeTime } from "../utils/time";
 
 const client = new HttpHermesClient();
 
@@ -248,7 +249,7 @@ function SkillDrawer({ skill, tab, setTab, onClose }: {
               <Info label="Editable" value={skill.editable ? "Yes" : "No"} />
               <Info label="Version" value={skill.version} />
               <Info label="Author" value={skill.author} />
-              <Info label="Updated" value={skill.updated_at} />
+              <Info label="Updated" value={formatSingaporeTime(skill.updated_at)} />
               <Info label="Model affinity" value={skill.model} />
               <Info label="Routes" value={compact(skill.used_by_count)} />
             </div>

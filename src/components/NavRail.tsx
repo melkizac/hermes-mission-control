@@ -7,7 +7,9 @@ import type { ViewKey } from "../types";
 const items: { key: ViewKey; label: string; icon: Parameters<typeof Icon>[0]["name"] }[] = [
   { key: "mission", label: "Mission Control", icon: "mission" },
   { key: "agents", label: "Agents", icon: "board" },
+  { key: "agent-org", label: "Agent Org", icon: "automations" },
   { key: "projects", label: "Projects", icon: "projects" },
+  { key: "second-brain", label: "Second Brain", icon: "skills" },
   { key: "board", label: "Task Board", icon: "board" },
   { key: "skills", label: "Skills Hub", icon: "skills" },
   { key: "approvals", label: "Approvals", icon: "approvals" },

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { BoardStatus, BoardTask } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
+import { formatSingaporeTime } from "../utils/time";
 
 const client = new HttpHermesClient();
 const lanes: { key: BoardStatus; label: string; helper: string }[] = [
@@ -230,7 +231,7 @@ function TaskListRow({ task, active, onSelect }: { task: BoardTask; active: bool
       </div>
       <div className="ops-row-meta">
         <span>{task.assignee || "unassigned"}</span>
-        <small>{task.updated_at}</small>
+        <small>{formatSingaporeTime(task.updated_at)}</small>
         <em>{task.priority_label} · {task.tenant || task.workspace_kind || "no project"}</em>
       </div>
     </button>
@@ -267,7 +268,7 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
             <div className="task-kv">
               <Info label="Owner" value={task.assignee} />
               <Info label="Priority" value={`${task.priority_label} · ${task.priority}`} />
-              <Info label="Updated" value={task.updated_at} />
+              <Info label="Updated" value={formatSingaporeTime(task.updated_at)} />
               <Info label="Source" value={task.created_by} />
               <Info label="Project" value={task.tenant || "—"} />
               <Info label="Workspace" value={task.workspace_path || task.workspace_kind} />
@@ -284,15 +285,15 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
 
         {tab === "activity" && (
           <>
-            <section className="task-section"><h3>Comments</h3>{task.comments.length === 0 && <div className="empty">No comments yet.</div>}{task.comments.map((c) => <div className="task-comment" key={c.id ?? c.created_at}><b>{c.author}</b><small>{c.created_at}</small><p>{c.body}</p></div>)}<textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Add an operator note…" /><button className="ghost tiny" onClick={() => void onAddComment()}>Add comment</button></section>
-            <section className="task-section"><h3>Events</h3>{task.events.length === 0 && <div className="empty">No events recorded.</div>}{task.events.map((event) => <div className="task-event" key={event.id ?? event.created_at}><b>{event.kind}</b><small>{event.created_at}</small></div>)}</section>
+            <section className="task-section"><h3>Comments</h3>{task.comments.length === 0 && <div className="empty">No comments yet.</div>}{task.comments.map((c) => <div className="task-comment" key={c.id ?? c.created_at}><b>{c.author}</b><small>{formatSingaporeTime(c.created_at)}</small><p>{c.body}</p></div>)}<textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Add an operator note…" /><button className="ghost tiny" onClick={() => void onAddComment()}>Add comment</button></section>
+            <section className="task-section"><h3>Events</h3>{task.events.length === 0 && <div className="empty">No events recorded.</div>}{task.events.map((event) => <div className="task-event" key={event.id ?? event.created_at}><b>{event.kind}</b><small>{formatSingaporeTime(event.created_at)}</small></div>)}</section>
           </>
         )}
 
         {tab === "execution" && (
           <>
             <section className="task-section"><h3>Skills / Links</h3><div className="task-chip-cloud">{(task.skills.length ? task.skills : ["No skills attached"]).map((skill) => <span key={skill}>{skill}</span>)}{task.session_id && <em>session: {task.session_id}</em>}{task.parents.map((id) => <em key={id}>parent: {id}</em>)}{task.children.map((id) => <em key={id}>child: {id}</em>)}</div></section>
-            <section className="task-section"><h3>Run trace</h3>{task.runs.length === 0 && <div className="empty">No worker runs yet.</div>}{task.runs.map((run) => <div className="task-run" key={run.id}><b>{run.profile || "worker"} · {run.status}</b><small>{run.started_at} {run.outcome ? `· ${run.outcome}` : ""}</small><p>{run.summary || run.error || "No summary recorded."}</p></div>)}</section>
+            <section className="task-section"><h3>Run trace</h3>{task.runs.length === 0 && <div className="empty">No worker runs yet.</div>}{task.runs.map((run) => <div className="task-run" key={run.id}><b>{run.profile || "worker"} · {run.status}</b><small>{formatSingaporeTime(run.started_at)} {run.outcome ? `· ${run.outcome}` : ""}</small><p>{run.summary || run.error || "No summary recorded."}</p></div>)}</section>
           </>
         )}
       </aside>
@@ -308,7 +309,7 @@ function TaskCard({ task, selected, onSelect, onMove, onDelete }: { task: BoardT
   return (
     <article className={`task-card ${selected ? "on" : ""}`}>
       <button className="task-card-main" onClick={onSelect}>
-        <div className="task-card-top"><span className={`priority ${task.priority_label}`}>{task.priority_label}</span><small>{task.updated_at}</small></div>
+        <div className="task-card-top"><span className={`priority ${task.priority_label}`}>{task.priority_label}</span><small>{formatSingaporeTime(task.updated_at)}</small></div>
         <h2>{task.title}</h2><p>{task.body || "No detail yet."}</p>
         <div className="task-card-meta"><span>{task.assignee}</span><span>{task.created_by}</span>{task.tenant && <span>{task.tenant}</span>}</div>
       </button>

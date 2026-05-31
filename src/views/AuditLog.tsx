@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AuditMessage, AuditSession, AuditSessionDetailResponse, AuditSessionListResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
+import { formatSingaporeTime } from "../utils/time";
 
 const client = new HttpHermesClient();
 
@@ -200,7 +201,7 @@ function SessionCard({ session, active, onClick }: { session: AuditSession; acti
       </div>
       <div className="audit-session-meta">
         <span>{session.source}</span>
-        <small>{session.started_at}</small>
+        <small>{formatSingaporeTime(session.started_at)}</small>
         <em>{session.message_count} msgs · {session.tool_call_count} tools · {compactNumber(session.total_tokens)} tok</em>
       </div>
     </button>
@@ -237,7 +238,7 @@ function AuditDrawer({ session, detail, detailLoading, tab, setTab, onClose }: {
             <div className="audit-kv">
               <Info label="Source" value={session.source} />
               <Info label="Model" value={session.model} />
-              <Info label="Started" value={session.started_at} />
+              <Info label="Started" value={formatSingaporeTime(session.started_at)} />
               <Info label="Duration" value={duration(session.duration_seconds)} />
               <Info label="Messages" value={String(session.message_count)} />
               <Info label="Tool calls" value={String(session.tool_call_count)} />
@@ -282,7 +283,7 @@ function TimelineItem({ message }: { message: AuditMessage }) {
       <div className="audit-event-card">
         <div className="audit-event-head">
           <b>{roleLabel(message)}</b>
-          <span>{message.timestamp}</span>
+          <span>{formatSingaporeTime(message.timestamp)}</span>
         </div>
         {toolNames && <div className="audit-tool-list">Requested: {toolNames}</div>}
         {message.tool_call_id && <div className="audit-tool-list mono">Tool call id: {message.tool_call_id}</div>}

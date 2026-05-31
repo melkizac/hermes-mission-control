@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CostBreakdownRow, CostSessionRecord, CostsResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
+import { formatSingaporeTime } from "../utils/time";
 
 const client = new HttpHermesClient();
 const windows = [7, 14, 30, 90, 365];
@@ -204,7 +205,7 @@ function CostDrawer({ session, onClose }: { session: CostSessionRecord; onClose:
           <Info label="Actual" value={session.actual_cost_usd == null ? "—" : money(session.actual_cost_usd)} />
           <Info label="Provider" value={session.billing_provider || "—"} />
           <Info label="Source" value={session.source} />
-          <Info label="Started" value={session.started_at} />
+          <Info label="Started" value={formatSingaporeTime(session.started_at)} />
           <Info label="Messages" value={String(session.message_count)} />
           <Info label="API calls" value={String(session.api_call_count)} />
         </div>

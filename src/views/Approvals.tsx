@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { InboxAction, InboxItem, InboxResponse, InboxStatus } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
+import { formatSingaporeTime } from "../utils/time";
 
 const client = new HttpHermesClient();
 const tabs: Array<{ key: InboxStatus | "all"; label: string; helper: string }> = [
@@ -136,7 +137,7 @@ export function Approvals() {
               <div className="inbox-meta">
                 <span>{item.destination}</span>
                 <span>{item.provenance}</span>
-                <span>{item.created_at}</span>
+                <span>{formatSingaporeTime(item.created_at)}</span>
               </div>
             </button>
             <footer>
@@ -168,7 +169,7 @@ export function Approvals() {
               <Info label="Risk" value={selected.risk} />
               <Info label="Destination" value={selected.destination} />
               <Info label="Source" value={selected.source_path ?? selected.source_id ?? selected.source} />
-              <Info label="Created" value={selected.created_at} />
+              <Info label="Created" value={formatSingaporeTime(selected.created_at)} />
               <Info label="Reviewed" value={selected.reviewed_at ?? "—"} />
             </div>
 

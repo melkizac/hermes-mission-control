@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ProjectRecord } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
+import { formatSingaporeTime } from "../utils/time";
 
 const client = new HttpHermesClient();
 type Tab = "overview" | "knowledge" | "activity" | "sessions";
@@ -127,7 +128,7 @@ export function Projects() {
               <div><span>Status</span><b>{selected.status}</b></div>
               <div><span>Kind</span><b>{selected.kind}</b></div>
               <div><span>Source</span><b>{selected.source}</b></div>
-              <div><span>Updated</span><b>{selected.updated_at}</b></div>
+              <div><span>Updated</span><b>{formatSingaporeTime(selected.updated_at)}</b></div>
             </div>
             <div className="project-tabs">
               {(["overview", "knowledge", "activity", "sessions"] as Tab[]).map((item) => <button key={item} className={tab === item ? "on" : ""} onClick={() => setTab(item)}>{item}</button>)}
@@ -143,18 +144,18 @@ export function Projects() {
             </div>}
 
             {tab === "knowledge" && <div className="project-tab-panel listy">
-              {selected.knowledge.map((item) => <div key={item.path}><b>{item.title}</b><span>{item.type} · {item.updated_at}</span><code>{item.path}</code></div>)}
-              {selected.artifacts.map((item) => <div key={item.path}><b>{item.name}</b><span>{item.kind} · {item.updated_at}</span><code>{item.path}</code></div>)}
+              {selected.knowledge.map((item) => <div key={item.path}><b>{item.title}</b><span>{item.type} · {formatSingaporeTime(item.updated_at)}</span><code>{item.path}</code></div>)}
+              {selected.artifacts.map((item) => <div key={item.path}><b>{item.name}</b><span>{item.kind} · {formatSingaporeTime(item.updated_at)}</span><code>{item.path}</code></div>)}
               {!selected.knowledge.length && !selected.artifacts.length && <p>No linked notes or artifacts yet.</p>}
             </div>}
 
             {tab === "activity" && <div className="project-tab-panel listy">
-              {selected.activity.map((item, index) => <div key={`${item.id || item.title}-${index}`}><b>{item.title}</b><span>{item.kind} · {item.status} · {item.at}</span></div>)}
+              {selected.activity.map((item, index) => <div key={`${item.id || item.title}-${index}`}><b>{item.title}</b><span>{item.kind} · {item.status} · {formatSingaporeTime(item.at)}</span></div>)}
               {!selected.activity.length && <p>No recent project activity yet.</p>}
             </div>}
 
             {tab === "sessions" && <div className="project-tab-panel listy">
-              {selected.sessions.map((item) => <div key={item.id}><b>{item.title}</b><span>{item.source} · {item.model} · {item.started_at}</span><small>{item.messages} messages · {item.tools} tools · {item.tokens.toLocaleString()} tokens</small></div>)}
+              {selected.sessions.map((item) => <div key={item.id}><b>{item.title}</b><span>{item.source} · {item.model} · {formatSingaporeTime(item.started_at)}</span><small>{item.messages} messages · {item.tools} tools · {item.tokens.toLocaleString()} tokens</small></div>)}
               {!selected.sessions.length && <p>No sessions linked to this project yet.</p>}
             </div>}
           </aside>

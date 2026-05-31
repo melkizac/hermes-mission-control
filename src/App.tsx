@@ -2,7 +2,9 @@ import { StoreProvider, useStore } from "./services/store";
 import { NavRail } from "./components/NavRail";
 import { MissionControl } from "./views/MissionControl";
 import { Agents } from "./views/Agents";
+import { AgentOrg } from "./views/AgentOrg";
 import { Projects } from "./views/Projects";
+import { SecondBrain } from "./views/SecondBrain";
 import { Approvals } from "./views/Approvals";
 import { AuditLog } from "./views/AuditLog";
 import { Automations } from "./views/Automations";
@@ -19,7 +21,9 @@ function Shell() {
       <main className="main">
         {view === "mission" && <MissionControl />}
         {view === "agents" && <Agents />}
+        {view === "agent-org" && <AgentOrg />}
         {view === "projects" && <Projects />}
+        {view === "second-brain" && <SecondBrain />}
         {view === "approvals" && <Approvals />}
         {view === "board" && <TaskBoard />}
         {view === "skills" && <SkillsHub />}

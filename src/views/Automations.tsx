@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AutomationRoutine, AutomationsResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
+import { formatSingaporeTime } from "../utils/time";
 
 const client = new HttpHermesClient();
 
@@ -309,13 +310,13 @@ function AutomationDrawer({ automation, tab, setTab, busy, onClose, onAction }: 
             </div>
             <div className="automation-kv">
               <Info label="Schedule" value={automation.schedule} />
-              <Info label="Next run" value={`${automation.next_run_at} · ${automation.next_run_relative}`} />
-              <Info label="Last run" value={`${automation.last_run_at} · ${automation.last_run_relative}`} />
+              <Info label="Next run" value={`${formatSingaporeTime(automation.next_run_at)} · ${automation.next_run_relative}`} />
+              <Info label="Last run" value={`${formatSingaporeTime(automation.last_run_at)} · ${automation.last_run_relative}`} />
               <Info label="Delivery" value={automation.deliver} />
               <Info label="Profile" value={automation.profile} />
               <Info label="Model" value={automation.model || "default"} />
               <Info label="Script" value={automation.script || (automation.no_agent ? "script-only" : "agent-run")} />
-              <Info label="Created" value={automation.created_at} />
+              <Info label="Created" value={formatSingaporeTime(automation.created_at)} />
             </div>
             {automation.last_error && <div className="automation-error compact">{automation.last_error}</div>}
             <section className="automation-section"><h3>Skills & toolsets</h3><div className="automation-chip-cloud">{(automation.skills.length ? automation.skills : ["No skills attached"]).map((skill) => <span key={skill}>{skill}</span>)}{automation.enabled_toolsets.map((toolset) => <em key={toolset}>{toolset}</em>)}</div></section>
@@ -331,7 +332,7 @@ function AutomationDrawer({ automation, tab, setTab, busy, onClose, onAction }: 
               <div className="automation-run" key={run.id}>
                 <div><b>{run.title}</b><small className="mono">{run.id}</small></div>
                 <span>{run.status}</span>
-                <small>{run.started_at} · {run.message_count} msgs · {run.tool_call_count} tools · {compact(run.tokens)} tok · {money(run.estimated_cost_usd)}</small>
+                <small>{formatSingaporeTime(run.started_at)} · {run.message_count} msgs · {run.tool_call_count} tools · {compact(run.tokens)} tok · {money(run.estimated_cost_usd)}</small>
               </div>
             ))}
           </section>
@@ -343,7 +344,7 @@ function AutomationDrawer({ automation, tab, setTab, busy, onClose, onAction }: 
             {automation.recent_outputs.length === 0 && <div className="empty">No saved cron outputs found.</div>}
             {automation.recent_outputs.map((output) => (
               <details className="automation-output" key={output.path}>
-                <summary>{output.name} <span>{output.updated_at}</span></summary>
+                <summary>{output.name} <span>{formatSingaporeTime(output.updated_at)}</span></summary>
                 <pre>{output.preview}</pre>
               </details>
             ))}

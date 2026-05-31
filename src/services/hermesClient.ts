@@ -1,4 +1,4 @@
-import type { Agent, Approval, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, ProjectsResponse, Skill, SkillsHubResponse } from "../types";
+import type { Agent, Approval, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, ProjectsResponse, SecondBrainResponse, Skill, SkillsHubResponse } from "../types";
 
 /**
  * HermesClient is the ONLY boundary between the UI and the agent runtime.
@@ -36,6 +36,7 @@ export interface HermesClient {
   listSkills(filters?: { q?: string; category?: string; source?: string }): Promise<SkillsHubResponse>;
   getCosts(filters?: { days?: number }): Promise<CostsResponse>;
   listProjects(filters?: { q?: string; kind?: string }): Promise<ProjectsResponse>;
+  getSecondBrain(filters?: { q?: string; section?: string }): Promise<SecondBrainResponse>;
   listBoard(filters?: { q?: string; status?: BoardStatus | ""; assignee?: string }): Promise<BoardResponse>;
   createBoardTask(input: Partial<{ title: string; body: string; assignee: string; status: BoardStatus; priority: number; tenant: string; skills: string[] }>): Promise<BoardTaskMutationResponse>;
   updateBoardTask(id: string, input: Partial<{ title: string; body: string; assignee: string; status: BoardStatus; priority: number; tenant: string; result: string; skills: string[] }>): Promise<BoardTaskMutationResponse>;

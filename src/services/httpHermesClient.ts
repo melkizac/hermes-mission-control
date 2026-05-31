@@ -1,4 +1,4 @@
-import type { Agent, Approval, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, ProjectsResponse, Skill, SkillsHubResponse } from "../types";
+import type { Agent, Approval, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, ProjectsResponse, SecondBrainResponse, Skill, SkillsHubResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -154,6 +154,14 @@ export class HttpHermesClient implements HermesClient {
     if (filters?.kind) params.set("kind", filters.kind);
     const suffix = params.toString() ? `?${params.toString()}` : "";
     return request<ProjectsResponse>(`/api/projects${suffix}`);
+  }
+
+  async getSecondBrain(filters?: { q?: string; section?: string }): Promise<SecondBrainResponse> {
+    const params = new URLSearchParams();
+    if (filters?.q) params.set("q", filters.q);
+    if (filters?.section) params.set("section", filters.section);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request<SecondBrainResponse>(`/api/second-brain${suffix}`);
   }
 
   async listBoard(filters?: { q?: string; status?: BoardStatus | ""; assignee?: string }): Promise<BoardResponse> {

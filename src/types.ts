@@ -548,10 +548,52 @@ export interface InboxMutationResponse {
   error?: string;
 }
 
+export interface SecondBrainItem {
+  id: string;
+  title: string;
+  summary: string;
+  path: string;
+  relative_path: string;
+  section: string;
+  layer: "wiki" | "raw" | string;
+  updated_at: string;
+  size: number;
+  links: string[];
+  preview: string;
+  immutable: boolean;
+}
+
+export interface SecondBrainResponse {
+  root: string;
+  wiki_path: string;
+  raw_path: string;
+  schema_path: string;
+  summary: {
+    title: string;
+    description: string;
+    wiki_pages: number;
+    raw_sources: number;
+    sections: number;
+    log_entries: number;
+    last_updated: string;
+    health: string;
+  };
+  sections: string[];
+  wiki: SecondBrainItem[];
+  raw_sources: SecondBrainItem[];
+  schema: { path: string; updated_at: string; preview: string };
+  index: { path: string; updated_at: string; preview: string };
+  log: { path: string; updated_at: string; preview: string; entries: Array<{ title: string; summary: string }> };
+  command_center?: SecondBrainItem | null;
+  health: { status: string; checks: Array<{ label: string; ok: boolean; detail: string }> };
+}
+
 export type ViewKey =
   | "mission"
   | "agents"
+  | "agent-org"
   | "projects"
+  | "second-brain"
   | "board"
   | "skills"
   | "approvals"
