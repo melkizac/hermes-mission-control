@@ -24,6 +24,7 @@ export function ChatThread({ agent, onOpenDetails }: { agent: Agent; onOpenDetai
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingText, setPendingText] = useState<string | null>(null);
   const [lastSeenKey, setLastSeenKey] = useState<string | null | undefined>(undefined);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const unreadRef = useRef<HTMLDivElement | null>(null);
@@ -49,11 +50,11 @@ export function ChatThread({ agent, onOpenDetails }: { agent: Agent; onOpenDetai
   const unreadStartId = unreadStartIndex >= 0 ? readableMessages[unreadStartIndex]?.id : null;
 
   useEffect(() => {
-    const target = unreadStartIndex >= 0 ? unreadRef.current : bottomRef.current;
+    const target = unreadStartIndex >= 0 && !pendingText ? unreadRef.current : bottomRef.current;
     window.requestAnimationFrame(() => {
-      target?.scrollIntoView({ block: unreadStartIndex >= 0 ? "start" : "end" });
+      target?.scrollIntoView({ block: unreadStartIndex >= 0 && !pendingText ? "start" : "end" });
     });
-  }, [agent.id, unreadStartIndex, agent.messages.length]);
+  }, [agent.id, unreadStartIndex, agent.messages.length, pendingText]);
 
   useEffect(() => {
     if (!latestMessageKey) return;
@@ -67,6 +68,7 @@ export function ChatThread({ agent, onOpenDetails }: { agent: Agent; onOpenDetai
     const text = draft.trim();
     if (!text || sending) return;
     setDraft("");
+    setPendingText(text);
     setSending(true);
     setError(null);
     try {
@@ -75,6 +77,7 @@ export function ChatThread({ agent, onOpenDetails }: { agent: Agent; onOpenDetai
       setDraft(text);
       setError(err instanceof Error ? err.message : "Failed to send message");
     } finally {
+      setPendingText(null);
       setSending(false);
     }
   };
@@ -121,6 +124,12 @@ export function ChatThread({ agent, onOpenDetails }: { agent: Agent; onOpenDetai
             <MessageView m={m} agent={agent} />
           </div>
         ))}
+        {pendingText && (
+          <>
+            <MessageView m={{ id: "pending-user", role: "user", text: pendingText, at: "just now" }} agent={agent} />
+            <AgentThinking agent={agent} />
+          </>
+        )}
         <div ref={bottomRef} />
       </div>
 
@@ -145,6 +154,38 @@ export function ChatThread({ agent, onOpenDetails }: { agent: Agent; onOpenDetai
           <button className="send" onClick={() => void submit()} disabled={sending || !draft.trim()}>
             {sending ? "…" : <Icon name="send" size={16} />}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AgentThinking({ agent }: { agent: Agent }) {
+  return (
+    <div className="msg thinking-msg" aria-live="polite" aria-label={`${agent.name} is processing your last instruction`}>
+      <span className="av thinking-avatar" style={{ background: agent.color }}>
+        <span className="orbit-dot" />
+        {agent.initials}
+      </span>
+      <div>
+        <div className="who">
+          {agent.name} <span className="t">processing now</span>
+        </div>
+        <div className="thinking-card">
+          <div className="thinking-orb" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
+          <div className="thinking-copy">
+            <b>Thinking through the instruction</b>
+            <span>Reading context, planning the next move, and preparing a response…</span>
+          </div>
+          <div className="thinking-steps" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </div>
         </div>
       </div>
     </div>
