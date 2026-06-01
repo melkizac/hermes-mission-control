@@ -1,4 +1,4 @@
-import type { Agent, Approval, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, ProjectsResponse, SecondBrainResponse, Skill, SkillsHubResponse } from "../types";
+import type { Agent, Approval, Attachment, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, ProjectsResponse, ReplyContext, SecondBrainResponse, Skill, SkillsHubResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
 import { seedAgents, seedApprovals } from "../data/mockData";
 
@@ -26,11 +26,26 @@ export class MockHermesClient implements HermesClient {
     return clone(this.agents.find((a) => a.id === id));
   }
 
-  async sendMessage(agentId: string, text: string): Promise<Message[]> {
+  async uploadAttachment(agentId: string, file: File): Promise<Attachment> {
+    await delay(80);
+    return {
+      id: uid(),
+      filename: file.name,
+      path: `/mock/uploads/${agentId}/${file.name}`,
+      mime: file.type || "application/octet-stream",
+      sizeBytes: file.size,
+      createdAt: "now",
+      url: URL.createObjectURL(file),
+    };
+  }
+
+  async sendMessage(agentId: string, text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; replyTo?: ReplyContext } = {}): Promise<Message[]> {
+    if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
     await delay(120);
+    if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
     const agent = this.agents.find((a) => a.id === agentId);
     if (!agent) return [];
-    const userMsg: Message = { id: uid(), role: "user", text, at: "now" };
+    const userMsg: Message = { id: uid(), role: "user", text, attachments, replyTo: options.replyTo, at: "now" };
     const reply: Message = {
       id: uid(),
       role: "agent",
@@ -41,6 +56,11 @@ export class MockHermesClient implements HermesClient {
     agent.activity = text.slice(0, 48);
     agent.status = "working";
     return [userMsg, reply];
+  }
+
+  async stopMessage() {
+    await delay(20);
+    return { ok: true, stopped: [], count: 0 };
   }
 
   async createAgent(input: { name: string; squad: string; model: string }) {

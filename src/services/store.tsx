@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Agent, Approval, ConfigFile, Skill, ViewKey } from "../types";
+import type { Agent, Approval, Attachment, ConfigFile, ReplyContext, Skill, ViewKey } from "../types";
 import type { HermesClient } from "./hermesClient";
 import { HttpHermesClient } from "./httpHermesClient";
 
@@ -23,7 +23,9 @@ interface StoreValue {
   loading: boolean;
   setView: (v: ViewKey) => void;
   select: (id: string) => void;
-  send: (text: string) => Promise<void>;
+  uploadAttachment: (file: File) => Promise<Attachment>;
+  send: (text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext }) => Promise<void>;
+  stopProcessing: (requestId?: string) => Promise<void>;
   refreshSelected: () => Promise<void>;
   createAgent: (i: { name: string; squad: string; model: string }) => Promise<void>;
   deleteAgent: (id: string) => Promise<void>;
@@ -61,10 +63,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const select = useCallback((id: string) => setSelectedId(id), []);
 
+  const uploadAttachment = useCallback(
+    async (file: File) => {
+      if (!selectedId) throw new Error("No agent selected");
+      return client.uploadAttachment(selectedId, file);
+    },
+    [selectedId],
+  );
+
   const send = useCallback(
-    async (text: string) => {
-      if (!selectedId || !text.trim()) return;
-      const newMessages = await client.sendMessage(selectedId, text.trim());
+    async (text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext } = {}) => {
+      if (!selectedId || (!text.trim() && attachments.length === 0)) return;
+      const newMessages = await client.sendMessage(selectedId, text.trim(), attachments, options);
       setAgents((cur) =>
         cur.map((agent) =>
           agent.id === selectedId
@@ -77,6 +87,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             : agent,
         ),
       );
+    },
+    [selectedId],
+  );
+
+  const stopProcessing = useCallback(
+    async (requestId?: string) => {
+      if (!selectedId) return;
+      await client.stopMessage(selectedId, requestId);
     },
     [selectedId],
   );
@@ -150,7 +168,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     loading,
     setView,
     select,
+    uploadAttachment,
     send,
+    stopProcessing,
     refreshSelected,
     createAgent,
     deleteAgent,

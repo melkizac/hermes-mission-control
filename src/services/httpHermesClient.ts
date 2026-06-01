@@ -1,4 +1,4 @@
-import type { Agent, Approval, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, ProjectsResponse, SecondBrainResponse, Skill, SkillsHubResponse } from "../types";
+import type { Agent, Approval, Attachment, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, ProjectsResponse, ReplyContext, SecondBrainResponse, Skill, SkillsHubResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -28,10 +28,32 @@ export class HttpHermesClient implements HermesClient {
     return request<Agent>(`/api/agents/${encodeURIComponent(id)}`);
   }
 
-  async sendMessage(agentId: string, text: string): Promise<Message[]> {
+  async uploadAttachment(agentId: string, file: File): Promise<Attachment> {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result ?? ""));
+      reader.onerror = () => reject(new Error("Failed to read selected file"));
+      reader.readAsDataURL(file);
+    });
+    const [, data = ""] = dataUrl.split(",", 2);
+    return request<Attachment>(`/api/agents/${encodeURIComponent(agentId)}/attachments`, {
+      method: "POST",
+      body: JSON.stringify({ filename: file.name, mime: file.type || "application/octet-stream", sizeBytes: file.size, data }),
+    });
+  }
+
+  async sendMessage(agentId: string, text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext } = {}): Promise<Message[]> {
     return request<Message[]>(`/api/agents/${encodeURIComponent(agentId)}/messages`, {
       method: "POST",
-      body: JSON.stringify({ text }),
+      signal: options.signal,
+      body: JSON.stringify({ text, attachments, requestId: options.requestId, replyTo: options.replyTo }),
+    });
+  }
+
+  async stopMessage(agentId: string, requestId?: string): Promise<{ ok: boolean; stopped: string[]; count: number }> {
+    return request<{ ok: boolean; stopped: string[]; count: number }>(`/api/agents/${encodeURIComponent(agentId)}/messages/stop`, {
+      method: "POST",
+      body: JSON.stringify({ requestId }),
     });
   }
 

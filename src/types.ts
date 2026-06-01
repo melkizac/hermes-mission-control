@@ -34,16 +34,37 @@ export interface Artifact {
   createdAt: string;
 }
 
+export interface Attachment {
+  id: string;
+  filename: string;
+  path: string;
+  mime: string;
+  sizeBytes: number;
+  createdAt: string;
+  preview?: string;
+  url?: string;
+}
+
 export interface ToolCall {
   skill: string;
   status: "running" | "done" | "error";
   detail?: string;
 }
 
+export interface ReplyContext {
+  id: string;
+  role: MessageRole;
+  author: string;
+  text: string;
+  at?: string;
+}
+
 export interface Message {
   id: string;
   role: MessageRole;
   text?: string;
+  replyTo?: ReplyContext;
+  attachments?: Attachment[];
   toolCall?: ToolCall;
   artifact?: Artifact;
   insight?: string;

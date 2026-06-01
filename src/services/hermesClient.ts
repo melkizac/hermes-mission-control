@@ -1,4 +1,4 @@
-import type { Agent, Approval, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, ProjectsResponse, SecondBrainResponse, Skill, SkillsHubResponse } from "../types";
+import type { Agent, Approval, Attachment, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, ProjectsResponse, ReplyContext, SecondBrainResponse, Skill, SkillsHubResponse } from "../types";
 
 /**
  * HermesClient is the ONLY boundary between the UI and the agent runtime.
@@ -18,7 +18,9 @@ import type { Agent, Approval, AuditSessionDetailResponse, AuditSessionListRespo
 export interface HermesClient {
   listAgents(): Promise<Agent[]>;
   getAgent(id: string): Promise<Agent | undefined>;
-  sendMessage(agentId: string, text: string): Promise<Message[]>;
+  uploadAttachment(agentId: string, file: File): Promise<Attachment>;
+  sendMessage(agentId: string, text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext }): Promise<Message[]>;
+  stopMessage(agentId: string, requestId?: string): Promise<{ ok: boolean; stopped: string[]; count: number }>;
   createAgent(input: { name: string; squad: string; model: string }): Promise<Agent>;
   deleteAgent(id: string): Promise<void>;
   saveConfigFile(agentId: string, file: ConfigFile): Promise<void>;

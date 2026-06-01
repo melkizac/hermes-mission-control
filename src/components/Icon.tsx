@@ -21,6 +21,9 @@ type Name =
   | "file"
   | "check"
   | "arrowDown"
+  | "copy"
+  | "reply"
+  | "stop"
   | "spinner";
 
 const paths: Record<Name, string> = {
@@ -44,6 +47,9 @@ const paths: Record<Name, string> = {
   file: "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6",
   check: "M20 6L9 17l-5-5",
   arrowDown: "M12 5v14M5 12l7 7 7-7",
+  copy: "M8 8h10a2 2 0 012 2v10a2 2 0 01-2 2H8a2 2 0 01-2-2V10a2 2 0 012-2zM4 16H3a2 2 0 01-2-2V4a2 2 0 012-2h10a2 2 0 012 2v1",
+  reply: "M10 7l-5 5 5 5M5 12h9a5 5 0 015 5v1",
+  stop: "M7 7h10v10H7z",
   spinner: "M12 2a10 10 0 019.5 7",
 };
 
