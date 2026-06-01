@@ -72,10 +72,6 @@ export function SkillsHub() {
           </p>
         </div>
         <div className="task-hero-actions">
-          <div className="view-switch" aria-label="Skills view mode">
-            <button className={viewMode === "cards" ? "on" : ""} onClick={() => setViewMode("cards")}>Cards</button>
-            <button className={viewMode === "list" ? "on" : ""} onClick={() => setViewMode("list")}>List</button>
-          </div>
           <button className="btn dark" onClick={() => void load()}>Refresh</button>
         </div>
       </header>
@@ -88,10 +84,16 @@ export function SkillsHub() {
       </section>
 
       <section className="skills-filters">
-        <label>
-          <span>Search</span>
-          <input value={q} onChange={(event) => setQ(event.target.value)} placeholder="skill name, description, tag, model…" />
-        </label>
+        <div className="filter-search-with-view">
+          <label>
+            <span>Search</span>
+            <input value={q} onChange={(event) => setQ(event.target.value)} placeholder="skill name, description, tag, model…" />
+          </label>
+          <div className="view-switch filter-view-switch" aria-label="Skills view mode">
+            <button className={viewMode === "cards" ? "on" : ""} onClick={() => setViewMode("cards")}>Cards</button>
+            <button className={viewMode === "list" ? "on" : ""} onClick={() => setViewMode("list")}>List</button>
+          </div>
+        </div>
         <label>
           <span>Category</span>
           <select value={category} onChange={(event) => setCategory(event.target.value)}>

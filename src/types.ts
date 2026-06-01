@@ -48,6 +48,8 @@ export interface Message {
   artifact?: Artifact;
   insight?: string;
   at: string;
+  ts?: number;
+  source?: string;
 }
 
 export type TaskStatus = "queued" | "running" | "blocked" | "done" | "error";

@@ -24,6 +24,7 @@ interface StoreValue {
   setView: (v: ViewKey) => void;
   select: (id: string) => void;
   send: (text: string) => Promise<void>;
+  refreshSelected: () => Promise<void>;
   createAgent: (i: { name: string; squad: string; model: string }) => Promise<void>;
   deleteAgent: (id: string) => Promise<void>;
   saveFile: (file: ConfigFile) => Promise<void>;
@@ -79,6 +80,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     [selectedId],
   );
+
+  const refreshSelected = useCallback(async () => {
+    if (!selectedId) return;
+    const updated = await client.getAgent(selectedId);
+    if (!updated) return;
+    setAgents((cur) => cur.map((agent) => (agent.id === selectedId ? updated : agent)));
+  }, [selectedId]);
 
   const createAgent = useCallback(
     async (i: { name: string; squad: string; model: string }) => {
@@ -143,6 +151,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setView,
     select,
     send,
+    refreshSelected,
     createAgent,
     deleteAgent,
     saveFile,

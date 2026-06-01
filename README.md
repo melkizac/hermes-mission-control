@@ -18,18 +18,29 @@ npm run dev          # http://localhost:5173
 That's it — the app runs against an in-memory mock (`MockHermesClient`), so you
 can click around with no backend. `npm run build` produces a production bundle.
 
+## Detailed documentation
+
+The current live implementation is documented in:
+
+```text
+docs/HERMES_MISSION_CONTROL.md
+```
+
+That document covers the product model, architecture, API routes, data sources, Agent Org V2, automations, approvals, Task Board, Skills Hub, Projects, Second Brain, Audit Log, Costs, deployment, verification, safety rules, and roadmap.
+
 ## What's implemented
 
-- **Mission Control** — 3-pane layout (roster · chat/activity · context panel)
-  - Live agent **roster** with status (working / waiting / idle / error), filters, squads
-  - **Chat** with the selected agent; message types include tool-call chips,
-    inline **output artifact** cards (Cowork-style), and AI-insight strips
-  - **Context panel** tabs: **Output** (workspace artifacts), **Config**
-    (agent info, **skills** add/remove, **config-file** editor), **Tasks**
-  - **Create / delete** agents; **edit + save** any config file
-- **Approvals** — working human-in-the-loop queue (approve / reject)
-- Scaffolded placeholder screens: Task Board (Kanban), Skills Hub, Automations,
-  Audit Log, Settings — each documented inline with what it becomes.
+- **Mission Control** — daily operator cockpit for attention, outputs, health, activity, and next actions.
+- **Agents** — unified Hermes agent/channel chat surface with drawer-first details.
+- **Agent Org / AI Workforce** — registry-backed operational control plane with 8 digital coworkers, queues, flows, runs, outputs, permissions, health, and safe actions.
+- **Approvals / Inbox** — durable human-in-the-loop review queue with edit-before-approve and cron-output-derived items.
+- **Task Board / Issues** — Kanban/list task queue backed by Hermes `kanban.db`.
+- **Skills Hub** — searchable/routable library of installed Hermes skills.
+- **Automations** — Hermes cron routines with schedule, status, run, pause/resume, outputs, and traces.
+- **Projects / Workspaces** — context cockpit for workspaces, plans, knowledge, and activity.
+- **Second Brain** — Karpathy-style LLM Wiki browser backed by `/root/.openclaw/workspace/kb`.
+- **Audit Log** — session/run trace viewer backed by Hermes `state.db`.
+- **Costs** — token/cost observability backed by Hermes session billing fields.
 
 ## Project layout
 

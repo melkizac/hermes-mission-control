@@ -138,10 +138,6 @@ export function TaskBoard() {
           <p>Board-first operating view. Click a card to inspect details in a temporary drawer without shrinking the Kanban lanes.</p>
         </div>
         <div className="task-hero-actions">
-          <div className="view-switch" aria-label="Task board view mode">
-            <button className={viewMode === "cards" ? "on" : ""} onClick={() => setViewMode("cards")}>Cards</button>
-            <button className={viewMode === "list" ? "on" : ""} onClick={() => setViewMode("list")}>List</button>
-          </div>
           <button className="btn primary" onClick={() => setShowCreate((value) => !value)}>{showCreate ? "Close Form" : "+ Add Action"}</button>
           <button className="btn dark" onClick={() => void load()}>Refresh</button>
         </div>
@@ -172,7 +168,13 @@ export function TaskBoard() {
       )}
 
       <section className="task-filters task-filters-board-first">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search title, body, owner, project, skill…" />
+        <div className="filter-search-with-view task-search-with-view">
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search title, body, owner, project, skill…" />
+          <div className="view-switch filter-view-switch" aria-label="Task board view mode">
+            <button className={viewMode === "cards" ? "on" : ""} onClick={() => setViewMode("cards")}>Cards</button>
+            <button className={viewMode === "list" ? "on" : ""} onClick={() => setViewMode("list")}>List</button>
+          </div>
+        </div>
         <select value={status} onChange={(e) => setStatus(e.target.value as BoardStatus | "")}><option value="">All status</option>{lanes.map((lane) => <option key={lane.key} value={lane.key}>{lane.label}</option>)}</select>
         <select value={assignee} onChange={(e) => setAssignee(e.target.value)}><option value="">All owners</option>{summary.assignees.map((item) => <option key={item} value={item}>{item}</option>)}</select>
         <span>{loading ? "Loading…" : `${tasks.length} issues shown`}</span>

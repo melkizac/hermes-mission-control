@@ -94,10 +94,6 @@ export function Automations() {
           </p>
         </div>
         <div className="task-hero-actions">
-          <div className="view-switch" aria-label="Automation view mode">
-            <button className={viewMode === "cards" ? "on" : ""} onClick={() => setViewMode("cards")}>Cards</button>
-            <button className={viewMode === "list" ? "on" : ""} onClick={() => setViewMode("list")}>List</button>
-          </div>
           <button className="btn dark" onClick={() => void load()}>Refresh</button>
         </div>
       </header>
@@ -110,10 +106,16 @@ export function Automations() {
       </section>
 
       <section className="automation-filters">
-        <label>
-          <span>Search</span>
-          <input value={q} onChange={(event) => setQ(event.target.value)} placeholder="name, skill, schedule, prompt…" />
-        </label>
+        <div className="filter-search-with-view">
+          <label>
+            <span>Search</span>
+            <input value={q} onChange={(event) => setQ(event.target.value)} placeholder="name, skill, schedule, prompt…" />
+          </label>
+          <div className="view-switch filter-view-switch" aria-label="Automation view mode">
+            <button className={viewMode === "cards" ? "on" : ""} onClick={() => setViewMode("cards")}>Cards</button>
+            <button className={viewMode === "list" ? "on" : ""} onClick={() => setViewMode("list")}>List</button>
+          </div>
+        </div>
         <label>
           <span>Status</span>
           <select value={state} onChange={(event) => setState(event.target.value)}>

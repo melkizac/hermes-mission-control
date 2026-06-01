@@ -20,6 +20,7 @@ type Name =
   | "more"
   | "file"
   | "check"
+  | "arrowDown"
   | "spinner";
 
 const paths: Record<Name, string> = {
@@ -42,6 +43,7 @@ const paths: Record<Name, string> = {
   more: "M12 6h.01M12 12h.01M12 18h.01",
   file: "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6",
   check: "M20 6L9 17l-5-5",
+  arrowDown: "M12 5v14M5 12l7 7 7-7",
   spinner: "M12 2a10 10 0 019.5 7",
 };
 
