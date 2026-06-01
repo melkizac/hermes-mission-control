@@ -1812,3 +1812,20 @@ input, select, textarea { font-family: inherit; }
 .settings-panel pre { white-space: pre-wrap; overflow: auto; max-height: 260px; background: #f8fafc; border: 1px solid #edf1f5; color: #263246; border-radius: 10px; padding: 10px; font-family: "JetBrains Mono", monospace; font-size: 11.5px; line-height: 1.55; }
 @media (max-width: 1180px) { .settings-span-5, .settings-span-7 { grid-column: span 12; } }
 @media (max-width: 760px) { .settings-page { padding: 18px; } .settings-hero { flex-direction: column; } .settings-metrics, .settings-kv, .settings-copy-row { grid-template-columns: 1fr; } .settings-copy-row .btn { width: 100%; justify-content: center; } }
+
+.settings-targets { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.settings-target { text-align: left; border: 1px solid #e1e7ef; background: #fff; border-radius: 16px; padding: 14px; color: var(--ink); box-shadow: 0 12px 32px rgba(20,26,38,.04); }
+.settings-target:hover { border-color: #c9dcff; background: #f8fbff; }
+.settings-target.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent), 0 10px 24px rgba(14,143,132,.08); }
+.settings-target b { display: block; font-size: 14px; margin-bottom: 6px; }
+.settings-target span { display: inline-flex; color: #0f7a37; background: #eafaf0; border-radius: 999px; padding: 4px 8px; font-size: 10.5px; font-weight: 850; margin-bottom: 8px; }
+.settings-target:not(.on) span { color: #536277; background: #f1f5f9; }
+.settings-target p { color: #536277; font-size: 12px; line-height: 1.45; margin: 0; }
+.settings-field { display: grid; gap: 7px; margin-bottom: 11px; }
+.settings-field span { color: var(--muted); font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.settings-field input, .settings-field textarea { width: 100%; border: 1px solid var(--line); border-radius: 11px; padding: 10px 12px; font-size: 13px; color: var(--ink); background: #fff; font: inherit; }
+.settings-field textarea { min-height: 112px; resize: vertical; }
+.settings-field input:focus, .settings-field textarea:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.settings-kv.one-col { grid-template-columns: 1fr; }
+.settings-kv.one-col b { white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 760px) { .settings-targets { grid-template-columns: 1fr; } }
