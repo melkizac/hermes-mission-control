@@ -486,6 +486,29 @@ export interface ProjectRiskItem {
   count?: number;
 }
 
+export interface ProjectOperatingLink {
+  id?: string;
+  name?: string;
+  title?: string;
+  status?: string;
+  enabled?: boolean;
+  schedule?: string;
+  next_run_at?: string;
+  progress?: number;
+  agent_id?: string;
+  agent_name?: string;
+  role?: string;
+  mode?: string;
+  category?: string;
+  source?: string;
+  readiness?: string;
+  assignee?: string;
+  updated_at?: string;
+  owner?: string;
+  kind?: string;
+  detail?: string;
+}
+
 export interface ProjectRecord {
   id: string;
   name: string;
@@ -497,6 +520,7 @@ export interface ProjectRecord {
   path: string;
   source: string;
   updated_at: string;
+  source_contexts?: Array<{ id?: string; kind?: string; source?: string; name?: string; path?: string }>;
   actions: ProjectActionsSummary;
   risks: ProjectRiskItem[];
   knowledge: ProjectKnowledgeItem[];
@@ -506,6 +530,21 @@ export interface ProjectRecord {
   activity: ProjectActivityItem[];
   tags: string[];
   workspace_count: number;
+  tasks?: ProjectOperatingLink[];
+  automations?: ProjectOperatingLink[];
+  goals?: ProjectOperatingLink[];
+  agents?: ProjectOperatingLink[];
+  skills?: ProjectOperatingLink[];
+  human_bottlenecks?: ProjectOperatingLink[];
+  next_actions?: string[];
+  operating_counts?: Record<string, number>;
+}
+
+export interface ProjectBriefResponse {
+  ok: boolean;
+  project?: ProjectRecord;
+  brief_markdown?: string;
+  error?: string;
 }
 
 export interface ProjectsResponse {

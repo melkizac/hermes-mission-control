@@ -1,4 +1,4 @@
-import type { Agent, Approval, Attachment, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, ProjectsResponse, ReplyContext, SecondBrainResponse, Skill, SkillsHubResponse } from "../types";
+import type { Agent, Approval, Attachment, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, ProjectBriefResponse, ProjectsResponse, ReplyContext, SecondBrainResponse, Skill, SkillsHubResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -176,6 +176,17 @@ export class HttpHermesClient implements HermesClient {
     if (filters?.kind) params.set("kind", filters.kind);
     const suffix = params.toString() ? `?${params.toString()}` : "";
     return request<ProjectsResponse>(`/api/projects${suffix}`);
+  }
+
+  async getProjectBrief(projectId: string): Promise<ProjectBriefResponse> {
+    return request<ProjectBriefResponse>(`/api/projects/${encodeURIComponent(projectId)}/brief`);
+  }
+
+  async createProjectTask(projectId: string, input: Partial<{ title: string; body: string; assignee: string; priority: number; skills: string[] }>): Promise<BoardTaskMutationResponse> {
+    return request<BoardTaskMutationResponse>(`/api/projects/${encodeURIComponent(projectId)}/tasks`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
   }
 
   async getSecondBrain(filters?: { q?: string; section?: string }): Promise<SecondBrainResponse> {

@@ -11,10 +11,22 @@ import { Automations } from "./views/Automations";
 import { TaskBoard } from "./views/TaskBoard";
 import { SkillsHub } from "./views/SkillsHub";
 import { CostDashboard } from "./views/CostDashboard";
+import { MissionControlDocs } from "./views/MissionControlDocs";
+import { LandingPage } from "./views/LandingPage";
+import { LoginPage } from "./views/LoginPage";
 import { Placeholder } from "./views/Placeholder";
+
+const docsPaths = new Set(["/mission-control-docs", "/mission-control-guide", "/docs"]);
+const publicPaths = new Set(["/", "/login"]);
 
 function Shell() {
   const { view } = useStore();
+  const pathname = window.location.pathname.replace(/\/$/, "") || "/";
+
+  if (docsPaths.has(pathname)) {
+    return <MissionControlDocs />;
+  }
+
   return (
     <div className="shell">
       <NavRail />
@@ -42,6 +54,12 @@ function Shell() {
 }
 
 export default function App() {
+  const pathname = window.location.pathname.replace(/\/$/, "") || "/";
+
+  if (publicPaths.has(pathname)) {
+    return pathname === "/login" ? <LoginPage /> : <LandingPage />;
+  }
+
   return (
     <StoreProvider>
       <Shell />

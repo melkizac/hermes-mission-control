@@ -1,4 +1,4 @@
-import type { Agent, Approval, Attachment, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, ProjectsResponse, ReplyContext, SecondBrainResponse, Skill, SkillsHubResponse } from "../types";
+import type { Agent, Approval, Attachment, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, ProjectBriefResponse, ProjectsResponse, ReplyContext, SecondBrainResponse, Skill, SkillsHubResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
 import { seedAgents, seedApprovals } from "../data/mockData";
 
@@ -266,6 +266,16 @@ export class MockHermesClient implements HermesClient {
   async listProjects(): Promise<ProjectsResponse> {
     await delay(90);
     return { projects: [], summary: { total: 0, active: 0, open_actions: 0, blocked: 0, knowledge: 0, workspaces: 0 }, kinds: [], sources: [] };
+  }
+
+  async getProjectBrief(): Promise<ProjectBriefResponse> {
+    await delay(90);
+    return { ok: false, error: "Mock projects are read-only" };
+  }
+
+  async createProjectTask(): Promise<BoardTaskMutationResponse> {
+    await delay(90);
+    return { ok: false, error: "Mock projects are read-only" };
   }
 
   async getSecondBrain(): Promise<SecondBrainResponse> {

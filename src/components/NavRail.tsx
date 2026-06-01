@@ -29,6 +29,11 @@ function plural(value: number, singular: string) {
   return `${value} ${singular}${value === 1 ? "" : "s"}`;
 }
 
+function systemLabel(online: boolean, active: number) {
+  if (!online) return "Attention needed";
+  return active > 0 ? "System online" : "Online";
+}
+
 async function requestStatus(): Promise<RailStatus> {
   const url = `${window.location.protocol}//${window.location.host}/api/status`;
   const res = await fetch(url, { credentials: "include", headers: { Accept: "application/json" } });
@@ -66,8 +71,7 @@ export function NavRail() {
     return Math.max(4, Math.min(100, Math.round((activeSessions / totalSessions) * 100)));
   }, [activeSessions, totalSessions]);
   const gatewayOnline = status?.gateway?.running ?? true;
-  const version = status?.runtime?.version ? `v${status.runtime.version}` : "v—";
-  const profileCount = status?.runtime?.profiles ?? 1;
+  const systemStatus = systemLabel(gatewayOnline, activeSessions);
 
   return (
     <nav className="rail">
@@ -95,21 +99,28 @@ export function NavRail() {
             </button>
           </div>
         ))}
+        <div>
+          <div className="nlabel">Help</div>
+          <a className="nitem nlink" href="/mission-control-docs">
+            <Icon name="file" size={17} />
+            Docs
+          </a>
+        </div>
       </div>
 
       <div className="gw">
         <div className="row">
-          <span className="dot" style={{ background: gatewayOnline ? "var(--good)" : "var(--bad)" }} /> {gatewayOnline ? "Gateway online" : "Gateway offline"}
+          <span className="dot" style={{ background: gatewayOnline ? "var(--good)" : "var(--bad)" }} /> {systemStatus}
         </div>
-        <div className="sub">
-          {version} · {plural(profileCount, "profile")} · {plural(activeSessions, "active session")}
+        <div className="sub status-main">
+          {gatewayOnline ? plural(activeSessions, "active session") : "Gateway offline"}
         </div>
-        <div className="bar">
-          <i style={{ width: `${sessionPercent}%` }} />
-        </div>
-        <div className="sub" style={{ marginTop: 6 }}>
-          Session activity · {activeSessions}/{totalSessions} active/recent
-        </div>
+        {gatewayOnline && totalSessions > 0 && (
+          <div className="bar" aria-label={`${activeSessions} active of ${totalSessions} total sessions`}>
+            <i style={{ width: `${sessionPercent}%` }} />
+          </div>
+        )}
+        <a className="sub status-link" href="/docs#daily-flow">View docs →</a>
       </div>
     </nav>
   );

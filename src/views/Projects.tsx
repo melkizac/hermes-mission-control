@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ProjectRecord } from "../types";
+import type { ProjectOperatingLink, ProjectRecord } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { formatSingaporeTime } from "../utils/time";
 
 const client = new HttpHermesClient();
-type Tab = "overview" | "knowledge" | "activity" | "sessions";
+type Tab = "overview" | "operations" | "knowledge" | "activity" | "sessions";
 
 function pct(value: number) {
   return `${Math.max(0, Math.min(100, Math.round(value || 0)))}%`;
@@ -12,6 +12,14 @@ function pct(value: number) {
 
 function Metric({ label, value, sub, tone }: { label: string; value: string | number; sub: string; tone?: "good" | "bad" }) {
   return <div className={`project-metric ${tone || ""}`}><span>{label}</span><b>{value}</b><small>{sub}</small></div>;
+}
+
+function linkLabel(item: ProjectOperatingLink) {
+  return item.name || item.title || item.id || "Untitled";
+}
+
+function LinkList({ title, empty, items, meta }: { title: string; empty: string; items?: ProjectOperatingLink[]; meta?: (item: ProjectOperatingLink) => string }) {
+  return <div className="project-operating-block"><div className="project-section-head"><b>{title}</b><span>{items?.length ?? 0}</span></div>{(items || []).map((item) => <div className="project-op-row" key={`${title}-${item.id || linkLabel(item)}`}><b>{linkLabel(item)}</b><small>{meta?.(item) || [item.status, item.source, item.category].filter(Boolean).join(" · ") || "linked"}</small>{item.detail && <p>{item.detail}</p>}</div>)}{!(items || []).length && <p className="muted">{empty}</p>}</div>;
 }
 
 export function Projects() {
@@ -23,6 +31,9 @@ export function Projects() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [brief, setBrief] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
@@ -56,6 +67,41 @@ export function Projects() {
   const openProject = (project: ProjectRecord) => {
     setSelectedId(project.id);
     setTab("overview");
+    setBrief(null);
+    setNotice(null);
+  };
+
+  const generateBrief = async (project: ProjectRecord) => {
+    setBusy(`brief:${project.id}`);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await client.getProjectBrief(project.id);
+      if (!result.ok) throw new Error(result.error || "Unable to generate brief");
+      setBrief(result.brief_markdown || "");
+      setTab("operations");
+      setNotice(`Generated operating brief for ${project.name}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to generate brief");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const createProjectTask = async (project: ProjectRecord) => {
+    setBusy(`task:${project.id}`);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await client.createProjectTask(project.id, { title: project.next_actions?.[0] || `Next action for ${project.name}` });
+      if (!result.ok) throw new Error(result.error || "Unable to create project task");
+      setNotice(`Created project-scoped task: ${result.task?.title || project.name}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create project task");
+    } finally {
+      setBusy(null);
+    }
   };
 
   return (
@@ -91,6 +137,7 @@ export function Projects() {
         <span>{loading ? "Loading…" : `${projects.length} contexts shown`}</span>
       </section>
       {error && <div className="task-error">{error}</div>}
+      {notice && <div className="task-notice">{notice}</div>}
 
       <section className="projects-grid">
         {projects.map((project) => (
@@ -106,10 +153,12 @@ export function Projects() {
             </div>
             <div className="project-bars"><i style={{ width: pct(project.health) }} /><em style={{ width: pct(project.progress) }} /></div>
             <div className="project-chips">
-              <span>{project.source}</span>
+              <span>{(project.source_contexts?.length || 1) > 1 ? `${project.source_contexts?.length} contexts` : project.source}</span>
               <span>{project.actions.open + project.actions.running} open</span>
               <span>{project.knowledge.length} notes</span>
               <span>{project.artifacts.length} artifacts</span>
+              <span>{project.operating_counts?.agents ?? project.agents?.length ?? 0} agents</span>
+              <span>{project.operating_counts?.automations ?? project.automations?.length ?? 0} automations</span>
             </div>
             <div className="project-path">{project.path || "No workspace path linked"}</div>
           </article>
@@ -130,8 +179,19 @@ export function Projects() {
               <div><span>Source</span><b>{selected.source}</b></div>
               <div><span>Updated</span><b>{formatSingaporeTime(selected.updated_at)}</b></div>
             </div>
+            <div className="project-ops-summary">
+              <div><b>{selected.operating_counts?.agents ?? selected.agents?.length ?? 0}</b><span>Agents</span></div>
+              <div><b>{selected.operating_counts?.automations ?? selected.automations?.length ?? 0}</b><span>Automations</span></div>
+              <div><b>{selected.operating_counts?.goals ?? selected.goals?.length ?? 0}</b><span>Goals</span></div>
+              <div><b>{selected.operating_counts?.skills ?? selected.skills?.length ?? 0}</b><span>Skills</span></div>
+              <div><b>{selected.operating_counts?.bottlenecks ?? selected.human_bottlenecks?.length ?? 0}</b><span>Bottlenecks</span></div>
+            </div>
+            <div className="project-action-row">
+              <button className="btn dark" disabled={busy === `brief:${selected.id}`} onClick={() => void generateBrief(selected)}>{busy === `brief:${selected.id}` ? "Briefing…" : "Generate Brief"}</button>
+              <button className="btn primary" disabled={busy === `task:${selected.id}`} onClick={() => void createProjectTask(selected)}>{busy === `task:${selected.id}` ? "Creating…" : "Create Next Task"}</button>
+            </div>
             <div className="project-tabs">
-              {(["overview", "knowledge", "activity", "sessions"] as Tab[]).map((item) => <button key={item} className={tab === item ? "on" : ""} onClick={() => setTab(item)}>{item}</button>)}
+              {(["overview", "operations", "knowledge", "activity", "sessions"] as Tab[]).map((item) => <button key={item} className={tab === item ? "on" : ""} onClick={() => setTab(item)}>{item}</button>)}
             </div>
 
             {tab === "overview" && <div className="project-tab-panel">
@@ -140,7 +200,23 @@ export function Projects() {
                 <div><b>{selected.actions.open}</b><span>Open</span></div><div><b>{selected.actions.running}</b><span>Running</span></div><div><b>{selected.actions.done}</b><span>Done</span></div><div><b>{selected.risks.length}</b><span>Risks</span></div>
               </div>
               <label>Workspace path</label><code>{selected.path || "—"}</code>
+              <label>Linked contexts</label>
+              <div className="project-source-contexts">
+                {(selected.source_contexts?.length ? selected.source_contexts : [{ kind: selected.kind, source: selected.source, name: selected.name, path: selected.path }]).map((ctx, index) => <div key={`${ctx.id || ctx.path || ctx.name}-${index}`}><b>{ctx.kind || "context"}</b><span>{ctx.source || "unknown"}</span><small>{ctx.path || ctx.name || "—"}</small></div>)}
+              </div>
               <label>Tags</label><div className="project-chips">{(selected.tags.length ? selected.tags : ["untagged"]).map((tag) => <span key={tag}>{tag}</span>)}</div>
+            </div>}
+
+            {tab === "operations" && <div className="project-tab-panel project-operating-panel">
+              <div className="project-section-head"><b>Next actions</b><span>operator-ready</span></div>
+              <ol className="project-next-actions">{(selected.next_actions || []).map((action) => <li key={action}>{action}</li>)}</ol>
+              <LinkList title="Human bottlenecks" empty="No human-only blockers detected." items={selected.human_bottlenecks} meta={(item) => `${item.kind || "item"} · ${item.status || "pending"} · ${item.owner || "owner unknown"}`} />
+              <LinkList title="Agents" empty="No owning/supporting agents linked yet." items={selected.agents} meta={(item) => `${item.role || "digital coworker"} · ${item.mode || "mode n/a"}`} />
+              <LinkList title="Automations" empty="No recurring workflows linked yet." items={selected.automations} meta={(item) => `${item.enabled ? "enabled" : "paused"} · ${item.status || "unknown"} · ${item.schedule || "manual"}`} />
+              <LinkList title="Goals" empty="No active GOALs linked yet." items={selected.goals} meta={(item) => `${item.status || "active"} · ${item.progress ?? 0}% · ${item.agent_name || item.agent_id || "agent"}`} />
+              <LinkList title="Task Board" empty="No tasks linked yet." items={selected.tasks} meta={(item) => `${item.status || "queued"} · ${item.assignee || "unassigned"}`} />
+              <LinkList title="Skills" empty="No skill playbooks linked yet." items={selected.skills} meta={(item) => `${item.category || "skill"} · ${item.source || "local"} · ${item.readiness || "ready"}`} />
+              {brief && <div className="project-brief"><div className="project-section-head"><b>Generated brief</b><span>copy into agent/task</span></div><pre>{brief}</pre></div>}
             </div>}
 
             {tab === "knowledge" && <div className="project-tab-panel listy">
