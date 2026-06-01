@@ -11,10 +11,10 @@ import { Automations } from "./views/Automations";
 import { TaskBoard } from "./views/TaskBoard";
 import { SkillsHub } from "./views/SkillsHub";
 import { CostDashboard } from "./views/CostDashboard";
+import { SettingsDesktop } from "./views/SettingsDesktop";
 import { MissionControlDocs } from "./views/MissionControlDocs";
 import { LandingPage } from "./views/LandingPage";
 import { LoginPage } from "./views/LoginPage";
-import { Placeholder } from "./views/Placeholder";
 
 const docsPaths = new Set(["/mission-control-docs", "/mission-control-guide", "/docs"]);
 const publicPaths = new Set(["/", "/login"]);
@@ -42,12 +42,7 @@ function Shell() {
         {view === "automations" && <Automations />}
         {view === "audit" && <AuditLog />}
         {view === "costs" && <CostDashboard />}
-        {view === "settings" && (
-          <Placeholder
-            title="Settings"
-            blurb="Gateway connection, model defaults, secrets provider, and workspace conventions."
-          />
-        )}
+        {view === "settings" && <SettingsDesktop />}
       </main>
     </div>
   );
