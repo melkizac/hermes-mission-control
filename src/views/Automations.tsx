@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { AutomationRoutine, AutomationsResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { formatSingaporeTime } from "../utils/time";
+import { SlideOverDrawer } from "../components/SlideOverDrawer";
 
 const client = new HttpHermesClient();
 
@@ -36,7 +37,7 @@ export function Automations() {
       setData(next);
       setError(next.error ?? null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load automations");
+      setError(err instanceof Error ? err.message : "Unable to load routines");
     } finally {
       setLoading(false);
     }
@@ -73,11 +74,11 @@ export function Automations() {
     setError(null);
     try {
       const result = await client.automationAction(automation.id, action);
-      if (!result.ok) throw new Error(result.error || result.stderr || "Automation action failed");
+      if (!result.ok) throw new Error(result.error || result.stderr || "Routine action failed");
       setNotice(`${action} sent for ${automation.name}. ${result.stdout || "Cron state updated."}`.trim());
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Automation action failed");
+      setError(err instanceof Error ? err.message : "Routine action failed");
     } finally {
       setBusy(null);
     }
@@ -87,10 +88,10 @@ export function Automations() {
     <div className="automations-page automations-drawer-first scroll">
       <header className="automations-hero">
         <div>
-          <span className="stub-tag">AI AUTOMATIONS</span>
-          <h1>Automations</h1>
+          <span className="stub-tag">ROUTINE CONTROL</span>
+          <h1>Routines</h1>
           <p>
-            Board-first routine cockpit. Click a routine to inspect schedule, prompt, outputs, and run evidence in a right-side drawer.
+            Recurring and scheduled Hermes work. Click a routine to inspect schedule, prompt, outputs, and run evidence in a right-side drawer.
           </p>
         </div>
         <div className="task-hero-actions">
@@ -111,7 +112,7 @@ export function Automations() {
             <span>Search</span>
             <input value={q} onChange={(event) => setQ(event.target.value)} placeholder="name, skill, schedule, prompt…" />
           </label>
-          <div className="view-switch filter-view-switch" aria-label="Automation view mode">
+          <div className="view-switch filter-view-switch" aria-label="Routine view mode">
             <button className={viewMode === "cards" ? "on" : ""} onClick={() => setViewMode("cards")}>Cards</button>
             <button className={viewMode === "list" ? "on" : ""} onClick={() => setViewMode("list")}>List</button>
           </div>
@@ -288,22 +289,19 @@ function AutomationDrawer({ automation, tab, setTab, busy, onClose, onAction }: 
   const lastRun = automation.recent_runs[0];
   const isBusy = (action: ActionName) => busy === `${automation.id}:${action}`;
   return (
-    <div className="automation-drawer-layer" role="dialog" aria-modal="true" aria-label="Automation details">
-      <button className="automation-drawer-scrim" aria-label="Close automation details" onClick={onClose} />
-      <aside className="automation-detail automation-detail-drawer">
-        <header className="automation-detail-head automation-drawer-head">
-          <div>
-            <span className={`tag ${automation.enabled ? "good" : "muted"}`}>{automation.enabled ? "enabled" : "paused"}</span>
-            <h2>{automation.name}</h2>
-            <p className="mono">{automation.id}</p>
-          </div>
-          <button className="automation-drawer-close" onClick={onClose} aria-label="Close">×</button>
-        </header>
-
-        <div className="automation-drawer-tabs">
-          {(["overview", "execution", "outputs"] as AutomationTab[]).map((item) => <button key={item} className={tab === item ? "on" : ""} onClick={() => setTab(item)}>{item}</button>)}
-        </div>
-
+    <SlideOverDrawer
+      title={automation.name}
+      subtitle={<span className="mono">{automation.id}</span>}
+      eyebrow={automation.enabled ? "enabled" : "paused"}
+      statusClassName={`tag ${automation.enabled ? "good" : "muted"}`}
+      onClose={onClose}
+      closeLabel="Close routine details"
+      ariaLabel="Routine details"
+      tabs={["overview", "execution", "outputs"] as const}
+      activeTab={tab}
+      onTabChange={setTab}
+      className="automation-detail automation-detail-drawer"
+    >
         {tab === "overview" && (
           <>
             <div className="automation-drawer-actions">
@@ -353,8 +351,7 @@ function AutomationDrawer({ automation, tab, setTab, busy, onClose, onAction }: 
             {lastRun && <div className="automation-audit-link">Audit evidence: open Audit Log and search <span className="mono">{lastRun.id}</span></div>}
           </section>
         )}
-      </aside>
-    </div>
+    </SlideOverDrawer>
   );
 }
 

@@ -5,6 +5,8 @@ A mission-control UI for orchestrating multiple [Hermes](https://hermes-agent.no
 inspect their output, edit the files that make up each agent (SOUL.md, MEMORY.md,
 AGENTS.md, config.yaml), manage their skills, and approve gated actions.
 
+Hermes is the worker layer. Mission Control is the management, audit, and trust layer: the control room that makes autonomous agent work visible, accountable, governable, and trustworthy instead of scattered across chats, cron jobs, Kanban records, logs, and tool traces.
+
 > In Hermes, **one agent = one profile** (an isolated `HERMES_HOME`).
 > A **task** = a gateway session/job. **Output** = files in the agent's workspace.
 

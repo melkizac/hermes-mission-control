@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { AuditMessage, AuditSession, AuditSessionDetailResponse, AuditSessionListResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { formatSingaporeTime } from "../utils/time";
+import { SlideOverDrawer } from "../components/SlideOverDrawer";
 
 const client = new HttpHermesClient();
 
@@ -217,52 +218,48 @@ function AuditDrawer({ session, detail, detailLoading, tab, setTab, onClose }: {
   onClose: () => void;
 }) {
   return (
-    <div className="audit-drawer-layer" role="dialog" aria-modal="true" aria-label="Audit session details">
-      <button className="audit-drawer-scrim" aria-label="Close audit details" onClick={onClose} />
-      <aside className="audit-detail audit-detail-drawer">
-        <header className="audit-detail-head audit-drawer-head">
-          <div>
-            <span className={"tag " + (session.status === "running" ? "good" : "muted")}>{session.status}</span>
-            <h2>{session.title}</h2>
-            <p className="mono">{session.id}</p>
+    <SlideOverDrawer
+      title={session.title}
+      subtitle={<span className="mono">{session.id}</span>}
+      eyebrow={session.status}
+      statusClassName={"tag " + (session.status === "running" ? "good" : "muted")}
+      onClose={onClose}
+      closeLabel="Close audit details"
+      ariaLabel="Audit session details"
+      tabs={["summary", "timeline"] as const}
+      activeTab={tab}
+      onTabChange={setTab}
+      className="audit-detail audit-detail-drawer"
+    >
+      {tab === "summary" && (
+        <>
+          <div className="audit-kv">
+            <Info label="Source" value={session.source} />
+            <Info label="Model" value={session.model} />
+            <Info label="Started" value={formatSingaporeTime(session.started_at)} />
+            <Info label="Duration" value={duration(session.duration_seconds)} />
+            <Info label="Messages" value={String(session.message_count)} />
+            <Info label="Tool calls" value={String(session.tool_call_count)} />
+            <Info label="Tokens" value={session.total_tokens.toLocaleString()} />
+            <Info label="Cost" value={money(session.estimated_cost_usd)} />
           </div>
-          <button className="audit-drawer-close" onClick={onClose} aria-label="Close">×</button>
-        </header>
+          <section className="audit-drawer-section">
+            <h3>Preview</h3>
+            <pre>{session.preview || "No preview available."}</pre>
+          </section>
+        </>
+      )}
 
-        <div className="audit-drawer-tabs">
-          {(["summary", "timeline"] as AuditTab[]).map((item) => <button key={item} className={tab === item ? "on" : ""} onClick={() => setTab(item)}>{item}</button>)}
-        </div>
-
-        {tab === "summary" && (
-          <>
-            <div className="audit-kv">
-              <Info label="Source" value={session.source} />
-              <Info label="Model" value={session.model} />
-              <Info label="Started" value={formatSingaporeTime(session.started_at)} />
-              <Info label="Duration" value={duration(session.duration_seconds)} />
-              <Info label="Messages" value={String(session.message_count)} />
-              <Info label="Tool calls" value={String(session.tool_call_count)} />
-              <Info label="Tokens" value={session.total_tokens.toLocaleString()} />
-              <Info label="Cost" value={money(session.estimated_cost_usd)} />
-            </div>
-            <section className="audit-drawer-section">
-              <h3>Preview</h3>
-              <pre>{session.preview || "No preview available."}</pre>
-            </section>
-          </>
-        )}
-
-        {tab === "timeline" && (
-          <>
-            <div className="timeline-title"><span>Chronological trace</span>{detailLoading && <small>Loading detail…</small>}</div>
-            <div className="audit-timeline">
-              {(detail?.messages ?? []).map((message) => <TimelineItem key={message.id} message={message} />)}
-              {!detailLoading && (detail?.messages ?? []).length === 0 && <div className="empty">No messages recorded for this session.</div>}
-            </div>
-          </>
-        )}
-      </aside>
-    </div>
+      {tab === "timeline" && (
+        <>
+          <div className="timeline-title"><span>Chronological trace</span>{detailLoading && <small>Loading detail…</small>}</div>
+          <div className="audit-timeline">
+            {(detail?.messages ?? []).map((message) => <TimelineItem key={message.id} message={message} />)}
+            {!detailLoading && (detail?.messages ?? []).length === 0 && <div className="empty">No messages recorded for this session.</div>}
+          </div>
+        </>
+      )}
+    </SlideOverDrawer>
   );
 }
 

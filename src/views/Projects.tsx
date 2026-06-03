@@ -158,7 +158,7 @@ export function Projects() {
               <span>{project.knowledge.length} notes</span>
               <span>{project.artifacts.length} artifacts</span>
               <span>{project.operating_counts?.agents ?? project.agents?.length ?? 0} agents</span>
-              <span>{project.operating_counts?.automations ?? project.automations?.length ?? 0} automations</span>
+              <span>{project.operating_counts?.automations ?? project.automations?.length ?? 0} routines</span>
             </div>
             <div className="project-path">{project.path || "No workspace path linked"}</div>
           </article>
@@ -181,7 +181,7 @@ export function Projects() {
             </div>
             <div className="project-ops-summary">
               <div><b>{selected.operating_counts?.agents ?? selected.agents?.length ?? 0}</b><span>Agents</span></div>
-              <div><b>{selected.operating_counts?.automations ?? selected.automations?.length ?? 0}</b><span>Automations</span></div>
+              <div><b>{selected.operating_counts?.automations ?? selected.automations?.length ?? 0}</b><span>Routines</span></div>
               <div><b>{selected.operating_counts?.goals ?? selected.goals?.length ?? 0}</b><span>Goals</span></div>
               <div><b>{selected.operating_counts?.skills ?? selected.skills?.length ?? 0}</b><span>Skills</span></div>
               <div><b>{selected.operating_counts?.bottlenecks ?? selected.human_bottlenecks?.length ?? 0}</b><span>Bottlenecks</span></div>
@@ -212,7 +212,7 @@ export function Projects() {
               <ol className="project-next-actions">{(selected.next_actions || []).map((action) => <li key={action}>{action}</li>)}</ol>
               <LinkList title="Human bottlenecks" empty="No human-only blockers detected." items={selected.human_bottlenecks} meta={(item) => `${item.kind || "item"} · ${item.status || "pending"} · ${item.owner || "owner unknown"}`} />
               <LinkList title="Agents" empty="No owning/supporting agents linked yet." items={selected.agents} meta={(item) => `${item.role || "digital coworker"} · ${item.mode || "mode n/a"}`} />
-              <LinkList title="Automations" empty="No recurring workflows linked yet." items={selected.automations} meta={(item) => `${item.enabled ? "enabled" : "paused"} · ${item.status || "unknown"} · ${item.schedule || "manual"}`} />
+              <LinkList title="Routines" empty="No recurring routines linked yet." items={selected.automations} meta={(item) => `${item.enabled ? "enabled" : "paused"} · ${item.status || "unknown"} · ${item.schedule || "manual"}`} />
               <LinkList title="Goals" empty="No active GOALs linked yet." items={selected.goals} meta={(item) => `${item.status || "active"} · ${item.progress ?? 0}% · ${item.agent_name || item.agent_id || "agent"}`} />
               <LinkList title="Task Board" empty="No tasks linked yet." items={selected.tasks} meta={(item) => `${item.status || "queued"} · ${item.assignee || "unassigned"}`} />
               <LinkList title="Skills" empty="No skill playbooks linked yet." items={selected.skills} meta={(item) => `${item.category || "skill"} · ${item.source || "local"} · ${item.readiness || "ready"}`} />

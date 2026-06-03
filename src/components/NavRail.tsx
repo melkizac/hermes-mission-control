@@ -4,20 +4,47 @@ import { Icon } from "./Icon";
 import logoUrl from "../assets/melverick-os-logo.jpg";
 import type { ViewKey } from "../types";
 
-const items: { key: ViewKey; label: string; icon: Parameters<typeof Icon>[0]["name"] }[] = [
-  { key: "mission", label: "Mission Control", icon: "mission" },
-  { key: "agents", label: "Agents", icon: "board" },
-  { key: "agent-org", label: "Agent Org", icon: "automations" },
-  { key: "projects", label: "Projects", icon: "projects" },
-  { key: "second-brain", label: "Second Brain", icon: "skills" },
-  { key: "board", label: "Task Board", icon: "board" },
-  { key: "skills", label: "Skills Hub", icon: "skills" },
-  { key: "approvals", label: "Approvals", icon: "approvals" },
-  { key: "automations", label: "Automations", icon: "automations" },
-  { key: "audit", label: "Audit Log", icon: "audit" },
-  { key: "costs", label: "Costs", icon: "costs" },
-  { key: "settings", label: "Settings", icon: "settings" },
+type NavItem = { key: ViewKey; label: string; icon: Parameters<typeof Icon>[0]["name"] };
+
+type NavGroup = { label: string; items: NavItem[] };
+
+const primaryGroups: NavGroup[] = [
+  {
+    label: "Operate",
+    items: [
+      { key: "mission", label: "Mission Control", icon: "mission" },
+      { key: "agents", label: "Agents", icon: "agents" },
+      { key: "board", label: "Task Board", icon: "board" },
+      { key: "approvals", label: "Approval Gates", icon: "approvals" },
+    ],
+  },
+  {
+    label: "Work",
+    items: [
+      { key: "projects", label: "Projects", icon: "projects" },
+      { key: "automations", label: "Routines", icon: "automations" },
+    ],
+  },
 ];
+
+const adminItems: NavItem[] = [
+  { key: "settings", label: "Admin Overview", icon: "dashboard" },
+  { key: "agent-org", label: "Agent Org", icon: "agentOrg" },
+  { key: "models", label: "Model Router", icon: "modelRouter" },
+  { key: "costs", label: "Costs", icon: "costs" },
+  { key: "audit", label: "Audit Log", icon: "audit" },
+];
+
+const setupItems: NavItem[] = [
+  { key: "runtimes", label: "Runtime Connectors", icon: "runtimes" },
+  { key: "tools", label: "Tools", icon: "setup" },
+  { key: "skills", label: "Skills", icon: "skills" },
+  { key: "second-brain", label: "Second Brain", icon: "secondBrain" },
+];
+
+const adminKeys = new Set<ViewKey>(adminItems.map((item) => item.key));
+const setupKeys = new Set<ViewKey>(setupItems.map((item) => item.key));
+const settingsKeys = new Set<ViewKey>(["profile", ...adminItems.map((item) => item.key), ...setupItems.map((item) => item.key)]);
 
 type RailStatus = {
   runtime?: { version?: string; profiles?: number };
@@ -44,6 +71,9 @@ async function requestStatus(): Promise<RailStatus> {
 export function NavRail() {
   const { view, setView, approvals, agents } = useStore();
   const [status, setStatus] = useState<RailStatus | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(() => settingsKeys.has(view));
+  const [adminOpen, setAdminOpen] = useState(() => adminKeys.has(view));
+  const [setupOpen, setSetupOpen] = useState(() => setupKeys.has(view));
 
   useEffect(() => {
     let alive = true;
@@ -63,7 +93,7 @@ export function NavRail() {
     };
   }, []);
 
-  const fallbackActive = agents.filter((a) => a.status === "working" || a.status === "waiting").length;
+  const fallbackActive = agents.filter((a) => a.status === "active" || a.status === "working" || a.status === "waiting").length;
   const activeSessions = status?.sessions?.active_recent ?? fallbackActive;
   const totalSessions = status?.sessions?.total ?? agents.reduce((n, a) => n + a.sessionCount, 0);
   const sessionPercent = useMemo(() => {
@@ -72,6 +102,18 @@ export function NavRail() {
   }, [activeSessions, totalSessions]);
   const gatewayOnline = status?.gateway?.running ?? true;
   const systemStatus = systemLabel(gatewayOnline, activeSessions);
+
+  async function handleLogout() {
+    try {
+      await fetch(`${window.location.protocol}//${window.location.host}/api/logout`, {
+        method: "POST",
+        credentials: "include",
+        headers: { Accept: "application/json" },
+      });
+    } finally {
+      window.location.href = "/login";
+    }
+  }
 
   return (
     <nav className="rail">
@@ -84,28 +126,24 @@ export function NavRail() {
       </div>
 
       <div className="nav scroll">
-        {items.map((it, i) => (
-          <div key={it.key}>
-            {i === 2 && <div className="nlabel">Manage</div>}
-            <button
-              className={"nitem" + (view === it.key ? " on" : "")}
-              onClick={() => setView(it.key)}
-            >
-              <Icon name={it.icon} size={17} />
-              {it.label}
-              {it.key === "approvals" && approvals.length > 0 && (
-                <span className="pill">{approvals.length}</span>
-              )}
-            </button>
+        {primaryGroups.map((group) => (
+          <div className="nav-group" key={group.label}>
+            <div className="nlabel">{group.label}</div>
+            {group.items.map((it) => (
+              <button
+                key={it.key}
+                className={"nitem" + (view === it.key ? " on" : "")}
+                onClick={() => setView(it.key)}
+              >
+                <Icon name={it.icon} size={17} />
+                {it.label}
+                {it.key === "approvals" && approvals.length > 0 && (
+                  <span className="pill">{approvals.length}</span>
+                )}
+              </button>
+            ))}
           </div>
         ))}
-        <div>
-          <div className="nlabel">Help</div>
-          <a className="nitem nlink" href="/mission-control-docs">
-            <Icon name="file" size={17} />
-            Docs
-          </a>
-        </div>
       </div>
 
       <div className="gw">
@@ -121,6 +159,104 @@ export function NavRail() {
           </div>
         )}
         <a className="sub status-link" href="/docs#daily-flow">View docs →</a>
+      </div>
+
+      <div className={"settings-dock" + (settingsOpen ? " open" : "")}>
+        <button
+          className={"settings-trigger" + (settingsKeys.has(view) ? " on" : "")}
+          aria-expanded={settingsOpen}
+          aria-controls="settings-menu"
+          onClick={() => setSettingsOpen((open) => !open)}
+        >
+          <Icon name="settings" size={17} />
+          Settings
+          <span className="nav-caret">{settingsOpen ? "⌃" : "⌄"}</span>
+        </button>
+        {settingsOpen && (
+          <div className="settings-menu" id="settings-menu">
+            <button
+              className={"settings-menu-item" + (view === "profile" ? " on" : "")}
+              onClick={() => {
+                setSettingsOpen(true);
+                setView("profile");
+              }}
+            >
+              <Icon name="profile" size={15} />
+              Profile
+            </button>
+            <button className="settings-menu-item" onClick={() => void handleLogout()}>
+              <Icon name="logout" size={15} />
+              Logout
+            </button>
+            <div className="settings-menu-divider" />
+            <button
+              className={"settings-menu-item settings-parent" + (adminKeys.has(view) ? " on" : "")}
+              aria-expanded={adminOpen}
+              onClick={() => {
+                if (adminKeys.has(view)) {
+                  setAdminOpen((open) => !open);
+                } else {
+                  setAdminOpen(true);
+                  setView("settings");
+                }
+              }}
+            >
+              <Icon name="admin" size={15} />
+              Admin
+              <span className="nav-caret">{adminOpen ? "⌃" : "⌄"}</span>
+            </button>
+            {adminOpen && (
+              <div className="settings-submenu">
+                {adminItems.map((it) => (
+                  <button
+                    key={it.key}
+                    className={"settings-menu-item settings-subitem" + (view === it.key ? " on" : "")}
+                    onClick={() => {
+                      setAdminOpen(true);
+                      setView(it.key);
+                    }}
+                  >
+                    <Icon name={it.icon} size={14} />
+                    {it.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button
+              className={"settings-menu-item settings-parent" + (setupKeys.has(view) ? " on" : "")}
+              aria-expanded={setupOpen}
+              onClick={() => {
+                if (setupKeys.has(view)) {
+                  setSetupOpen((open) => !open);
+                } else {
+                  setSetupOpen(true);
+                  setView("runtimes");
+                }
+              }}
+            >
+              <Icon name="setup" size={15} />
+              Setup
+              <span className="nav-caret">{setupOpen ? "⌃" : "⌄"}</span>
+            </button>
+            {setupOpen && (
+              <div className="settings-submenu">
+                {setupItems.map((it) => (
+                  <button
+                    key={it.key}
+                    className={"settings-menu-item settings-subitem" + (view === it.key ? " on" : "")}
+                    onClick={() => {
+                      setSetupOpen(true);
+                      setView(it.key);
+                    }}
+                  >
+                    <Icon name={it.icon} size={14} />
+                    {it.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </nav>
   );

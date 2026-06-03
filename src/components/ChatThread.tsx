@@ -1,17 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent } from "react";
 import { useStore } from "../services/store";
 import { Icon } from "./Icon";
-import type { Agent, Attachment, Message, ReplyContext } from "../types";
+import type { Agent, Attachment, Message, ModelRoutingSelection, ProjectChatResponse, ReplyContext, RouterConfig } from "../types";
 import { formatSingaporeTime } from "../utils/time";
 
 const ONE_DAY_SECONDS = 24 * 60 * 60;
 
 const statusPill: Record<string, { bg: string; fg: string; dot: string }> = {
+  active: { bg: "var(--good-soft)", fg: "#0f7a37", dot: "#15a34a" },
   working: { bg: "var(--good-soft)", fg: "#0f7a37", dot: "#15a34a" },
-  waiting: { bg: "var(--warn-soft)", fg: "#9a5e07", dot: "#e8941b" },
   idle: { bg: "#eef0f3", fg: "#7b8494", dot: "#aab2bf" },
+  degraded: { bg: "var(--warn-soft)", fg: "#9a5e07", dot: "#e8941b" },
+  waiting: { bg: "var(--warn-soft)", fg: "#9a5e07", dot: "#e8941b" },
+  offline: { bg: "var(--bad-soft)", fg: "#b62a2a", dot: "#dc4040" },
   error: { bg: "var(--bad-soft)", fg: "#b62a2a", dot: "#dc4040" },
-  offline: { bg: "#eef0f3", fg: "#7b8494", dot: "#aab2bf" },
 };
 
 function visibleMessageKey(m: Message) {
@@ -64,12 +66,37 @@ function replyContextForMessage(m: Message, agent: Agent): ReplyContext {
   };
 }
 
+function formatRunDuration(ms: number) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function agentGroupLabel(name: string) {
+  return name.replace(/channels/gi, (match) => (match[0] === "C" ? "Groups" : "groups"));
+}
+
 function replyPreviewText(reply: ReplyContext) {
   return reply.text.replace(/\s+/g, " ").trim().slice(0, 220) || "Message without text";
 }
 
-export function ChatThread({ agent, onOpenDetails }: { agent: Agent; onOpenDetails?: () => void }) {
-  const { send, stopProcessing, uploadAttachment, refreshSelected } = useStore();
+export function ChatThread({
+  agent,
+  onOpenDetails,
+  projectChats,
+  selectedProjectId = "all",
+  selectedSessionId = "all",
+}: {
+  agent: Agent;
+  onOpenDetails?: () => void;
+  projectChats?: ProjectChatResponse | null;
+  selectedProjectId?: string;
+  selectedSessionId?: string;
+}) {
+  const { send, stopProcessing, uploadAttachment, refreshSelected, getModelRouter } = useStore();
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [replyTo, setReplyTo] = useState<ReplyContext | null>(null);
@@ -77,27 +104,143 @@ export function ChatThread({ agent, onOpenDetails }: { agent: Agent; onOpenDetai
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingMessage, setPendingMessage] = useState<{ text: string; attachments: Attachment[]; replyTo?: ReplyContext } | null>(null);
+  const [processingStartedAt, setProcessingStartedAt] = useState<number | null>(null);
+  const [processingNow, setProcessingNow] = useState(() => Date.now());
+  const [routerConfig, setRouterConfig] = useState<RouterConfig | null>(null);
+  const [modelSelection, setModelSelection] = useState(() => window.localStorage.getItem("hmc:model-selection") || "auto");
   const [lastSeenKey, setLastSeenKey] = useState<string | null | undefined>(undefined);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const threadRef = useRef<HTMLDivElement | null>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activeRequestRef = useRef<{ id: string; controller: AbortController } | null>(null);
   const unreadRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
-  const p = statusPill[agent.status];
+  const p = statusPill[agent.status] || statusPill.degraded;
   const storageKey = `hmc:last-seen-message:${agent.id}`;
+  const enabledModels = useMemo(() => (routerConfig?.models ?? []).filter((model) => model.enabled), [routerConfig]);
+  const selectedModel = useMemo(() => enabledModels.find((model) => model.id === modelSelection), [enabledModels, modelSelection]);
+  const modelRouting: ModelRoutingSelection = selectedModel ? { mode: "manual", modelId: selectedModel.id } : { mode: "auto" };
+  const modelSelectorLabel = selectedModel
+    ? `${selectedModel.label || selectedModel.model} · ${selectedModel.tier}${selectedModel.authorized ? "" : " · key missing"}`
+    : routerConfig?.enabled === false
+      ? "Default Hermes model"
+      : "Auto-select by complexity";
+  const projectSessions = useMemo(
+    () => (projectChats?.sessions ?? []).filter((session) => selectedProjectId === "all" || session.project_id === selectedProjectId),
+    [projectChats, selectedProjectId],
+  );
+  const scopedSessionIds = useMemo(() => new Set(projectSessions.map((session) => session.id)), [projectSessions]);
+  const scopedMessages = useMemo(() => {
+    if (selectedSessionId !== "all") return agent.messages.filter((m) => m.sessionId === selectedSessionId || m.requestId?.includes(selectedSessionId));
+    if (selectedProjectId !== "all") return agent.messages.filter((m) => m.projectId === selectedProjectId || (!m.projectId && (!m.sessionId || scopedSessionIds.has(m.sessionId))));
+    return agent.messages;
+  }, [agent.messages, scopedSessionIds, selectedProjectId, selectedSessionId]);
+  const activeProjectName = useMemo(
+    () => projectChats?.projects.find((project) => project.id === selectedProjectId)?.name,
+    [projectChats, selectedProjectId],
+  );
+  const activeSessionTitle = useMemo(
+    () => projectSessions.find((session) => session.id === selectedSessionId)?.title,
+    [projectSessions, selectedSessionId],
+  );
   const sortedMessages = useMemo(
     () =>
-      [...agent.messages].sort(
+      [...scopedMessages].sort(
         (a, b) =>
           (a.ts ?? 0) - (b.ts ?? 0) ||
           (String(a.id).startsWith("session-") ? 0 : 1) - (String(b.id).startsWith("session-") ? 0 : 1) ||
           String(a.id).localeCompare(String(b.id)),
       ),
-    [agent.messages],
+    [scopedMessages],
   );
   const readableMessages = useMemo(() => sortedMessages.filter(isReadableMessage), [sortedMessages]);
   const latestMessageKey = readableMessages.length ? visibleMessageKey(readableMessages[readableMessages.length - 1]) : null;
+  const activeBackendRequestId = useMemo(() => {
+    const activeIds = new Set(agent.processingRequests ?? []);
+    if (!activeIds.size) return null;
+    const activeUserRequests = [...sortedMessages]
+      .reverse()
+      .filter((m) => m.role === "user" && m.requestId && activeIds.has(m.requestId));
+    for (const userMessage of activeUserRequests) {
+      const completed = sortedMessages.some((m) => m.requestId === userMessage.requestId && (m.role === "agent" || m.role === "system"));
+      if (!completed) return userMessage.requestId ?? null;
+    }
+    return agent.processingRequests?.[0] ?? null;
+  }, [agent.processingRequests, sortedMessages]);
+  const activeBackendRequestDetail = useMemo(
+    () => (agent.processingRequestDetails ?? []).find((item) => item.id === activeBackendRequestId),
+    [activeBackendRequestId, agent.processingRequestDetails],
+  );
+  const activeBackendUserMessage = useMemo(
+    () => sortedMessages.find((m) => m.role === "user" && m.requestId === activeBackendRequestId),
+    [activeBackendRequestId, sortedMessages],
+  );
+  const activeBackendStartedAt = activeBackendUserMessage?.ts
+    ? activeBackendUserMessage.ts * 1000
+    : activeBackendRequestDetail?.started_at
+      ? activeBackendRequestDetail.started_at * 1000
+      : null;
+  const isProcessing = sending || Boolean(activeBackendRequestId);
+  const effectiveProcessingStartedAt = processingStartedAt ?? activeBackendStartedAt;
+  const processingElapsedLabel = effectiveProcessingStartedAt ? formatRunDuration(processingNow - effectiveProcessingStartedAt) : "0:00";
+
+  const resizeComposerInput = () => {
+    const input = composerInputRef.current;
+    if (!input) return;
+    input.style.height = "auto";
+    const styles = window.getComputedStyle(input);
+    const lineHeight = Number.parseFloat(styles.lineHeight) || 20;
+    const paddingY = Number.parseFloat(styles.paddingTop || "0") + Number.parseFloat(styles.paddingBottom || "0");
+    const maxHeight = lineHeight * 10 + paddingY;
+    const nextHeight = Math.min(input.scrollHeight, maxHeight);
+    input.style.height = `${nextHeight}px`;
+    input.style.overflowY = input.scrollHeight > maxHeight + 1 ? "auto" : "hidden";
+  };
+
+  useLayoutEffect(() => {
+    resizeComposerInput();
+  }, [draft]);
+
+  useEffect(() => {
+    const onResize = () => resizeComposerInput();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  useEffect(() => {
+    if (!effectiveProcessingStartedAt) return;
+    setProcessingNow(Date.now());
+    const timer = window.setInterval(() => setProcessingNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [effectiveProcessingStartedAt]);
+
+  useEffect(() => {
+    if (!activeBackendRequestId) return;
+    const poll = window.setInterval(() => void refreshSelected().catch(() => undefined), 3000);
+    return () => window.clearInterval(poll);
+  }, [activeBackendRequestId, refreshSelected]);
+
+  useEffect(() => {
+    let alive = true;
+    void getModelRouter()
+      .then((cfg) => {
+        if (!alive) return;
+        setRouterConfig(cfg);
+        const exists = modelSelection === "auto" || (cfg.models ?? []).some((model) => model.enabled && model.id === modelSelection);
+        if (!exists) setModelSelection("auto");
+      })
+      .catch(() => {
+        if (alive) setRouterConfig(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [getModelRouter, modelSelection]);
+
+  useEffect(() => {
+    window.localStorage.setItem("hmc:model-selection", modelSelection);
+  }, [modelSelection]);
 
   useEffect(() => {
     const previousSeen = window.localStorage.getItem(storageKey);
@@ -151,7 +294,7 @@ export function ChatThread({ agent, onOpenDetails }: { agent: Agent; onOpenDetai
     const text = draft.trim();
     const sentAttachments = attachments;
     const sentReplyTo = replyTo;
-    if ((!text && sentAttachments.length === 0) || sending || uploading) return;
+    if ((!text && sentAttachments.length === 0) || isProcessing || uploading) return;
     const controller = new AbortController();
     const requestId = `ui-${agent.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     activeRequestRef.current = { id: requestId, controller };
@@ -159,10 +302,13 @@ export function ChatThread({ agent, onOpenDetails }: { agent: Agent; onOpenDetai
     setAttachments([]);
     setReplyTo(null);
     setPendingMessage({ text, attachments: sentAttachments, replyTo: sentReplyTo ?? undefined });
+    const startedAt = Date.now();
+    setProcessingStartedAt(startedAt);
+    setProcessingNow(startedAt);
     setSending(true);
     setError(null);
     try {
-      await send(text, sentAttachments, { signal: controller.signal, requestId, replyTo: sentReplyTo ?? undefined });
+      await send(text, sentAttachments, { signal: controller.signal, requestId, replyTo: sentReplyTo ?? undefined, modelRouting });
     } catch (err) {
       if (controller.signal.aborted) {
         setError("Stopped the current message before it was added to the chat.");
@@ -185,35 +331,39 @@ export function ChatThread({ agent, onOpenDetails }: { agent: Agent; onOpenDetai
     } finally {
       if (activeRequestRef.current?.id === requestId) activeRequestRef.current = null;
       setPendingMessage(null);
+      setProcessingStartedAt(null);
       setSending(false);
     }
   };
 
   const stopCurrentMessage = async () => {
     const active = activeRequestRef.current;
-    if (!active) return;
-    active.controller.abort();
+    const requestId = active?.id ?? activeBackendRequestId ?? undefined;
+    if (!requestId) return;
+    active?.controller.abort();
     setPendingMessage(null);
+    setProcessingStartedAt(null);
     setSending(false);
     setError("Stopping current message…");
     try {
-      await stopProcessing(active.id);
+      await stopProcessing(requestId);
       setReplyTo(null);
-      setError("Stopped the current message before it was added to the chat.");
+      await refreshSelected().catch(() => undefined);
+      setError("Stopped the current message before it finished processing.");
     } catch (err) {
       setError(err instanceof Error ? `Stopped locally, but backend stop failed: ${err.message}` : "Stopped locally, but backend stop failed");
     } finally {
-      if (activeRequestRef.current?.id === active.id) activeRequestRef.current = null;
+      if (active && activeRequestRef.current?.id === active.id) activeRequestRef.current = null;
     }
   };
 
-  const onPickFiles = async (files: FileList | null) => {
-    if (!files?.length) return;
+  const uploadFiles = async (files: File[]) => {
+    if (!files.length) return;
     setUploading(true);
     setError(null);
     try {
       const uploaded: Attachment[] = [];
-      for (const file of Array.from(files).slice(0, 8 - attachments.length)) {
+      for (const file of files.slice(0, 8 - attachments.length)) {
         if (file.size > 10 * 1024 * 1024) {
           throw new Error(`${file.name} is larger than the 10 MB upload limit`);
         }
@@ -228,18 +378,47 @@ export function ChatThread({ agent, onOpenDetails }: { agent: Agent; onOpenDetai
     }
   };
 
+  const onPickFiles = async (files: FileList | null) => {
+    await uploadFiles(files ? Array.from(files) : []);
+  };
+
+  const handlePasteIntoChat = (event: ClipboardEvent<HTMLDivElement>) => {
+    if (isProcessing || uploading) return;
+    const target = event.target as HTMLElement | null;
+    const isNativeEditable = Boolean(target?.closest("input, textarea, select, [contenteditable='true']"));
+    const clipboard = event.clipboardData;
+    const fileItems = Array.from(clipboard.items ?? [])
+      .filter((item) => item.kind === "file")
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => Boolean(file));
+    const pastedFiles = fileItems.length ? fileItems : Array.from(clipboard.files ?? []);
+
+    if (pastedFiles.length > 0) {
+      event.preventDefault();
+      void uploadFiles(pastedFiles);
+      window.requestAnimationFrame(() => composerInputRef.current?.focus());
+      return;
+    }
+
+    const text = clipboard.getData("text/plain");
+    if (!text || isNativeEditable) return;
+    event.preventDefault();
+    setDraft((current) => `${current}${current && !current.endsWith("\n") ? "\n" : ""}${text}`);
+    window.requestAnimationFrame(() => composerInputRef.current?.focus());
+  };
+
   return (
-    <div className="center">
+    <div className="center" onPaste={handlePasteIntoChat}>
       <div className="chead">
         <span className="av" style={{ background: agent.color }}>
           {agent.initials}
         </span>
         <div className="nm">
-          {agent.name} — {agent.squad} Agent
+          {agent.name} — {agentGroupLabel(agent.squad)} Agent
         </div>
         <span className="statuspill" style={{ background: p.bg, color: p.fg }}>
           <span className="sdot" style={{ background: p.dot }} />
-          {agent.status} · session #{agent.sessionCount}
+          {agent.statusLabel || agent.status} · {agent.activityState || agent.availability || "runtime"} · session #{agent.sessionCount}
         </span>
         <div className="right">
           {onOpenDetails && (
@@ -254,7 +433,13 @@ export function ChatThread({ agent, onOpenDetails }: { agent: Agent; onOpenDetai
       </div>
 
       <div className="thread scroll" ref={threadRef} onScroll={updateJumpButton}>
-        <div className="divider">Unified Hermes chat history · Terminal + Telegram + Web UI</div>
+        <div className="divider">
+          {selectedSessionId !== "all"
+            ? `Session view · ${activeSessionTitle ?? selectedSessionId}`
+            : selectedProjectId !== "all"
+              ? `Project view · ${activeProjectName ?? selectedProjectId}`
+              : "Global Command Chat · sorted into projects and sessions"}
+        </div>
         {sortedMessages.length === 0 && (
           <div className="empty" style={{ marginTop: 30 }}>
             No messages yet. Send {agent.name} a task below.
@@ -270,10 +455,22 @@ export function ChatThread({ agent, onOpenDetails }: { agent: Agent; onOpenDetai
             <MessageView m={m} agent={agent} onReply={(message) => setReplyTo(replyContextForMessage(message, agent))} />
           </div>
         ))}
-        {pendingMessage && (
+        {(pendingMessage || activeBackendRequestId) && (
           <>
-            <MessageView m={{ id: "pending-user", role: "user", text: pendingMessage.text, attachments: pendingMessage.attachments, replyTo: pendingMessage.replyTo, at: "just now" }} agent={agent} />
-            <AgentThinking agent={agent} />
+            {pendingMessage && (
+              <MessageView m={{ id: "pending-user", role: "user", text: pendingMessage.text, attachments: pendingMessage.attachments, replyTo: pendingMessage.replyTo, at: "just now" }} agent={agent} />
+            )}
+            <div className="processing-inline" role="status" aria-live="polite" aria-label={`${agent.name} is processing your message`}>
+              <span className="processing-inline-dots" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+              <span>{agent.name} is processing…</span>
+              <span className="processing-inline-timer" aria-label={`Elapsed processing time ${processingElapsedLabel}`} title="Elapsed processing time">
+                {processingElapsedLabel}
+              </span>
+            </div>
           </>
         )}
         <div ref={bottomRef} />
@@ -315,78 +512,71 @@ export function ChatThread({ agent, onOpenDetails }: { agent: Agent; onOpenDetai
             ))}
           </div>
         )}
-        <div className="cbox">
-          <button
-            className="plus"
-            type="button"
-            disabled={sending || uploading || attachments.length >= 8}
-            onClick={() => fileInputRef.current?.click()}
-            aria-label="Attach image or file"
-            title="Attach image or file"
-          >
-            <Icon name="plus" size={18} />
-          </button>
-          <input
-            ref={fileInputRef}
-            className="file-input"
-            type="file"
-            multiple
-            accept="image/*,.txt,.md,.csv,.json,.yaml,.yml,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
-            onChange={(e) => void onPickFiles(e.currentTarget.files)}
-          />
-          <input
-            placeholder={uploading ? "Uploading attachment…" : sending ? `Sending to ${agent.name}…` : `Send a task or message to ${agent.name}…`}
+        <div className="cbox composer-card">
+          <textarea
+            ref={composerInputRef}
+            className="composer-input"
+            placeholder={uploading ? "Uploading attachment…" : isProcessing ? `${agent.name} is processing…` : `Send a task or message to ${agent.name}…`}
             value={draft}
-            disabled={sending || uploading}
+            disabled={isProcessing || uploading}
+            rows={1}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
+              if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 void submit();
               }
             }}
           />
-          <button
-            className={sending ? "send stop-send" : "send"}
-            type="button"
-            onClick={() => (sending ? void stopCurrentMessage() : void submit())}
-            disabled={uploading || (!sending && !draft.trim() && attachments.length === 0)}
-            aria-label={sending ? "Stop current message processing" : "Send message"}
-            title={sending ? "Stop current message processing" : "Send message"}
-          >
-            {sending ? <Icon name="stop" size={15} /> : uploading ? "…" : <Icon name="send" size={16} />}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AgentThinking({ agent }: { agent: Agent }) {
-  return (
-    <div className="msg thinking-msg" aria-live="polite" aria-label={`${agent.name} is processing your last instruction`}>
-      <span className="av thinking-avatar" style={{ background: agent.color }}>
-        <span className="orbit-dot" />
-        {agent.initials}
-      </span>
-      <div>
-        <div className="who">
-          {agent.name} <span className="t">processing now</span>
-        </div>
-        <div className="thinking-card">
-          <div className="thinking-orb" aria-hidden="true">
-            <span />
-            <span />
-            <span />
-          </div>
-          <div className="thinking-copy">
-            <b>Thinking through the instruction</b>
-            <span>Reading context, planning the next move, and preparing a response…</span>
-          </div>
-          <div className="thinking-steps" aria-hidden="true">
-            <i />
-            <i />
-            <i />
+          <div className="composer-control-row">
+            <button
+              className="plus"
+              type="button"
+              disabled={isProcessing || uploading || attachments.length >= 8}
+              onClick={() => fileInputRef.current?.click()}
+              aria-label="Attach image or file"
+              title="Attach image or file"
+            >
+              <Icon name="plus" size={20} />
+            </button>
+            <input
+              ref={fileInputRef}
+              className="file-input"
+              type="file"
+              multiple
+              accept="image/*,.txt,.md,.csv,.json,.yaml,.yml,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
+              onChange={(e) => void onPickFiles(e.currentTarget.files)}
+            />
+            <div className="composer-spacer" />
+            <label className="model-selector-row" title={modelSelectorLabel}>
+              <span className="sr-only">Model</span>
+              <select
+                value={selectedModel ? selectedModel.id : "auto"}
+                onChange={(e) => setModelSelection(e.target.value)}
+                disabled={isProcessing || uploading}
+                aria-label="Select AI model for this message"
+              >
+                <option value="auto">Auto</option>
+                {enabledModels.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {(model.label || model.model)} · {model.tier}{model.authorized ? "" : " · key missing"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button className="mic" type="button" disabled aria-label="Voice input unavailable" title="Voice input unavailable">
+              <Icon name="mic" size={18} />
+            </button>
+            <button
+              className={isProcessing ? "send stop-send" : "send"}
+              type="button"
+              onClick={() => (isProcessing ? void stopCurrentMessage() : void submit())}
+              disabled={uploading || (!isProcessing && !draft.trim() && attachments.length === 0)}
+              aria-label={isProcessing ? "Stop current message processing" : "Send message"}
+              title={isProcessing ? "Stop current message processing" : "Send message"}
+            >
+              {isProcessing ? <Icon name="stop" size={15} /> : uploading ? "…" : <Icon name="send" size={18} />}
+            </button>
           </div>
         </div>
       </div>

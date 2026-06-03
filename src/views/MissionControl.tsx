@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useStore } from "../services/store";
-import { Icon } from "../components/Icon";
-import type { AutomationsResponse, BoardResponse, CostsResponse, InboxResponse, ProjectsResponse, SecondBrainResponse } from "../types";
+import type { AutomationsResponse, BoardResponse, CostsResponse, InboxResponse, ProjectsResponse, SecondBrainResponse, ViewKey } from "../types";
 import { formatSingaporeShort, formatSingaporeTime, singaporeHour } from "../utils/time";
 
 type RuntimeStatus = {
   now: string;
+  mode?: string;
+  demo?: boolean;
   runtime?: { version?: string; profiles?: number };
   api: { health?: { ok?: boolean }; models?: string[]; error?: string | null };
   gateway: { running?: boolean; processes?: string[] };
@@ -33,6 +34,13 @@ type LoadState = {
   board: BoardResponse | null;
   projects: ProjectsResponse | null;
   brain: SecondBrainResponse | null;
+};
+
+type CockpitLink = {
+  title: string;
+  detail: string;
+  view: ViewKey;
+  tone?: "neutral" | "warn" | "bad";
 };
 
 async function request<T>(path: string): Promise<T> {
@@ -102,177 +110,181 @@ export function MissionControl() {
   const gatewayOk = Boolean(status?.gateway?.running);
   const inboxSummary = data.inbox?.summary;
   const highRisk = inboxSummary?.high_risk ?? data.inbox?.items.filter((i) => i.risk === "high" || i.risk === "critical").length ?? 0;
-  const failedAutomations = data.automations?.summary.error ?? 0;
+  const failedRoutines = data.automations?.summary.error ?? 0;
   const blockedTasks = (data.board?.summary.blocked ?? 0) + (data.board?.summary.error ?? 0);
-  const totalAttention = (inboxSummary?.drafted ?? approvals.length) + highRisk + failedAutomations + blockedTasks + (!apiOk ? 1 : 0) + (!gatewayOk ? 1 : 0);
-  const runningTasks = data.board?.summary.running ?? agents.filter((a) => a.status === "working" || a.status === "waiting").length;
-  const models = status?.api?.models?.join(", ") || "hermes-agent";
-  const cronJobs = status?.cron?.jobs ?? [];
+  const totalAttention = (inboxSummary?.drafted ?? approvals.length) + highRisk + failedRoutines + blockedTasks + (!apiOk ? 1 : 0) + (!gatewayOk ? 1 : 0);
+  const runningTasks = data.board?.summary.running ?? agents.filter((a) => a.status === "active" || a.status === "working" || a.status === "waiting").length;
   const automationRows = data.automations?.automations ?? [];
-  const nextAutomations = [...automationRows].sort((a, b) => (a.next_run_at || "zz").localeCompare(b.next_run_at || "zz")).slice(0, 5);
+  const nextAutomations = [...automationRows].filter((a) => a.enabled).sort((a, b) => (a.next_run_at || "zz").localeCompare(b.next_run_at || "zz")).slice(0, 4);
   const latestOutputs = automationRows.flatMap((a) => (a.recent_outputs || []).map((o) => ({ ...o, automation: a.name, status: a.last_status || a.status }))).sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || "")).slice(0, 5);
-  const recentBrainPages = (data.brain?.wiki || []).slice(0, 5);
-  const activeProjects = (data.projects?.projects || []).slice(0, 4);
+  const runningBoardTasks = (data.board?.tasks || []).filter((task) => task.status === "running").slice(0, 4);
+  const blockedBoardTasks = (data.board?.tasks || []).filter((task) => task.status === "blocked" || task.status === "error").slice(0, 4);
+  const queuedHumanTasks = (data.board?.tasks || []).filter((task) => task.assignee?.toLowerCase().includes("melverick") && task.status !== "done").slice(0, 3);
   const today = data.costs?.summary.last_24h;
   const week = data.costs?.summary.last_7d;
-  const topSource = data.costs?.by_source?.[0];
-  const topModel = data.costs?.by_model?.[0];
+  const activeAgentCount = agents.filter((a) => a.status === "active" || a.status === "working" || a.status === "waiting").length;
+  const draftApprovals = inboxSummary?.drafted ?? approvals.length;
+
   const healthWarnings = [
     apiOk ? null : "Hermes API needs attention",
     gatewayOk ? null : "Gateway process not detected",
-    failedAutomations ? `${failedAutomations} automation error${failedAutomations === 1 ? "" : "s"}` : null,
-    highRisk ? `${highRisk} high-risk inbox item${highRisk === 1 ? "" : "s"}` : null,
+    failedRoutines ? `${failedRoutines} routine error${failedRoutines === 1 ? "" : "s"}` : null,
+    highRisk ? `${highRisk} high-risk approval${highRisk === 1 ? "" : "s"}` : null,
     data.brain && data.brain.summary.health !== "healthy" ? "Second Brain health warning" : null,
   ].filter(Boolean) as string[];
 
   const greeting = useMemo(() => {
+    if (status?.demo) return "Welcome, demo visitor.";
     const hour = singaporeHour();
     if (hour < 12) return "Good morning, Melverick.";
     if (hour < 18) return "Good afternoon, Melverick.";
     return "Good evening, Melverick.";
-  }, []);
+  }, [status?.demo]);
 
-  const feed = [
-    ...(data.inbox?.items || []).slice(0, 3).map((i) => ({ kind: "Inbox", title: i.title, detail: `${i.status} · ${i.risk} risk · ${i.source}`, at: i.updated_at, view: "approvals" as const })),
-    ...data.sessions.slice(0, 4).map((s) => ({ kind: "Session", title: s.title, detail: `${s.source} · ${fmt(s.tokens)} tokens · ${s.tools} tools`, at: s.started_at, view: "audit" as const })),
-    ...latestOutputs.slice(0, 3).map((o) => ({ kind: "Output", title: o.name, detail: `${o.automation} · ${o.preview.slice(0, 90)}`, at: o.updated_at, view: "automations" as const })),
-  ].sort((a, b) => (b.at || "").localeCompare(a.at || "")).slice(0, 9);
+  const attentionItems: CockpitLink[] = [
+    ...(highRisk ? [{ title: `${highRisk} high-risk approval${highRisk === 1 ? "" : "s"}`, detail: "Review before anything is published or sent.", tone: "warn" as const, view: "approvals" as const }] : []),
+    ...blockedBoardTasks.map((task) => ({ title: task.title, detail: `${task.status} · ${task.assignee || "unassigned"} · ${task.priority_label} priority`, tone: "warn" as const, view: "board" as const })),
+    ...(failedRoutines ? [{ title: `${failedRoutines} routine failure${failedRoutines === 1 ? "" : "s"}`, detail: "Open Routines to inspect the failed run and last error.", tone: "warn" as const, view: "automations" as const }] : []),
+    ...(!apiOk ? [{ title: "Hermes API is not healthy", detail: "Agent execution may be unavailable until API health recovers.", tone: "bad" as const, view: "settings" as const }] : []),
+    ...(!gatewayOk ? [{ title: "Gateway is offline", detail: "Desktop/local runtime bridge is not currently detected.", tone: "bad" as const, view: "settings" as const }] : []),
+    ...(draftApprovals ? [{ title: `${draftApprovals} draft approval${draftApprovals === 1 ? "" : "s"}`, detail: "Approve, edit, or reject pending AI-generated output.", tone: "neutral" as const, view: "approvals" as const }] : []),
+  ].slice(0, 6);
+
+  const runningNowItems: CockpitLink[] = [
+    ...runningBoardTasks.map((task) => ({ title: task.title, detail: `${task.assignee || "agent"} · started ${shortTime(task.started_at || task.updated_at)}`, view: "board" as const })),
+    ...agents.filter((a) => a.status === "active" || a.status === "working" || a.status === "waiting").slice(0, 3).map((agent) => ({ title: agent.name, detail: `${agent.statusLabel || agent.status} · ${agent.activity || "active"}`, view: "agents" as const })),
+    ...nextAutomations.slice(0, 3).map((job) => ({ title: job.name, detail: `Next: ${job.next_run_relative || formatSingaporeTime(job.next_run_at) || job.schedule || "schedule unavailable"}`, view: "automations" as const })),
+  ].slice(0, 7);
+
+  const healthItems = [
+    { label: "Hermes API", value: apiOk ? "Online" : "Needs attention", ok: apiOk, detail: status?.api?.error || `${status?.api?.models?.length ?? 0} model${(status?.api?.models?.length ?? 0) === 1 ? "" : "s"} visible` },
+    { label: "Gateway", value: gatewayOk ? "Online" : "Offline", ok: gatewayOk, detail: `${status?.gateway?.processes?.length ?? 0} process${(status?.gateway?.processes?.length ?? 0) === 1 ? "" : "es"} detected` },
+    { label: "Scheduler", value: `${status?.cron?.enabled ?? 0}/${status?.cron?.total ?? 0} enabled`, ok: !failedRoutines, detail: failedRoutines ? `${failedRoutines} failed routine${failedRoutines === 1 ? "" : "s"}` : "No routine errors in summary" },
+    { label: "Second Brain", value: data.brain?.summary.health || "Unknown", ok: !data.brain || data.brain.summary.health === "healthy", detail: `${fmt(data.brain?.summary.wiki_pages)} wiki pages · ${fmt(data.brain?.summary.raw_sources)} sources` },
+  ];
+
+  const recommendedActions: CockpitLink[] = [
+    ...(attentionItems.length ? [{ title: "Clear the attention queue", detail: "Start with high-risk approvals, blocked tasks, failed jobs, and offline gateway/API warnings.", view: "approvals" as const }] : []),
+    ...(queuedHumanTasks.length ? queuedHumanTasks.map((task) => ({ title: `Melverick: ${task.title.replace(/^Melverick:\s*/i, "")}`, detail: `${task.priority_label} priority · ${task.status} · Task Board`, view: "board" as const })) : []),
+    ...(latestOutputs.length ? [{ title: "Review latest agent outputs", detail: "Open the newest routine artifacts before they go stale.", view: "automations" as const }] : []),
+    ...(nextAutomations.length ? [{ title: "Check the next scheduled runs", detail: `${nextAutomations.length} enabled routine${nextAutomations.length === 1 ? "" : "s"} coming up.`, view: "automations" as const }] : []),
+    { title: "Open Audit Log if something looks wrong", detail: "Use run traces for evidence, tool calls, timestamps, and output provenance.", view: "audit" as const },
+  ].slice(0, 5);
 
   return (
-    <div className="home scroll">
-      <div className="home-topbar">
+    <div className="home cockpit scroll">
+      <div className="home-topbar cockpit-topbar">
         <div>
-          <div className="crumb">Home › Daily Operator Brief</div>
+          <div className="crumb">Home › Mission Control Cockpit</div>
           <h1>Mission Control</h1>
-          <p>Decision-first dashboard for what needs attention, what changed, what is running, what agents produced, and whether the system is healthy.</p>
+          <p>Operator cockpit focused only on what needs action: attention, live work, fresh outputs, system health, and the next move.</p>
         </div>
         <div className={"safe-pill " + (healthWarnings.length ? "warn" : "ok")}>
-          <span className="sdot" /> {healthWarnings.length ? `${healthWarnings.length} warning${healthWarnings.length === 1 ? "" : "s"}` : "All systems nominal"}
+          <span className="sdot" /> {healthWarnings.length ? `${healthWarnings.length} warning${healthWarnings.length === 1 ? "" : "s"}` : "Healthy"}
         </div>
       </div>
 
-      <section className="hero-card operator-hero">
-        <div className="moon">☾</div>
-        <div className="hero-copy">
-          <h2>{greeting}</h2>
-          <p>{loading ? "Loading your operating picture…" : `You have ${totalAttention} item${totalAttention === 1 ? "" : "s"} needing attention across approvals, automations, tasks, and system health.`}</p>
+      <section className="cockpit-hero">
+        <div className="cockpit-hero-main">
+          <div className="cockpit-mark">✦</div>
+          <div>
+            <span className="cockpit-eyebrow">Operator cockpit</span>
+            <h2>{greeting}</h2>
+            <p>{loading ? "Building the live operating picture…" : `${totalAttention} attention signal${totalAttention === 1 ? "" : "s"}, ${runningTasks} active task${runningTasks === 1 ? "" : "s"}, and ${latestOutputs.length} recent output${latestOutputs.length === 1 ? "" : "s"} to review.`}</p>
+          </div>
         </div>
-        <span className={"ai-badge " + (apiOk ? "ready" : "warn")}>{apiOk ? `AI: ${models}` : "AI: Needs attention"}</span>
-        <div className="hero-metrics operator-metrics">
+        <div className="cockpit-metrics" aria-label="Mission Control cockpit summary">
           <Metric label="Needs Attention" value={totalAttention} tone={totalAttention ? "warn" : "good"} />
-          <Metric label="High-Risk" value={highRisk} tone={highRisk ? "warn" : "good"} />
-          <Metric label="Running Now" value={runningTasks} />
-          <Metric label="Next Automations" value={nextAutomations.length || cronJobs.length} />
-        </div>
-        <div className="hero-actions">
-          <button className="home-action primary" onClick={() => setView("approvals")}>Review Inbox</button>
-          <button className="home-action" onClick={() => setView("audit")}>Open Runs</button>
-          <button className="home-action" onClick={() => setView("second-brain")}>Second Brain</button>
-          <button className="home-action" onClick={() => setView("automations")}>Automations</button>
+          <Metric label="Running Now" value={runningTasks + runningBoardTasks.length} />
+          <Metric label="Recent Outputs" value={latestOutputs.length} />
+          <Metric label="System Health" value={healthWarnings.length ? "Warn" : "Good"} tone={healthWarnings.length ? "warn" : "good"} />
         </div>
       </section>
 
       {(error || healthWarnings.length > 0) && (
-        <section className="attention-strip">
+        <section className="attention-strip cockpit-alerts">
           <b>Attention signals</b>
           <div>{error ? <span>{error}</span> : healthWarnings.map((item) => <span key={item}>{item}</span>)}</div>
         </section>
       )}
 
-      <section className="quick-grid operator-grid">
-        <StatCard label="Today" value={`${fmt(today?.sessions)} runs`} sub={`${fmt(today?.tokens)} tokens · ${money(today?.cost)}`} icon="mission" />
-        <StatCard label="Last 7 Days" value={money(week?.cost)} sub={`${fmt(week?.sessions)} sessions · ${fmt(week?.tool_calls)} tools`} icon="costs" />
-        <StatCard label="Second Brain" value={data.brain?.summary.health || "—"} sub={`${fmt(data.brain?.summary.wiki_pages)} pages · ${fmt(data.brain?.summary.raw_sources)} sources`} icon="skills" />
-        <StatCard label="System" value={gatewayOk && apiOk ? "Healthy" : "Warn"} sub={`${status?.runtime?.profiles ?? agents.length} profiles · ${status?.cron?.enabled ?? 0}/${status?.cron?.total ?? 0} jobs`} icon="settings" />
-      </section>
-
-      <section className="operator-layout">
-        <div className="operator-main">
-          <Panel title="Since last check" action="Audit" onAction={() => setView("audit")}>
-            <div className="operator-feed">
-              {feed.map((item, idx) => (
-                <button className="feed-row" key={`${item.kind}-${idx}-${item.title}`} onClick={() => setView(item.view)}>
-                  <span>{item.kind}</span>
+      <section className="cockpit-layout">
+        <div className="cockpit-primary">
+          <Panel title="Needs Attention" action="Review" onAction={() => setView("approvals")}>
+            <div className="cockpit-list attention-list">
+              {attentionItems.map((item, idx) => (
+                <button className={`cockpit-row ${item.tone || "neutral"}`} key={`${item.title}-${idx}`} onClick={() => setView(item.view)}>
+                  <span className="row-signal" />
                   <div><b>{item.title}</b><small>{item.detail}</small></div>
-                  <em>{shortTime(item.at)}</em>
+                  <em>Open</em>
                 </button>
               ))}
-              {feed.length === 0 && <div className="empty">No recent activity found yet.</div>}
+              {attentionItems.length === 0 && <div className="cockpit-empty good">No approvals, blockers, failed jobs, or health warnings need operator action.</div>}
             </div>
           </Panel>
 
-          <Panel title="Latest agent outputs" action="Automations" onAction={() => setView("automations")}>
-            <div className="output-list">
+          <Panel title="Running Now" action="Task Board" onAction={() => setView("board")}>
+            <div className="running-strip">
+              <Mini label="Running tasks" value={data.board?.summary.running ?? 0} />
+              <Mini label="Active agents" value={activeAgentCount} />
+              <Mini label="Enabled jobs" value={`${status?.cron?.enabled ?? 0}/${status?.cron?.total ?? 0}`} />
+            </div>
+            <div className="cockpit-list">
+              {runningNowItems.map((item, idx) => (
+                <button className="cockpit-row live" key={`${item.title}-${idx}`} onClick={() => setView(item.view)}>
+                  <span className="row-signal pulse" />
+                  <div><b>{item.title}</b><small>{item.detail}</small></div>
+                  <em>Track</em>
+                </button>
+              ))}
+              {runningNowItems.length === 0 && <div className="cockpit-empty">Nothing is actively running. Scheduled jobs will appear here before their next run.</div>}
+            </div>
+          </Panel>
+
+          <Panel title="Recent Outputs" action="Outputs" onAction={() => setView("automations")}>
+            <div className="output-list cockpit-outputs">
               {latestOutputs.map((o) => (
-                <div className="output-row" key={`${o.path}-${o.updated_at}`}>
+                <button className="output-row output-button" key={`${o.path}-${o.updated_at}`} onClick={() => setView("automations")}>
                   <div><b>{o.name}</b><p>{o.preview || "No preview available"}</p><small>{o.automation} · {shortTime(o.updated_at)}</small></div>
                   <span className={o.status === "error" ? "tag warn" : "tag good"}>{o.status || "output"}</span>
-                </div>
+                </button>
               ))}
-              {latestOutputs.length === 0 && <div className="empty">No recent automation outputs found.</div>}
-            </div>
-          </Panel>
-
-          <Panel title="Recent agent sessions" action="Audit Log" onAction={() => setView("audit")}>
-            <div className="session-list compact">
-              {data.sessions.slice(0, 6).map((s) => (
-                <div className="session-row" key={s.id}>
-                  <div><b>{s.title}</b><p>{s.preview || "No preview available"}</p><small>{s.source} · {shortTime(s.started_at)}</small></div>
-                  <span>{s.messages} msgs</span>
-                </div>
-              ))}
-              {data.sessions.length === 0 && <div className="empty">No recent sessions found.</div>}
+              {latestOutputs.length === 0 && <div className="cockpit-empty">No recent routine outputs found yet.</div>}
             </div>
           </Panel>
         </div>
 
-        <div className="operator-side">
-          <Panel title="Needs attention" action="Inbox" onAction={() => setView("approvals")}>
-            <div className="attention-grid">
-              <Mini label="Draft approvals" value={inboxSummary?.drafted ?? approvals.length} />
-              <Mini label="High-risk" value={highRisk} warn={highRisk > 0} />
-              <Mini label="Failed jobs" value={failedAutomations} warn={failedAutomations > 0} />
-              <Mini label="Blocked/error tasks" value={blockedTasks} warn={blockedTasks > 0} />
-            </div>
-          </Panel>
-
-          <Panel title="Next automations" action="View all" onAction={() => setView("automations")}>
-            <div className="timeline-list">
-              {nextAutomations.map((job) => (
-                <div className="timeline-row" key={job.id || job.name}>
-                  <div><b>{job.name}</b><small>{job.next_run_relative || formatSingaporeTime(job.next_run_at) || job.schedule || "Schedule unavailable"}</small></div>
-                  <span className={job.enabled ? "tag good" : "tag muted"}>{job.state || (job.enabled ? "enabled" : "paused")}</span>
+        <aside className="cockpit-secondary">
+          <Panel title="System Health" action="Settings" onAction={() => setView("settings")}>
+            <div className="health-stack">
+              {healthItems.map((item) => (
+                <div className={`health-row ${item.ok ? "ok" : "warn"}`} key={item.label}>
+                  <span className="health-dot" />
+                  <div><b>{item.label}</b><small>{item.detail}</small></div>
+                  <em>{item.value}</em>
                 </div>
               ))}
-              {nextAutomations.length === 0 && <div className="empty">No upcoming automations found.</div>}
             </div>
           </Panel>
 
-          <Panel title="Second Brain pulse" action="Open" onAction={() => setView("second-brain")}>
-            <div className="brain-pulse">
-              <div><b>{fmt(data.brain?.summary.wiki_pages)}</b><span>wiki pages</span></div>
-              <div><b>{fmt(data.brain?.summary.raw_sources)}</b><span>raw sources</span></div>
-              <div><b>{data.brain?.summary.health || "—"}</b><span>health</span></div>
-            </div>
-            <div className="mini-list">
-              {recentBrainPages.map((p) => <button key={p.id} onClick={() => setView("second-brain")}><b>{p.title}</b><small>{p.section} · {shortTime(p.updated_at)}</small></button>)}
-            </div>
-          </Panel>
-
-          <Panel title="Project pulse" action="Projects" onAction={() => setView("projects")}>
-            <div className="mini-list">
-              {activeProjects.map((p) => <button key={p.id} onClick={() => setView("projects")}><b>{p.name}</b><small>{p.status} · {p.actions.open} open · {p.health}% health</small></button>)}
-              {activeProjects.length === 0 && <div className="empty">No active projects found.</div>}
+          <Panel title="Next Recommended Actions" action="Audit" onAction={() => setView("audit")}>
+            <div className="recommend-list">
+              {recommendedActions.map((item, idx) => (
+                <button className="recommend-row" key={`${item.title}-${idx}`} onClick={() => setView(item.view)}>
+                  <span>{idx + 1}</span>
+                  <div><b>{item.title}</b><small>{item.detail}</small></div>
+                </button>
+              ))}
             </div>
           </Panel>
 
-          <Panel title="Usage snapshot" action="Costs" onAction={() => setView("costs")}>
-            <div className="usage-stack">
-              <div><span>Top source</span><b>{topSource?.source || "—"}</b><small>{fmt(topSource?.tokens)} tokens · {money(topSource?.cost)}</small></div>
-              <div><span>Top model</span><b>{topModel?.model || "—"}</b><small>{fmt(topModel?.tokens)} tokens · {money(topModel?.cost)}</small></div>
+          <Panel title="Operating Load" action="Costs" onAction={() => setView("costs")}>
+            <div className="usage-stack cockpit-load">
+              <div><span>Last 24h</span><b>{fmt(today?.sessions)} runs</b><small>{fmt(today?.tokens)} tokens · {money(today?.cost)}</small></div>
+              <div><span>Last 7d</span><b>{money(week?.cost)}</b><small>{fmt(week?.sessions)} sessions · {fmt(week?.tool_calls)} tools</small></div>
             </div>
           </Panel>
-        </div>
+        </aside>
       </section>
     </div>
   );
@@ -288,8 +300,4 @@ function Metric({ label, value, tone }: { label: string; value: number | string;
 
 function Mini({ label, value, warn }: { label: string; value: number | string; warn?: boolean }) {
   return <div className={"mini-attn " + (warn ? "warn" : "")}><b>{value}</b><span>{label}</span></div>;
-}
-
-function StatCard({ label, value, sub, icon }: { label: string; value: number | string; sub: string; icon: Parameters<typeof Icon>[0]["name"] }) {
-  return <div className="stat-card"><div><span>{label}</span><b>{value}</b><small>{sub}</small></div><i><Icon name={icon} size={17} /></i></div>;
 }

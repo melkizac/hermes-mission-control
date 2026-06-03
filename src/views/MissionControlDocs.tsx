@@ -8,8 +8,8 @@ const sections = [
   { id: "agents", label: "Agents" },
   { id: "projects", label: "Projects / Workspaces" },
   { id: "task-board", label: "Task Board" },
-  { id: "approvals", label: "Approvals" },
-  { id: "automation", label: "Automations" },
+  { id: "approvals", label: "Approval Gates" },
+  { id: "automation", label: "Routines" },
   { id: "audit", label: "Audit & costs" },
   { id: "patterns", label: "Operating patterns" },
 ];
@@ -21,18 +21,18 @@ const navCards = [
   },
   {
     title: "Agent Org",
-    body: "Your operating structure. See agent squads, assign goals, track goal actions, and keep human-owned bottlenecks visible.",
+    body: "Your operating structure. See agent groups, assign goals, track goal actions, and keep human-owned bottlenecks visible.",
   },
   {
     title: "Projects",
-    body: "One card per real initiative. Product plans, filesystem workspaces, kanban context, notes, artifacts, agents, and automations are linked into a single project view.",
+    body: "One card per real initiative. Product plans, filesystem workspaces, kanban context, notes, artifacts, agents, and routines are linked into a single project view.",
   },
   {
     title: "Task Board",
     body: "The execution lane. Shows concrete tasks across agents and Melverick-owned actions, with status and ownership instead of hidden prose.",
   },
   {
-    title: "Approvals",
+    title: "Approval Gates",
     body: "Human-in-the-loop checkpoint for drafts, risky actions, outbound messages, and anything that needs explicit sign-off.",
   },
   {
@@ -45,7 +45,7 @@ const operatingPatterns = [
   "Give outcome-first instructions: say what should be true when the work is done, not every keystroke.",
   "Use agent-owned tasks for executable work and Melverick-owned tasks only for real human decisions, approvals, or missing context.",
   "Treat Projects as the source of initiative context and Task Board as the source of next actions.",
-  "Use Approvals for live publishing, external messages, irreversible changes, or anything with reputational or financial risk.",
+  "Use Approval Gates for live publishing, external messages, irreversible changes, or anything with reputational or financial risk.",
   "Check Audit Log when you need evidence: session history, tool usage, errors, and completion signals.",
 ];
 
@@ -124,7 +124,7 @@ export function MissionControlDocs() {
             <h1>Operate your AI workforce from one control plane.</h1>
             <p>
               Mission Control is the working dashboard for your Hermes agents, projects, approvals, audit trail,
-              automations, and second brain. It is designed for an operator-led workflow: you set goals, agents execute,
+              routines, and second brain. It is designed for an operator-led workflow: you set goals, agents execute,
               and the system keeps decisions, evidence, and bottlenecks visible.
             </p>
             <div className="docs-actions">
@@ -156,7 +156,7 @@ export function MissionControlDocs() {
             <div className="docs-card">
               <span>02</span>
               <h3>Projects hold context</h3>
-              <p>Each project collects plans, workspaces, notes, artifacts, tasks, agents, and automations into one operating surface.</p>
+              <p>Each project collects plans, workspaces, notes, artifacts, tasks, agents, and routines into one operating surface.</p>
             </div>
             <div className="docs-card">
               <span>03</span>
@@ -172,7 +172,7 @@ export function MissionControlDocs() {
           <div className="docs-steps">
             <div><b>1. Check active work</b><p>Open Mission Control or Agent Org to see active agents, recent sessions, and waiting states.</p></div>
             <div><b>2. Review the Task Board</b><p>Look for blocked items, Melverick-owned actions, and tasks that need a decision before agents can continue.</p></div>
-            <div><b>3. Clear Approvals</b><p>Approve, reject, or revise drafts and external actions. This keeps execution moving without sacrificing control.</p></div>
+            <div><b>3. Clear Approval Gates</b><p>Approve, reject, or revise drafts and external actions. This keeps execution moving without sacrificing control.</p></div>
             <div><b>4. Open Projects</b><p>Use Projects for initiative-level context: what exists, what changed, which workspace is live, and which agents are attached.</p></div>
             <div><b>5. Audit what matters</b><p>Use Audit Log and Costs when you need traceability, debugging evidence, or spend visibility.</p></div>
           </div>
@@ -210,11 +210,11 @@ export function MissionControlDocs() {
           <h2>Use Projects as your initiative map.</h2>
           <p>
             The Projects page merges related product plans, workspace folders, kanban goals, notes, artifacts, agents,
-            and automations into a single card per real initiative. A card showing “3 contexts” means multiple backing
+            and routines into a single card per real initiative. A card showing “3 contexts” means multiple backing
             sources are linked, not duplicated.
           </p>
           <div className="docs-grid two">
-            <div className="docs-card"><h3>Open a project when…</h3><p>You need the current operating brief, workspace path, linked notes, recent artifacts, or which agents and automations are involved.</p></div>
+            <div className="docs-card"><h3>Open a project when…</h3><p>You need the current operating brief, workspace path, linked notes, recent artifacts, or which agents and routines are involved.</p></div>
             <div className="docs-card"><h3>Use the brief when…</h3><p>You need a compact summary of mission, status, next actions, risks, and project evidence before assigning more work.</p></div>
           </div>
         </section>
@@ -229,7 +229,7 @@ export function MissionControlDocs() {
         </section>
 
         <section className="docs-section" id="approvals">
-          <p className="docs-kicker">Approvals</p>
+          <p className="docs-kicker">Approval Gates</p>
           <h2>Control risk without slowing execution.</h2>
           <ul className="docs-list">
             <li>Approve only when the draft/action is ready to go live.</li>
@@ -240,10 +240,10 @@ export function MissionControlDocs() {
         </section>
 
         <section className="docs-section" id="automation">
-          <p className="docs-kicker">Automations</p>
+          <p className="docs-kicker">Routines</p>
           <h2>Scheduled work and recurring missions.</h2>
           <p>
-            Automations show recurring Hermes jobs such as monitors, planners, reminders, content workflows, and watchdogs.
+            Routines show recurring Hermes jobs such as monitors, planners, reminders, content workflows, and watchdogs.
             Use them to confirm schedule, status, next run, attached skills, and whether a job is paused or active.
           </p>
         </section>
@@ -265,7 +265,7 @@ export function MissionControlDocs() {
           </ul>
           <div className="docs-footer-cta">
             <b>Ready?</b>
-            <span>Open the dashboard and start from active work, approvals, or the project you care about.</span>
+            <span>Open the dashboard and start from active work, approval gates, or the project you care about.</span>
             <a href="/app">Open Mission Control</a>
           </div>
         </section>

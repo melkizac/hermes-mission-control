@@ -1,4 +1,4 @@
-import type { Agent, Approval, Attachment, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, ProjectBriefResponse, ProjectsResponse, ReplyContext, SecondBrainResponse, Skill, SkillsHubResponse } from "../types";
+import type { Agent, Approval, Attachment, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, ModelRoutingSelection, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainResponse, Skill, SkillFileResponse, SkillsHubResponse } from "../types";
 
 /**
  * HermesClient is the ONLY boundary between the UI and the agent runtime.
@@ -19,7 +19,8 @@ export interface HermesClient {
   listAgents(): Promise<Agent[]>;
   getAgent(id: string): Promise<Agent | undefined>;
   uploadAttachment(agentId: string, file: File): Promise<Attachment>;
-  sendMessage(agentId: string, text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext }): Promise<Message[]>;
+  sendMessage(agentId: string, text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection }): Promise<Message[]>;
+  getModelRouter(): Promise<RouterConfig>;
   stopMessage(agentId: string, requestId?: string): Promise<{ ok: boolean; stopped: string[]; count: number }>;
   createAgent(input: { name: string; squad: string; model: string }): Promise<Agent>;
   deleteAgent(id: string): Promise<void>;
@@ -36,12 +37,18 @@ export interface HermesClient {
   listAutomations(filters?: { q?: string; state?: string }): Promise<AutomationsResponse>;
   automationAction(id: string, action: "pause" | "resume" | "run"): Promise<AutomationActionResponse>;
   listSkills(filters?: { q?: string; category?: string; source?: string }): Promise<SkillsHubResponse>;
+  getSkillFile(id: string): Promise<SkillFileResponse>;
+  listRuntimes(filters?: { q?: string }): Promise<RuntimeRegistryResponse>;
+  listRuntimeConnectors(): Promise<RuntimeConnectorResponse>;
+  createRuntimeConnectorToken(input: { label: string; allowed_types: string[] }): Promise<RuntimeConnectorTokenResponse>;
+  revokeRuntimeConnectorToken(id: string): Promise<{ ok: boolean; id: string; status: string }>;
   getCosts(filters?: { days?: number }): Promise<CostsResponse>;
   listProjects(filters?: { q?: string; kind?: string }): Promise<ProjectsResponse>;
+  listProjectChats(filters?: { q?: string; project?: string }): Promise<ProjectChatResponse>;
   getProjectBrief(projectId: string): Promise<ProjectBriefResponse>;
   createProjectTask(projectId: string, input: Partial<{ title: string; body: string; assignee: string; priority: number; skills: string[] }>): Promise<BoardTaskMutationResponse>;
   getSecondBrain(filters?: { q?: string; section?: string }): Promise<SecondBrainResponse>;
-  listBoard(filters?: { q?: string; status?: BoardStatus | ""; assignee?: string }): Promise<BoardResponse>;
+  listBoard(filters?: { q?: string; status?: BoardStatus | ""; assignee?: string; project?: string }): Promise<BoardResponse>;
   createBoardTask(input: Partial<{ title: string; body: string; assignee: string; status: BoardStatus; priority: number; tenant: string; skills: string[] }>): Promise<BoardTaskMutationResponse>;
   updateBoardTask(id: string, input: Partial<{ title: string; body: string; assignee: string; status: BoardStatus; priority: number; tenant: string; result: string; skills: string[] }>): Promise<BoardTaskMutationResponse>;
   addBoardComment(id: string, body: string): Promise<BoardTaskMutationResponse>;

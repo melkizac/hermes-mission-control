@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { useStore } from "../services/store";
+import type { ViewKey } from "../types";
 
 type Health = { ok: boolean; http_code?: number | null; error?: string | null; status?: Record<string, unknown> };
 type Target = { id: string; label: string; description: string; ready: boolean; url?: string };
@@ -32,6 +34,18 @@ type DesktopGateway = {
 };
 
 type WindowsForm = { url: string; token: string; approvedFolders: string };
+
+type AdminCard = { key: ViewKey | "docs"; title: string; eyebrow: string; body: string };
+
+const adminCards: AdminCard[] = [
+  { key: "runtimes", eyebrow: "Runtimes", title: "Runtime Connectors", body: "Connect OpenClaw, NanoClaw, NemoClaw, Codex, Claude Code, and custom agent frameworks." },
+  { key: "settings", eyebrow: "Gateway", title: "Desktop / Gateway", body: "Configure VPS desktop gateway, Windows local gateway, approved folders, and execution target." },
+  { key: "skills", eyebrow: "Skills", title: "Skills Library", body: "Review installed skills and capability packs without crowding the operator sidebar." },
+  { key: "costs", eyebrow: "Costs", title: "Usage & Costs", body: "Token spend, model usage, and cost trends for governance and budget checks." },
+  { key: "agent-org", eyebrow: "Structure", title: "Agent Org", body: "Manage agent organization, goals, and operating model details." },
+  { key: "second-brain", eyebrow: "Knowledge", title: "Second Brain", body: "Inspect knowledge-base health, sources, and search status." },
+  { key: "docs", eyebrow: "Help", title: "Docs & Guides", body: "Open Mission Control documentation and operating guides." },
+];
 
 async function loadDesktopGateway(): Promise<DesktopGateway> {
   const url = `${window.location.protocol}//${window.location.host}/api/desktop-gateway`;
@@ -71,6 +85,7 @@ function statusText(health?: Health) {
 }
 
 export function SettingsDesktop() {
+  const { setView } = useStore();
   const [data, setData] = useState<DesktopGateway | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState("");
@@ -123,16 +138,38 @@ export function SettingsDesktop() {
     <section className="settings-page scroll">
       <header className="settings-hero">
         <div>
-          <span className="eyebrow">Hermes Desktop integration</span>
-          <h1>Choose where Mission Control executes work</h1>
+          <span className="eyebrow">Admin & Setup</span>
+          <h1>Keep technical setup out of the operator cockpit</h1>
           <p>
-            Mission Control now separates the already-live VPS Hermes backend from an optional Windows-local Hermes gateway. Use VPS for server automations; use Windows Desktop only after your Windows machine exposes a trusted gateway with approved folders.
+            Phase 1 moves lower-frequency configuration screens into one admin hub while keeping every capability reachable. The left rail now focuses on operating the AI workforce: decisions, agents, tasks, projects, routines, and audit.
           </p>
         </div>
         <button className="btn" onClick={() => void refresh()} disabled={loading}>
-          {loading ? "Checking…" : "Refresh"}
+          {loading ? "Checking…" : "Refresh gateway"}
         </button>
       </header>
+
+      <div className="admin-hub-grid">
+        {adminCards.map((card) => (
+          <button
+            key={card.key}
+            className={`admin-hub-card ${card.key === "settings" ? "on" : ""}`}
+            onClick={() => {
+              if (card.key === "docs") window.location.href = "/mission-control-docs";
+              else setView(card.key);
+            }}
+          >
+            <span>{card.eyebrow}</span>
+            <b>{card.title}</b>
+            <small>{card.body}</small>
+          </button>
+        ))}
+      </div>
+
+      <div className="settings-section-title">
+        <span className="eyebrow">Desktop / Gateway</span>
+        <h2>Choose where Mission Control executes work</h2>
+      </div>
 
       {error && <div className="settings-error">{error}</div>}
 

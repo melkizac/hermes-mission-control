@@ -27,6 +27,14 @@ The product intent is:
 
 > Melverick operates AI coworkers from one place: see what exists, what is running, what needs approval, what each agent owns, what it produced, how much it cost, and what evidence exists.
 
+### Why Mission Control exists
+
+Hermes is the worker layer. Mission Control is the management, audit, and trust layer.
+
+Hermes agents can act on their own, but without Mission Control their work is scattered across chats, terminal output, cron jobs, Kanban records, logs, and tool traces. Mission Control gives the operator one control room for the AI workforce: what agents are doing, which tasks are queued/running/blocked/done, why a decision was made, where human approval is needed, which workflows are healthy or stale, and what happened across Telegram, cron, Kanban, tools, and subagents.
+
+For Melverick, the goal is to move from "I chat with an agent" to "I operate a team of digital coworkers." That requires visibility, accountability, control, handoffs, human-in-the-loop governance, and proof of work. Without Mission Control, orchestration may still happen, but it is hidden. With Mission Control, autonomous work becomes inspectable, governable, and trustworthy.
+
 ## 2. Design principles
 
 ### 2.1 Orchestrate, do not operate

@@ -4,7 +4,7 @@ import { Icon } from "./Icon";
 import type { Agent, ConfigFile } from "../types";
 import { FileEditorDrawer } from "./FileEditorDrawer";
 
-type Tab = "overview" | "identity" | "skills" | "output" | "tasks";
+type Tab = "overview" | "identity" | "tools" | "skills" | "output" | "tasks";
 
 const taskStatusCls: Record<string, string> = {
   running: "b-work",
@@ -13,6 +13,10 @@ const taskStatusCls: Record<string, string> = {
   done: "b-work",
   error: "b-err",
 };
+
+function agentGroupLabel(name: string) {
+  return name.replace(/channels/gi, (match) => (match[0] === "C" ? "Groups" : "groups"));
+}
 
 export function ContextPanel({
   agent,
@@ -65,7 +69,7 @@ export function ContextPanel({
           <div className="sec-l tight">Selected agent</div>
           <div className="ctx-title">{agent.name}</div>
           <div className="ctx-sub">
-            {agent.squad} · {agent.id}
+            {agentGroupLabel(agent.squad)} · {agent.id}
           </div>
         </div>
         {drawer ? (
@@ -80,7 +84,7 @@ export function ContextPanel({
       </div>
 
       <div className="tabs tabs-wrap">
-        {(["overview", "identity", "skills", "output", "tasks"] as Tab[]).map((t) => (
+        {(["overview", "identity", "tools", "skills", "output", "tasks"] as Tab[]).map((t) => (
           <button key={t} className={"tab" + (tab === t ? " on" : "")} onClick={() => setTab(t)}>
             {t === "identity" ? "Identity" : t[0].toUpperCase() + t.slice(1)}
           </button>
@@ -103,7 +107,9 @@ export function ContextPanel({
             <div className="sec-l">Runtime</div>
             <Info k="Model" v={<span className="mono">{agent.model}</span>} />
             <Info k="Profile" v={<span className="mono">{agent.profilePath}</span>} />
-            <Info k="Status" v={<span className={agent.status === "working" ? "hi" : ""}>{cap(agent.status)}</span>} />
+            <Info k="Status" v={<span className={agent.status === "active" || agent.status === "working" ? "hi" : ""}>{agent.statusLabel || cap(agent.status)}</span>} />
+            <Info k="Availability" v={agent.availability || "—"} />
+            <Info k="Activity" v={agent.activityState || agent.statusDetail || "—"} />
             <Info k="Uptime" v={agent.uptime} />
             <Info k="Sessions" v={String(agent.sessionCount)} />
             <Info k="Last active" v={agent.lastActive} />
@@ -169,6 +175,39 @@ export function ContextPanel({
               <FileRow key={f.name} file={f} onOpen={() => setEditing(f)} />
             ))}
             {otherFiles.length > 0 && <div className="mini-note">Includes {otherFiles.length} supporting profile file(s).</div>}
+          </>
+        )}
+
+        {tab === "tools" && (
+          <>
+            <div className="sec-l">Tool capabilities · {agent.tools?.length ?? 0}</div>
+            {(agent.tools ?? []).map((toolset) => (
+              <div className="tool-card" key={toolset.id}>
+                <div className="tool-card-head">
+                  <div>
+                    <div className="fn">{toolset.name}</div>
+                    <div className="fd">
+                      {toolset.kind ?? "toolset"} · {toolset.source ?? "profile config"} · {toolset.enabled === false ? "disabled" : "enabled"}
+                    </div>
+                  </div>
+                  {typeof toolset.toolCount === "number" && <span className="badge b-info">{toolset.toolCount} tools</span>}
+                </div>
+                {toolset.description && <p className="tool-desc">{toolset.description}</p>}
+                {toolset.categories && toolset.categories.length > 0 && (
+                  <div className="tool-cats">
+                    {toolset.categories.map((cat) => (
+                      <span className="tool-chip" key={cat.id}>
+                        {cat.name}{typeof cat.count === "number" ? ` ${cat.count}` : ""}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {toolset.sampleTools && toolset.sampleTools.length > 0 && (
+                  <div className="tool-samples mono">{toolset.sampleTools.join(", ")}</div>
+                )}
+              </div>
+            ))}
+            {(!agent.tools || agent.tools.length === 0) && <div className="empty">No tool capabilities reported for this profile.</div>}
           </>
         )}
 

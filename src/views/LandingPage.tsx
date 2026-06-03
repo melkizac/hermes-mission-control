@@ -1,6 +1,6 @@
 const proofPoints = [
   { label: "Live agents", value: "Always-on", copy: "See agent status, conversations, approvals, and bottlenecks in one operational surface." },
-  { label: "Workspaces", value: "Context-aware", copy: "Projects connect goals, knowledge, automations, files, and execution history without duplicate noise." },
+  { label: "Workspaces", value: "Context-aware", copy: "Projects connect goals, knowledge, routines, files, and execution history without duplicate noise." },
   { label: "Governance", value: "Auditable", copy: "Every decision, task handoff, and human-in-the-loop approval stays traceable." },
 ];
 
@@ -8,7 +8,7 @@ const capabilities = [
   "Agent command center with live conversations",
   "Project/workspace context mapped to actual operations",
   "Task board ownership for humans and agents",
-  "Approvals, audit logs, cost telemetry, and automations",
+  "Approval gates, audit logs, cost telemetry, and routines",
 ];
 
 export function LandingPage() {
@@ -66,7 +66,7 @@ export function LandingPage() {
               <span className="status-line good">4 executing · 2 waiting · 2 idle</span>
             </div>
             <div className="ops-card">
-              <small>Approvals</small>
+              <small>Approval Gates</small>
               <strong>3 pending</strong>
               <span className="status-line warn">Needs Melverick decision</span>
             </div>

@@ -1,4 +1,4 @@
-import type { Agent, Approval, Attachment, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, ProjectBriefResponse, ProjectsResponse, ReplyContext, SecondBrainResponse, Skill, SkillsHubResponse } from "../types";
+import type { Agent, Approval, Attachment, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, ModelRoutingSelection, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainResponse, Skill, SkillsHubResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
 import { seedAgents, seedApprovals } from "../data/mockData";
 
@@ -39,7 +39,7 @@ export class MockHermesClient implements HermesClient {
     };
   }
 
-  async sendMessage(agentId: string, text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; replyTo?: ReplyContext } = {}): Promise<Message[]> {
+  async sendMessage(agentId: string, text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection } = {}): Promise<Message[]> {
     if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
     await delay(120);
     if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -56,6 +56,21 @@ export class MockHermesClient implements HermesClient {
     agent.activity = text.slice(0, 48);
     agent.status = "working";
     return [userMsg, reply];
+  }
+
+  async getModelRouter(): Promise<RouterConfig> {
+    await delay(40);
+    return {
+      enabled: true,
+      updated_at: "mock",
+      policy: { goal: "Mock cost-aware model routing" },
+      summary: { total: 3, enabled: 3, authorized: 3, frontier: 1 },
+      models: [
+        { id: "mock-frontier", label: "Mock Frontier", provider: "mock", model: "gpt-5.5", tier: "frontier", enabled: true, authorized: true, credential_env: "MOCK_API_KEY", cost_weight: 10 },
+        { id: "mock-balanced", label: "Mock Balanced", provider: "mock", model: "balanced-worker", tier: "balanced", enabled: true, authorized: true, credential_env: "MOCK_API_KEY", cost_weight: 4 },
+        { id: "mock-economy", label: "Mock Economy", provider: "mock", model: "economy-worker", tier: "economy", enabled: true, authorized: true, credential_env: "MOCK_API_KEY", cost_weight: 1 },
+      ],
+    };
   }
 
   async stopMessage() {
@@ -257,6 +272,54 @@ export class MockHermesClient implements HermesClient {
     return { skills, summary: { total: skills.length, editable: 0, plugin: 0, user: skills.length, assigned: skills.length }, categories: ["mock"], sources: ["mock"] };
   }
 
+  async getSkillFile(id: string) {
+    await delay(90);
+    return {
+      id,
+      name: id,
+      path: `mock://${id}/SKILL.md`,
+      skill_dir: `mock://${id}`,
+      content: `---\nname: ${id}\ndescription: Mock skill file\n---\n\n# ${id}\n\nThis is the full mock SKILL.md content.`,
+      size: 96,
+      updated_at: "now",
+    };
+  }
+
+  async listRuntimes(): Promise<RuntimeRegistryResponse> {
+    await delay(90);
+    const now = "now";
+    const runtimes = [
+      { id: "hermes", name: "Hermes / Mock", type: "primary_runtime", status: "online", summary: "Mock primary Hermes runtime.", readiness: { representable: true, monitorable: true, controllable: true }, evidence: { mode: "mock", sessions: this.agents.length }, safe_actions: ["route_task_with_approval"], updated_at: now },
+      { id: "openclaw", name: "OpenClaw", type: "external_runtime", status: "degraded", summary: "Mock external Claw runtime slot.", readiness: { representable: true, monitorable: true, controllable: false }, evidence: { mode: "mock" }, safe_actions: ["register_runtime"], updated_at: now },
+      { id: "codex", name: "Codex CLI / Codex App Projects", type: "coding_cli_runtime", status: "degraded", summary: "Mock Codex adapter readiness.", readiness: { representable: true, monitorable: true, controllable: false }, evidence: { command: "codex", auth_present: true }, safe_actions: ["route_task_with_approval"], updated_at: now },
+      { id: "claude-code", name: "Claude Code / Claude Suite Projects", type: "coding_cli_runtime", status: "degraded", summary: "Mock Claude Code adapter readiness.", readiness: { representable: true, monitorable: true, controllable: false }, evidence: { command: "claude", auth_present: true }, safe_actions: ["route_task_with_approval"], updated_at: now },
+      { id: "nanoclaw", name: "NanoClaw", type: "future_claw_runtime", status: "offline", summary: "Mock future runtime slot.", readiness: { representable: true, monitorable: false, controllable: false }, evidence: { mode: "mock" }, safe_actions: ["register_runtime"], updated_at: now },
+      { id: "nemoclaw", name: "NemoClaw", type: "future_claw_runtime", status: "offline", summary: "Mock future runtime slot.", readiness: { representable: true, monitorable: false, controllable: false }, evidence: { mode: "mock" }, safe_actions: ["register_runtime"], updated_at: now },
+    ];
+    return { runtimes, summary: { total: runtimes.length, online: 1, degraded: 3, offline: 2, monitorable: 4, controllable: 1 }, updated_at: now };
+  }
+
+  async listRuntimeConnectors(): Promise<RuntimeConnectorResponse> {
+    await delay(90);
+    return {
+      tokens: [{ id: "mock-token", label: "Mock friend connector", allowed_types: ["openclaw", "nanoclaw", "nemoclaw"], status: "active", created_at: "now" }],
+      runtimes: [],
+      events: [],
+      connect: { register_url: "https://example.test/api/runtime-connect/register", heartbeat_url: "https://example.test/api/runtime-connect/heartbeat", events_url: "https://example.test/api/runtime-connect/events" },
+      summary: { tokens: 1, active_tokens: 1, connected: 0, online: 0 },
+    };
+  }
+
+  async createRuntimeConnectorToken(input: { label: string; allowed_types: string[] }): Promise<RuntimeConnectorTokenResponse> {
+    await delay(90);
+    return { ok: true, token: { id: "mock-token-new", label: input.label, allowed_types: input.allowed_types, status: "active", created_at: "now" }, secret: "hmc_rt_mock_secret", connect: { register_url: "https://example.test/api/runtime-connect/register", heartbeat_url: "https://example.test/api/runtime-connect/heartbeat", events_url: "https://example.test/api/runtime-connect/events" }, warning: "Mock token." };
+  }
+
+  async revokeRuntimeConnectorToken(id: string): Promise<{ ok: boolean; id: string; status: string }> {
+    await delay(90);
+    return { ok: true, id, status: "revoked" };
+  }
+
   async getCosts(): Promise<CostsResponse> {
     await delay(90);
     const period = { sessions: 0, cost: 0, tokens: 0, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, reasoning_tokens: 0, tool_calls: 0, api_calls: 0 };
@@ -266,6 +329,23 @@ export class MockHermesClient implements HermesClient {
   async listProjects(): Promise<ProjectsResponse> {
     await delay(90);
     return { projects: [], summary: { total: 0, active: 0, open_actions: 0, blocked: 0, knowledge: 0, workspaces: 0 }, kinds: [], sources: [] };
+  }
+
+  async listProjectChats(): Promise<ProjectChatResponse> {
+    await delay(90);
+    const sessions = this.agents.flatMap((agent) => agent.messages.slice(0, 1).map((message) => ({
+      id: `mock-${agent.id}-${message.id}`,
+      title: `${agent.name} mock chat`,
+      project_id: "mock-project",
+      project_name: "Mock Project",
+      source: "mock",
+      model: agent.model,
+      started_at: message.at,
+      messages: agent.messages.length,
+      tools: 0,
+      tokens: 0,
+    })));
+    return { projects: [{ id: "mock-project", name: "Mock Project", sessions: sessions.length }], sessions, summary: { projects: 1, sessions: sessions.length } };
   }
 
   async getProjectBrief(): Promise<ProjectBriefResponse> {
@@ -299,7 +379,7 @@ export class MockHermesClient implements HermesClient {
 
   async listBoard(): Promise<BoardResponse> {
     await delay(90);
-    return { tasks: [], lanes: { queued: [], running: [], blocked: [], done: [], error: [] }, summary: { total: 0, queued: 0, running: 0, blocked: 0, done: 0, error: 0, assignees: [] }, statuses: ["queued", "running", "blocked", "done", "error"] };
+    return { tasks: [], lanes: { queued: [], running: [], blocked: [], done: [], error: [] }, summary: { total: 0, queued: 0, running: 0, blocked: 0, done: 0, error: 0, assignees: [], projects: [] }, statuses: ["queued", "running", "blocked", "done", "error"], projects: [] };
   }
 
   async createBoardTask(): Promise<BoardTaskMutationResponse> {

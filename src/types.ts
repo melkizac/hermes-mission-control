@@ -2,13 +2,31 @@
 // An "agent" maps to a Hermes profile (an isolated HERMES_HOME).
 // A "task" maps to a gateway session/job. "Output" = workspace artifacts.
 
-export type AgentStatus = "working" | "waiting" | "idle" | "error" | "offline";
+export type AgentStatus = "active" | "idle" | "degraded" | "offline" | "working" | "waiting" | "error";
 
 export interface Skill {
   id: string;
   name: string;
   category?: string;
   source?: string; // e.g. "hub", "custom-repo"
+}
+
+export interface ToolCategory {
+  id: string;
+  name: string;
+  count?: number;
+}
+
+export interface ToolCapability {
+  id: string;
+  name: string;
+  kind?: "toolset" | "platform" | "tool" | string;
+  source?: string;
+  enabled?: boolean;
+  description?: string;
+  toolCount?: number | null;
+  sampleTools?: string[];
+  categories?: ToolCategory[];
 }
 
 export type ConfigKind = "soul" | "memory" | "agents" | "config" | "other";
@@ -59,6 +77,35 @@ export interface ReplyContext {
   at?: string;
 }
 
+export interface ModelRoutingSelection {
+  mode: "auto" | "manual";
+  modelId?: string;
+}
+
+export interface RouterModel {
+  id: string;
+  label: string;
+  provider: string;
+  model: string;
+  tier: string;
+  enabled: boolean;
+  authorized?: boolean;
+  credential_env?: string;
+  secret_status?: string;
+  cost_weight?: number;
+  best_for?: string[];
+  notes?: string;
+}
+
+export interface RouterConfig {
+  enabled: boolean;
+  updated_at: string;
+  policy: Record<string, unknown>;
+  models: RouterModel[];
+  summary: { total: number; enabled: number; authorized: number; frontier: number };
+  error?: string;
+}
+
 export interface Message {
   id: string;
   role: MessageRole;
@@ -71,6 +118,30 @@ export interface Message {
   at: string;
   ts?: number;
   source?: string;
+  sessionId?: string;
+  projectId?: string;
+  projectName?: string;
+  requestId?: string;
+}
+
+export interface ProjectChatSession {
+  id: string;
+  title: string;
+  project_id: string;
+  project_name: string;
+  source: string;
+  model: string;
+  started_at: string;
+  messages: number;
+  tools: number;
+  tokens: number;
+}
+
+export interface ProjectChatResponse {
+  projects: Array<{ id: string; name: string; sessions: number }>;
+  sessions: ProjectChatSession[];
+  summary: { projects: number; sessions: number };
+  error?: string;
 }
 
 export type TaskStatus = "queued" | "running" | "blocked" | "done" | "error";
@@ -90,14 +161,22 @@ export interface Agent {
   color: string;
   model: string;
   status: AgentStatus;
+  availability?: "online" | "degraded" | "offline" | string;
+  activityState?: "active" | "sleeping" | "partial" | "disconnected" | string;
+  statusLabel?: string;
+  statusDetail?: string;
+  statusEvidence?: Record<string, boolean | number | string>;
   activity: string;
   lastActive: string;
   profilePath: string; // ~/.hermes/<id>
   uptime: string;
   sessionCount: number;
   skills: Skill[];
+  tools?: ToolCapability[];
   files: ConfigFile[];
   messages: Message[];
+  processingRequests?: string[];
+  processingRequestDetails?: Array<{ id: string; agent_id?: string; started_at?: number }>;
   artifacts: Artifact[];
   tasks: Task[];
   insightSummary?: string;
@@ -279,6 +358,15 @@ export interface BoardRun {
   error?: string;
 }
 
+export interface BoardTaskResultDetails {
+  status?: string | null;
+  summary?: string;
+  artifact?: string | null;
+  blockers?: string[];
+  verification?: Record<string, string>;
+  access_needed?: string;
+}
+
 export interface BoardTask {
   id: string;
   title: string;
@@ -298,6 +386,7 @@ export interface BoardTask {
   branch_name?: string | null;
   tenant?: string | null;
   result: string;
+  result_details?: BoardTaskResultDetails | null;
   session_id?: string | null;
   current_run_id?: number | null;
   workflow_template_id?: string | null;
@@ -324,8 +413,10 @@ export interface BoardResponse {
     done: number;
     error: number;
     assignees: string[];
+    projects: string[];
   };
   statuses: BoardStatus[];
+  projects: string[];
 }
 
 export interface BoardTaskMutationResponse {
@@ -360,11 +451,24 @@ export interface SkillHubRecord {
   used_by_count: number;
 }
 
+export interface SkillFileResponse {
+  id: string;
+  name: string;
+  path: string;
+  skill_dir: string;
+  content: string;
+  size: number;
+  updated_at: string;
+}
+
 export interface SkillsHubResponse {
   skills: SkillHubRecord[];
   summary: {
     total: number;
     editable: number;
+    hermes?: number;
+    openclaw?: number;
+    shared?: number;
     plugin: number;
     user: number;
     assigned: number;
@@ -650,10 +754,92 @@ export interface SecondBrainResponse {
   health: { status: string; checks: Array<{ label: string; ok: boolean; detail: string }> };
 }
 
+export interface RuntimeRecord {
+  id: string;
+  name: string;
+  type: string;
+  status: "online" | "degraded" | "offline" | string;
+  summary: string;
+  readiness: {
+    representable: boolean;
+    monitorable: boolean;
+    controllable: boolean;
+  };
+  evidence: Record<string, unknown>;
+  safe_actions: string[];
+  updated_at: string;
+}
+
+export interface RuntimeRegistryResponse {
+  runtimes: RuntimeRecord[];
+  summary: {
+    total: number;
+    online: number;
+    degraded: number;
+    offline: number;
+    monitorable: number;
+    controllable: number;
+  };
+  updated_at: string;
+  error?: string;
+}
+
+export interface RuntimeConnectorToken {
+  id: string;
+  label: string;
+  allowed_types: string[];
+  status: string;
+  created_at: string;
+  last_used_at?: string | null;
+  expires_at?: string | null;
+}
+
+export interface RuntimeConnectorEvent {
+  id: number;
+  external_runtime_id: string;
+  kind: string;
+  severity: string;
+  title: string;
+  body: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface RuntimeConnectorResponse {
+  tokens: RuntimeConnectorToken[];
+  runtimes: RuntimeRecord[];
+  events: RuntimeConnectorEvent[];
+  connect: {
+    register_url: string;
+    heartbeat_url: string;
+    events_url: string;
+    curl_example?: string;
+  };
+  summary: {
+    tokens: number;
+    active_tokens: number;
+    connected: number;
+    online: number;
+  };
+  error?: string;
+}
+
+export interface RuntimeConnectorTokenResponse {
+  ok: boolean;
+  token: RuntimeConnectorToken;
+  secret: string;
+  connect: RuntimeConnectorResponse["connect"];
+  warning: string;
+  error?: string;
+}
+
 export type ViewKey =
   | "mission"
+  | "profile"
   | "agents"
   | "agent-org"
+  | "runtimes"
+  | "tools"
   | "projects"
   | "second-brain"
   | "board"
@@ -662,4 +848,5 @@ export type ViewKey =
   | "automations"
   | "audit"
   | "costs"
+  | "models"
   | "settings";

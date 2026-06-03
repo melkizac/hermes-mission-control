@@ -36,7 +36,7 @@ export function NewAgentModal({ onClose }: { onClose: () => void }) {
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Orion" autoFocus />
           </label>
           <label className="field">
-            <span>Squad</span>
+            <span>Agent Group</span>
             <select value={squad} onChange={(e) => setSquad(e.target.value)}>
               {squads.map((s) => (
                 <option key={s}>{s}</option>

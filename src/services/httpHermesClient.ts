@@ -1,4 +1,4 @@
-import type { Agent, Approval, Attachment, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, ProjectBriefResponse, ProjectsResponse, ReplyContext, SecondBrainResponse, Skill, SkillsHubResponse } from "../types";
+import type { Agent, Approval, Attachment, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, ModelRoutingSelection, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainResponse, Skill, SkillFileResponse, SkillsHubResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -18,6 +18,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return data as T;
 }
+
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) return reject(new DOMException("Aborted", "AbortError"));
+    const timer = window.setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        window.clearTimeout(timer);
+        reject(new DOMException("Aborted", "AbortError"));
+      },
+      { once: true },
+    );
+  });
 
 export class HttpHermesClient implements HermesClient {
   async listAgents(): Promise<Agent[]> {
@@ -42,12 +56,59 @@ export class HttpHermesClient implements HermesClient {
     });
   }
 
-  async sendMessage(agentId: string, text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext } = {}): Promise<Message[]> {
-    return request<Message[]>(`/api/agents/${encodeURIComponent(agentId)}/messages`, {
+  async sendMessage(agentId: string, text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection } = {}): Promise<Message[]> {
+    const requestId = options.requestId ?? `ui-${agentId}-${Date.now()}`;
+    const url = `${window.location.protocol}//${window.location.host}/api/agents/${encodeURIComponent(agentId)}/messages`;
+    const startedAt = Date.now() / 1000;
+    const res = await fetch(url, {
       method: "POST",
+      credentials: "include",
       signal: options.signal,
-      body: JSON.stringify({ text, attachments, requestId: options.requestId, replyTo: options.replyTo }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        attachments,
+        requestId,
+        replyTo: options.replyTo,
+        modelRouting: options.modelRouting,
+        async: true,
+      }),
     });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok && res.status !== 202) {
+      const detail = typeof data?.error === "string" ? data.error : res.statusText;
+      throw new Error(detail);
+    }
+    if (!data?.accepted) {
+      return data as Message[];
+    }
+
+    const deadline = Date.now() + 60 * 60 * 1000;
+    while (Date.now() < deadline) {
+      await sleep(3000, options.signal);
+      const agent = await this.getAgent(agentId);
+      const requestMessages = (agent?.messages ?? []).filter((m) => m.requestId === requestId);
+      const errorMessage = requestMessages.find((m) => m.role === "system" && /failed|interrupted|stopped/i.test(m.text ?? ""));
+      if (errorMessage) throw new Error(errorMessage.text || "Message processing failed");
+      const reply = requestMessages.find((m) => m.role === "agent");
+      if (reply) {
+        const user = requestMessages.find((m) => m.role === "user");
+        return [user, reply].filter(Boolean) as Message[];
+      }
+      const lateReply = (agent?.messages ?? []).find((m) => m.role === "agent" && (m.ts ?? 0) >= startedAt);
+      if (lateReply) return [lateReply];
+      const activeRequests = new Set(agent?.processingRequests ?? []);
+      const requestKnown = requestMessages.length > 0;
+      const backendNoLongerRunning = requestKnown && !activeRequests.has(requestId) && Date.now() - startedAt * 1000 > 10000;
+      if (backendNoLongerRunning) {
+        throw new Error("Message processing ended without an assistant reply. The backend may have restarted or the worker was interrupted; refresh the chat to confirm the latest state.");
+      }
+    }
+    throw new Error("Mission Control is still waiting for the agent after 60 minutes. Refresh the chat to check the latest result.");
+  }
+
+  async getModelRouter(): Promise<RouterConfig> {
+    return request<RouterConfig>("/api/model-router");
   }
 
   async stopMessage(agentId: string, requestId?: string): Promise<{ ok: boolean; stopped: string[]; count: number }> {
@@ -163,6 +224,29 @@ export class HttpHermesClient implements HermesClient {
     return request<SkillsHubResponse>(`/api/skills${suffix}`);
   }
 
+  async getSkillFile(id: string): Promise<SkillFileResponse> {
+    return request<SkillFileResponse>(`/api/skills/${encodeURIComponent(id)}/file`);
+  }
+
+  async listRuntimes(filters?: { q?: string }): Promise<RuntimeRegistryResponse> {
+    const params = new URLSearchParams();
+    if (filters?.q) params.set("q", filters.q);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request<RuntimeRegistryResponse>(`/api/runtimes${suffix}`);
+  }
+
+  async listRuntimeConnectors(): Promise<RuntimeConnectorResponse> {
+    return request<RuntimeConnectorResponse>("/api/runtime-connect");
+  }
+
+  async createRuntimeConnectorToken(input: { label: string; allowed_types: string[] }): Promise<RuntimeConnectorTokenResponse> {
+    return request<RuntimeConnectorTokenResponse>("/api/runtime-connect/tokens", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  async revokeRuntimeConnectorToken(id: string): Promise<{ ok: boolean; id: string; status: string }> {
+    return request<{ ok: boolean; id: string; status: string }>(`/api/runtime-connect/tokens/${encodeURIComponent(id)}/revoke`, { method: "POST", body: JSON.stringify({}) });
+  }
+
   async getCosts(filters?: { days?: number }): Promise<CostsResponse> {
     const params = new URLSearchParams();
     if (filters?.days) params.set("days", String(filters.days));
@@ -176,6 +260,14 @@ export class HttpHermesClient implements HermesClient {
     if (filters?.kind) params.set("kind", filters.kind);
     const suffix = params.toString() ? `?${params.toString()}` : "";
     return request<ProjectsResponse>(`/api/projects${suffix}`);
+  }
+
+  async listProjectChats(filters?: { q?: string; project?: string }): Promise<ProjectChatResponse> {
+    const params = new URLSearchParams();
+    if (filters?.q) params.set("q", filters.q);
+    if (filters?.project) params.set("project", filters.project);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request<ProjectChatResponse>(`/api/project-chats${suffix}`);
   }
 
   async getProjectBrief(projectId: string): Promise<ProjectBriefResponse> {
@@ -197,11 +289,12 @@ export class HttpHermesClient implements HermesClient {
     return request<SecondBrainResponse>(`/api/second-brain${suffix}`);
   }
 
-  async listBoard(filters?: { q?: string; status?: BoardStatus | ""; assignee?: string }): Promise<BoardResponse> {
+  async listBoard(filters?: { q?: string; status?: BoardStatus | ""; assignee?: string; project?: string }): Promise<BoardResponse> {
     const params = new URLSearchParams();
     if (filters?.q) params.set("q", filters.q);
     if (filters?.status) params.set("status", filters.status);
     if (filters?.assignee) params.set("assignee", filters.assignee);
+    if (filters?.project) params.set("project", filters.project);
     const suffix = params.toString() ? `?${params.toString()}` : "";
     return request<BoardResponse>(`/api/tasks${suffix}`);
   }

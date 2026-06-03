@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import type { BoardStatus, BoardTask } from "../types";
+import type { Agent, BoardStatus, BoardTask } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
+import { useStore } from "../services/store";
 import { formatSingaporeTime } from "../utils/time";
+import { SlideOverDrawer } from "../components/SlideOverDrawer";
 
 const client = new HttpHermesClient();
+const TASK_PAGE_SIZE = 5;
+const initialLaneCounts = (): Record<BoardStatus, number> => ({ queued: TASK_PAGE_SIZE, running: TASK_PAGE_SIZE, blocked: TASK_PAGE_SIZE, done: TASK_PAGE_SIZE, error: TASK_PAGE_SIZE });
 const lanes: { key: BoardStatus; label: string; helper: string }[] = [
   { key: "queued", label: "Queued", helper: "Ready for a worker" },
   { key: "running", label: "Running", helper: "Claimed or in progress" },
@@ -14,14 +18,17 @@ const lanes: { key: BoardStatus; label: string; helper: string }[] = [
 
 type DetailTab = "overview" | "activity" | "execution";
 type ViewMode = "cards" | "list";
+type HumanActionKind = "feedback" | "approval" | "manual" | "agent";
 
 export function TaskBoard() {
+  const { agents, select, setView } = useStore();
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<BoardStatus | "">("");
   const [assignee, setAssignee] = useState("");
+  const [project, setProject] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
   const [tasks, setTasks] = useState<BoardTask[]>([]);
-  const [summary, setSummary] = useState({ total: 0, queued: 0, running: 0, blocked: 0, done: 0, error: 0, assignees: [] as string[] });
+  const [summary, setSummary] = useState({ total: 0, queued: 0, running: 0, blocked: 0, done: 0, error: 0, assignees: [] as string[], projects: [] as string[] });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab>("overview");
@@ -30,13 +37,17 @@ export function TaskBoard() {
   const [notice, setNotice] = useState<string | null>(null);
   const [draft, setDraft] = useState({ title: "", body: "", assignee: "", priority: 50, tenant: "" });
   const [comment, setComment] = useState("");
+  const [humanNote, setHumanNote] = useState("");
+  const [agentTarget, setAgentTarget] = useState("");
+  const [laneVisibleCounts, setLaneVisibleCounts] = useState<Record<BoardStatus, number>>(() => initialLaneCounts());
+  const [listVisibleCount, setListVisibleCount] = useState(TASK_PAGE_SIZE);
 
   const load = async () => {
     try {
       setLoading(true);
-      const data = await client.listBoard({ q, status, assignee });
+      const data = await client.listBoard({ q, status, assignee, project });
       setTasks(data.tasks);
-      setSummary(data.summary);
+      setSummary({ ...data.summary, projects: data.summary.projects ?? data.projects ?? [] });
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load task board");
@@ -48,7 +59,12 @@ export function TaskBoard() {
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 180);
     return () => window.clearTimeout(timer);
-  }, [q, status, assignee]);
+  }, [q, status, assignee, project]);
+
+  useEffect(() => {
+    setLaneVisibleCounts(initialLaneCounts());
+    setListVisibleCount(TASK_PAGE_SIZE);
+  }, [q, status, assignee, project, viewMode]);
 
   useEffect(() => {
     const close = (event: KeyboardEvent) => {
@@ -59,10 +75,13 @@ export function TaskBoard() {
   }, []);
 
   const selected = useMemo(() => tasks.find((task) => task.id === selectedId), [tasks, selectedId]);
+  const availableAgents = useMemo(() => agents.filter((agent) => agent.id), [agents]);
 
   const openTask = (task: BoardTask) => {
     setSelectedId(task.id);
     setDetailTab("overview");
+    setHumanNote("");
+    setAgentTarget("");
   };
 
   const create = async () => {
@@ -115,6 +134,53 @@ export function TaskBoard() {
     }
   };
 
+
+  const addTaskComment = async (task: BoardTask, body: string) => {
+    const result = await client.addBoardComment(task.id, body);
+    if (!result.ok) throw new Error(result.error || "Comment failed");
+  };
+
+  const handleHumanAction = async (task: BoardTask, kind: HumanActionKind, note = "") => {
+    const trimmed = note.trim();
+    try {
+      if (kind === "feedback") {
+        if (!trimmed) return setError("Enter your feedback or instruction first.");
+        await addTaskComment(task, `Melverick feedback / instruction:\n${trimmed}`);
+        if (task.status === "blocked") await client.updateBoardTask(task.id, { status: "queued" });
+        setNotice("Feedback saved and task returned to the queue");
+      } else if (kind === "approval") {
+        await addTaskComment(task, `Melverick approved this task.${trimmed ? `\nNote: ${trimmed}` : ""}`);
+        await client.updateBoardTask(task.id, { status: "done", result: trimmed || "Approved by Melverick" });
+        setNotice("Approval recorded and task marked done");
+      } else if (kind === "manual") {
+        await addTaskComment(task, `Melverick completed the requested manual step.${trimmed ? `\nEvidence / note: ${trimmed}` : ""}`);
+        await client.updateBoardTask(task.id, { status: "done", result: trimmed || "Manual step completed by Melverick" });
+        setNotice("Manual completion recorded and task marked done");
+      }
+      setHumanNote("");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Task action failed");
+    }
+  };
+
+  const assignToAgentAndOpenChat = async (task: BoardTask) => {
+    const target = agentTarget || availableAgents[0]?.id || "";
+    if (!target) return setError("No agent is available to assign this task.");
+    const agent = availableAgents.find((item) => item.id === target);
+    try {
+      const label = agent?.name || target;
+      await client.updateBoardTask(task.id, { assignee: target, status: "queued" });
+      await addTaskComment(task, `Assigned to agent ${label}. Opened agent chat for follow-up. Task: ${task.title}`);
+      setNotice(`Assigned to ${label}; opening agent chat`);
+      await load();
+      select(target);
+      setView("agents");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Agent assignment failed");
+    }
+  };
+
   const remove = async (task: BoardTask) => {
     if (!window.confirm(`Delete ${task.title}?`)) return;
     try {
@@ -128,6 +194,8 @@ export function TaskBoard() {
   };
 
   const grouped = useMemo(() => lanes.reduce((acc, lane) => ({ ...acc, [lane.key]: tasks.filter((task) => task.status === lane.key) }), {} as Record<BoardStatus, BoardTask[]>), [tasks]);
+  const visibleListTasks = useMemo(() => tasks.slice(0, listVisibleCount), [tasks, listVisibleCount]);
+  const showMoreLane = (lane: BoardStatus) => setLaneVisibleCounts((current) => ({ ...current, [lane]: current[lane] + TASK_PAGE_SIZE }));
 
   return (
     <div className="task-page task-board-first scroll">
@@ -169,7 +237,7 @@ export function TaskBoard() {
 
       <section className="task-filters task-filters-board-first">
         <div className="filter-search-with-view task-search-with-view">
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search title, body, owner, project, skill…" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search ID, title, body, owner, project, skill…" />
           <div className="view-switch filter-view-switch" aria-label="Task board view mode">
             <button className={viewMode === "cards" ? "on" : ""} onClick={() => setViewMode("cards")}>Cards</button>
             <button className={viewMode === "list" ? "on" : ""} onClick={() => setViewMode("list")}>List</button>
@@ -177,6 +245,7 @@ export function TaskBoard() {
         </div>
         <select value={status} onChange={(e) => setStatus(e.target.value as BoardStatus | "")}><option value="">All status</option>{lanes.map((lane) => <option key={lane.key} value={lane.key}>{lane.label}</option>)}</select>
         <select value={assignee} onChange={(e) => setAssignee(e.target.value)}><option value="">All owners</option>{summary.assignees.map((item) => <option key={item} value={item}>{item}</option>)}</select>
+        <select value={project} onChange={(e) => setProject(e.target.value)}><option value="">All projects</option>{summary.projects.map((item) => <option key={item} value={item}>{item}</option>)}</select>
         <span>{loading ? "Loading…" : `${tasks.length} issues shown`}</span>
       </section>
 
@@ -185,19 +254,26 @@ export function TaskBoard() {
 
       {viewMode === "cards" ? (
         <section className="task-kanban task-kanban-full">
-          {lanes.map((lane) => (
-            <div className="task-lane" key={lane.key}>
-              <div className="task-lane-head"><div><b>{lane.label}</b><small>{lane.helper}</small></div><span>{grouped[lane.key]?.length ?? 0}</span></div>
-              {(grouped[lane.key] ?? []).map((task) => <TaskCard key={task.id} task={task} selected={selected?.id === task.id} onSelect={() => openTask(task)} onMove={move} onDelete={remove} />)}
-              {(grouped[lane.key] ?? []).length === 0 && <div className="empty task-empty">No cards</div>}
-            </div>
-          ))}
+          {lanes.map((lane) => {
+            const laneTasks = grouped[lane.key] ?? [];
+            const visibleTasks = laneTasks.slice(0, laneVisibleCounts[lane.key]);
+            const remaining = Math.max(0, laneTasks.length - visibleTasks.length);
+            return (
+              <div className="task-lane" key={lane.key}>
+                <div className="task-lane-head"><div><b>{lane.label}</b><small>{lane.helper}</small></div><span>{laneTasks.length}</span></div>
+                {visibleTasks.map((task) => <TaskCard key={task.id} task={task} selected={selected?.id === task.id} onSelect={() => openTask(task)} onMove={move} onDelete={remove} />)}
+                {laneTasks.length === 0 && <div className="empty task-empty">No cards</div>}
+                {remaining > 0 && <button className="task-view-more" onClick={() => showMoreLane(lane.key)}>View More <span>{Math.min(TASK_PAGE_SIZE, remaining)} more</span></button>}
+              </div>
+            );
+          })}
         </section>
       ) : (
         <section className="ops-list task-list-view">
-          <div className="ops-list-head"><span>Issue list</span><small>{loading ? "Loading…" : `${tasks.length} shown`}</small></div>
-          {tasks.map((task) => <TaskListRow key={task.id} task={task} active={selected?.id === task.id} onSelect={() => openTask(task)} />)}
+          <div className="ops-list-head"><span>Issue list</span><small>{loading ? "Loading…" : `${visibleListTasks.length} of ${tasks.length} shown`}</small></div>
+          {visibleListTasks.map((task) => <TaskListRow key={task.id} task={task} active={selected?.id === task.id} onSelect={() => openTask(task)} />)}
           {!loading && tasks.length === 0 && <div className="empty big">No issues matched this filter.</div>}
+          {tasks.length > visibleListTasks.length && <button className="task-view-more task-list-view-more" onClick={() => setListVisibleCount((count) => count + TASK_PAGE_SIZE)}>View More <span>{Math.min(TASK_PAGE_SIZE, tasks.length - visibleListTasks.length)} more</span></button>}
         </section>
       )}
 
@@ -213,6 +289,13 @@ export function TaskBoard() {
           onDelete={remove}
           onSaveAssignee={saveAssignee}
           onAddComment={addComment}
+          humanNote={humanNote}
+          setHumanNote={setHumanNote}
+          onHumanAction={handleHumanAction}
+          agents={availableAgents}
+          agentTarget={agentTarget}
+          setAgentTarget={setAgentTarget}
+          onAssignToAgent={assignToAgentAndOpenChat}
         />
       )}
     </div>
@@ -240,7 +323,7 @@ function TaskListRow({ task, active, onSelect }: { task: BoardTask; active: bool
   );
 }
 
-function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onMove, onDelete, onSaveAssignee, onAddComment }: {
+function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onMove, onDelete, onSaveAssignee, onAddComment, humanNote, setHumanNote, onHumanAction, agents, agentTarget, setAgentTarget, onAssignToAgent }: {
   task: BoardTask;
   tab: DetailTab;
   setTab: (tab: DetailTab) => void;
@@ -251,19 +334,29 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
   onDelete: (task: BoardTask) => void;
   onSaveAssignee: (task: BoardTask, assignee: string) => void;
   onAddComment: () => void;
+  humanNote: string;
+  setHumanNote: (value: string) => void;
+  onHumanAction: (task: BoardTask, kind: HumanActionKind, note?: string) => void;
+  agents: Agent[];
+  agentTarget: string;
+  setAgentTarget: (value: string) => void;
+  onAssignToAgent: (task: BoardTask) => void;
 }) {
+  const intent = classifyHumanTask(task);
   return (
-    <div className="task-drawer-layer" role="dialog" aria-modal="true" aria-label="Task details">
-      <button className="task-drawer-scrim" aria-label="Close task details" onClick={onClose} />
-      <aside className="task-detail task-detail-drawer">
-        <header className="task-detail-head task-drawer-head">
-          <div><span className={`tag ${task.status === "blocked" || task.status === "error" ? "warn" : "good"}`}>{task.status}</span><h2>{task.title}</h2><p className="mono">{task.id}</p></div>
-          <button className="task-drawer-close" onClick={onClose} aria-label="Close">×</button>
-        </header>
-
-        <div className="task-drawer-tabs">
-          {(["overview", "activity", "execution"] as DetailTab[]).map((item) => <button key={item} className={tab === item ? "on" : ""} onClick={() => setTab(item)}>{item}</button>)}
-        </div>
+    <SlideOverDrawer
+      title={task.title}
+      subtitle={<span className="mono">{task.id}</span>}
+      eyebrow={task.status}
+      statusClassName={`tag ${task.status === "blocked" || task.status === "error" ? "warn" : "good"}`}
+      onClose={onClose}
+      closeLabel="Close task details"
+      ariaLabel="Task details"
+      tabs={["overview", "activity", "execution"] as const}
+      activeTab={tab}
+      onTabChange={setTab}
+      className="task-detail task-detail-drawer"
+    >
 
         {tab === "overview" && (
           <>
@@ -280,8 +373,10 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
               <button className="ghost tiny danger" onClick={() => void onDelete(task)}>Delete</button>
             </div>
             <label className="task-inline-edit"><span>Assign owner/profile</span><input defaultValue={task.assignee === "unassigned" ? "" : task.assignee} onBlur={(e) => e.target.value !== task.assignee && void onSaveAssignee(task, e.target.value)} /></label>
+            <StructuredResult task={task} />
+            <HumanActionPanel task={task} intent={intent} note={humanNote} setNote={setHumanNote} onHumanAction={onHumanAction} agents={agents} agentTarget={agentTarget} setAgentTarget={setAgentTarget} onAssignToAgent={onAssignToAgent} />
             <section className="task-section"><h3>Description</h3><pre>{task.body || "No description yet."}</pre></section>
-            {task.result && <section className="task-section"><h3>Result</h3><pre>{task.result}</pre></section>}
+            {task.result && <section className="task-section"><h3>Raw result</h3><pre>{task.result}</pre></section>}
           </>
         )}
 
@@ -298,8 +393,7 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
             <section className="task-section"><h3>Run trace</h3>{task.runs.length === 0 && <div className="empty">No worker runs yet.</div>}{task.runs.map((run) => <div className="task-run" key={run.id}><b>{run.profile || "worker"} · {run.status}</b><small>{formatSingaporeTime(run.started_at)} {run.outcome ? `· ${run.outcome}` : ""}</small><p>{run.summary || run.error || "No summary recorded."}</p></div>)}</section>
           </>
         )}
-      </aside>
-    </div>
+    </SlideOverDrawer>
   );
 }
 
@@ -312,11 +406,90 @@ function TaskCard({ task, selected, onSelect, onMove, onDelete }: { task: BoardT
     <article className={`task-card ${selected ? "on" : ""}`}>
       <button className="task-card-main" onClick={onSelect}>
         <div className="task-card-top"><span className={`priority ${task.priority_label}`}>{task.priority_label}</span><small>{formatSingaporeTime(task.updated_at)}</small></div>
+        <small className="mono">{task.id}</small>
         <h2>{task.title}</h2><p>{task.body || "No detail yet."}</p>
         <div className="task-card-meta"><span>{task.assignee}</span><span>{task.created_by}</span>{task.tenant && <span>{task.tenant}</span>}</div>
       </button>
       <footer><select value={task.status} onChange={(e) => void onMove(task, e.target.value as BoardStatus)}>{lanes.map((lane) => <option value={lane.key} key={lane.key}>{lane.label}</option>)}</select><button className="ghost tiny danger" onClick={() => void onDelete(task)}>Delete</button></footer>
     </article>
+  );
+}
+
+
+function StructuredResult({ task }: { task: BoardTask }) {
+  const details = task.result_details;
+  if (!details) return null;
+  const blockers = details.blockers ?? [];
+  const verification = Object.entries(details.verification ?? {});
+  return (
+    <section className={`task-section structured-result ${blockers.length ? "has-blockers" : ""}`}>
+      <h3>{blockers.length ? "Blockers" : "Structured result"}</h3>
+      {details.summary && <p>{details.summary}</p>}
+      {blockers.length > 0 && <ul>{blockers.map((item) => <li key={item}>{item}</li>)}</ul>}
+      {details.access_needed && <p><b>Access needed:</b> {details.access_needed}</p>}
+      {verification.length > 0 && (
+        <div className="task-chip-cloud">
+          {verification.map(([key, value]) => <em key={key}>{key}: {value}</em>)}
+        </div>
+      )}
+      {details.artifact && <p className="mono">artifact: {details.artifact}</p>}
+    </section>
+  );
+}
+
+function classifyHumanTask(task: BoardTask): HumanActionKind {
+  const text = `${task.title} ${task.body} ${task.comments.map((c) => c.body).join(" ")}`.toLowerCase();
+  if (/approve|approval|review and approve|sign[- ]?off|greenlight|go ahead/.test(text)) return "approval";
+  if (/manual|completed manually|perform|do this|done by melverick|send this yourself|call|upload|submit|login|connect|verify/.test(text)) return "manual";
+  if (/feedback|instruction|input|clarify|confirm|decide|choose|provide|direction|preference/.test(text)) return "feedback";
+  return task.status === "blocked" ? "feedback" : "agent";
+}
+
+function HumanActionPanel({ task, intent, note, setNote, onHumanAction, agents, agentTarget, setAgentTarget, onAssignToAgent }: {
+  task: BoardTask;
+  intent: HumanActionKind;
+  note: string;
+  setNote: (value: string) => void;
+  onHumanAction: (task: BoardTask, kind: HumanActionKind, note?: string) => void;
+  agents: Agent[];
+  agentTarget: string;
+  setAgentTarget: (value: string) => void;
+  onAssignToAgent: (task: BoardTask) => void;
+}) {
+  const copy = {
+    feedback: { label: "Needs your feedback / instruction", helper: "Type the decision, constraints, or clarification agents need. This records a comment and re-queues blocked work.", cta: "Save feedback & unblock" },
+    approval: { label: "Waiting for approval", helper: "Use this when the agent only needs a yes/go-ahead. Optional note is recorded as approval context.", cta: "Approve" },
+    manual: { label: "Manual step assigned to you", helper: "Use this after you have performed the real-world/manual action. Optional note can include evidence or outcome.", cta: "I completed this" },
+    agent: { label: "Can be assigned to an agent", helper: "If this should no longer sit with you, assign it to an agent and jump straight into that agent chat.", cta: "Assign to agent" },
+  }[intent];
+
+  return (
+    <section className={`task-section human-action-panel intent-${intent}`}>
+      <div className="human-action-head">
+        <div>
+          <span className="stub-tag">HUMAN HANDOFF</span>
+          <h3>{copy.label}</h3>
+          <p>{copy.helper}</p>
+        </div>
+        <span className={`tag ${intent === "approval" || intent === "manual" ? "warn" : "muted"}`}>{intent}</span>
+      </div>
+      {(intent === "feedback" || intent === "approval" || intent === "manual") && (
+        <>
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder={intent === "feedback" ? "Enter feedback/instructions for the agent…" : "Optional note / evidence…"} />
+          <div className="human-action-buttons">
+            <button className={intent === "approval" ? "btn primary" : "ghost tiny"} onClick={() => void onHumanAction(task, intent, note)}>{copy.cta}</button>
+            {intent !== "feedback" && <button className="ghost tiny" onClick={() => { setNote(""); void onHumanAction(task, "feedback", "Need changes / more information before approval or completion."); }}>Need changes</button>}
+          </div>
+        </>
+      )}
+      <div className="agent-handoff-row">
+        <select value={agentTarget} onChange={(e) => setAgentTarget(e.target.value)} aria-label="Assign task to agent">
+          <option value="">Choose agent…</option>
+          {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+        </select>
+        <button className="ghost tiny" onClick={() => void onAssignToAgent(task)}>Assign to agent & open chat</button>
+      </div>
+    </section>
   );
 }
 

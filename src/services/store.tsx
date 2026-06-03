@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Agent, Approval, Attachment, ConfigFile, ReplyContext, Skill, ViewKey } from "../types";
+import type { Agent, Approval, Attachment, ConfigFile, ModelRoutingSelection, ReplyContext, RouterConfig, Skill, ViewKey } from "../types";
 import type { HermesClient } from "./hermesClient";
 import { HttpHermesClient } from "./httpHermesClient";
 
@@ -24,7 +24,8 @@ interface StoreValue {
   setView: (v: ViewKey) => void;
   select: (id: string) => void;
   uploadAttachment: (file: File) => Promise<Attachment>;
-  send: (text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext }) => Promise<void>;
+  send: (text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection }) => Promise<void>;
+  getModelRouter: () => Promise<RouterConfig>;
   stopProcessing: (requestId?: string) => Promise<void>;
   refreshSelected: () => Promise<void>;
   createAgent: (i: { name: string; squad: string; model: string }) => Promise<void>;
@@ -72,21 +73,71 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const send = useCallback(
-    async (text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext } = {}) => {
+    async (text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection } = {}) => {
       if (!selectedId || (!text.trim() && attachments.length === 0)) return;
-      const newMessages = await client.sendMessage(selectedId, text.trim(), attachments, options);
+      const requestId = options.requestId;
       setAgents((cur) =>
         cur.map((agent) =>
           agent.id === selectedId
             ? {
                 ...agent,
-                messages: [...agent.messages, ...newMessages],
+                status: "active",
+                activityState: "active",
+                statusLabel: "Active",
+                statusDetail: "Mission Control request is processing.",
+                activity: "Processing Mission Control message",
                 lastActive: "now",
-                activity: "Mission Control conversation updated",
+                processingRequests: requestId
+                  ? Array.from(new Set([...(agent.processingRequests ?? []), requestId]))
+                  : agent.processingRequests,
+                processingRequestDetails: requestId
+                  ? [
+                      ...(agent.processingRequestDetails ?? []).filter((item) => item.id !== requestId),
+                      { id: requestId, agent_id: selectedId, started_at: Date.now() / 1000 },
+                    ]
+                  : agent.processingRequestDetails,
               }
             : agent,
         ),
       );
+      try {
+        const newMessages = await client.sendMessage(selectedId, text.trim(), attachments, options);
+        setAgents((cur) =>
+          cur.map((agent) =>
+            agent.id === selectedId
+              ? {
+                  ...agent,
+                  messages: [...agent.messages, ...newMessages],
+                  status: "active",
+                  activityState: "active",
+                  statusLabel: "Active",
+                  statusDetail: "Recent Mission Control chat activity; agent remains active for 15 minutes after the latest chat.",
+                  lastActive: "now",
+                  activity: "Mission Control conversation updated",
+                  processingRequests: requestId ? (agent.processingRequests ?? []).filter((id) => id !== requestId) : agent.processingRequests,
+                  processingRequestDetails: requestId
+                    ? (agent.processingRequestDetails ?? []).filter((item) => item.id !== requestId)
+                    : agent.processingRequestDetails,
+                }
+              : agent,
+          ),
+        );
+      } catch (err) {
+        setAgents((cur) =>
+          cur.map((agent) =>
+            agent.id === selectedId
+              ? {
+                  ...agent,
+                  processingRequests: requestId ? (agent.processingRequests ?? []).filter((id) => id !== requestId) : agent.processingRequests,
+                  processingRequestDetails: requestId
+                    ? (agent.processingRequestDetails ?? []).filter((item) => item.id !== requestId)
+                    : agent.processingRequestDetails,
+                }
+              : agent,
+          ),
+        );
+        throw err;
+      }
     },
     [selectedId],
   );
@@ -98,6 +149,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     [selectedId],
   );
+
+  const getModelRouter = useCallback(() => client.getModelRouter(), []);
 
   const refreshSelected = useCallback(async () => {
     if (!selectedId) return;
@@ -170,6 +223,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     select,
     uploadAttachment,
     send,
+    getModelRouter,
     stopProcessing,
     refreshSelected,
     createAgent,

@@ -2,14 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import type { InboxAction, InboxItem, InboxResponse, InboxStatus } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { formatSingaporeTime } from "../utils/time";
+import { SlideOverDrawer } from "../components/SlideOverDrawer";
 
 const client = new HttpHermesClient();
 const tabs: Array<{ key: InboxStatus | "all"; label: string; helper: string }> = [
-  { key: "drafted", label: "Drafted", helper: "Needs review before going live" },
-  { key: "ready", label: "Ready", helper: "Reviewed and ready for final approval" },
-  { key: "sent", label: "Sent", helper: "Approved or marked complete" },
-  { key: "rejected", label: "Rejected", helper: "Dismissed proposals" },
-  { key: "all", label: "All", helper: "Full approval history" },
+  { key: "drafted", label: "Needs decision", helper: "External or irreversible actions awaiting operator decision" },
+  { key: "ready", label: "Ready to approve", helper: "Reviewed proposals ready for final approval" },
+  { key: "sent", label: "Approved", helper: "Approved / released history" },
+  { key: "rejected", label: "Rejected", helper: "Declined or reclassified proposals" },
+  { key: "all", label: "All", helper: "Full approval decision history" },
 ];
 
 export function Approvals() {
@@ -31,7 +32,7 @@ export function Approvals() {
         setSelected(next.items.find((item) => item.id === selected.id) ?? null);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load approval inbox");
+      setError(err instanceof Error ? err.message : "Unable to load approval gates");
     } finally {
       setLoading(false);
     }
@@ -88,18 +89,18 @@ export function Approvals() {
     <div className="inbox-page scroll">
       <header className="inbox-hero">
         <div>
-          <span className="stub-tag">REVIEW QUEUE</span>
-          <h1>Inbox</h1>
-          <p>Review AI-drafted automation outputs, outbound messages, risky actions, and generated follow-ups before they become approved work.</p>
+          <span className="stub-tag">APPROVAL GATE</span>
+          <h1>Approval Gates</h1>
+          <p>Approve or reject external-facing and irreversible agent actions. Email alerts, blockers, and “needs attention” items belong on the Task Board instead.</p>
         </div>
         <button className="btn dark" onClick={() => void load()}>Refresh</button>
       </header>
 
       <section className="inbox-metrics">
-        <Metric label="Drafted" value={counts.drafted} sub="Needs review" />
-        <Metric label="Ready" value={counts.ready} sub="Reviewed queue" tone="good" />
-        <Metric label="Sent" value={counts.sent} sub="Approved history" />
-        <Metric label="Risk Watch" value={summary?.high_risk ?? 0} sub="High-risk pending" tone="bad" />
+        <Metric label="Needs decision" value={counts.drafted} sub="Approve/reject required" />
+        <Metric label="Ready" value={counts.ready} sub="Reviewed proposals" tone="good" />
+        <Metric label="Approved" value={counts.sent} sub="Decision history" />
+        <Metric label="Risk Watch" value={summary?.high_risk ?? 0} sub="High-risk approvals" tone="bad" />
       </section>
 
       <section className="inbox-tabs">
@@ -115,7 +116,7 @@ export function Approvals() {
           <span>Search</span>
           <input value={q} onChange={(event) => setQ(event.target.value)} placeholder="title, body, source, destination…" />
         </label>
-        <div className="inbox-filter-note">Derived from real Hermes approval records and recent cron outputs. Actions update `/opt/hermes-mission-control/approvals.db`.</div>
+        <div className="inbox-filter-note">Only items requiring an operator decision should appear here. Attention-only items are routed to the Task Board.</div>
       </section>
 
       {error && <div className="inbox-error">{error}</div>}
@@ -148,21 +149,21 @@ export function Approvals() {
             </footer>
           </article>
         ))}
-        {!loading && items.length === 0 && <div className="empty big">No inbox items in this view.</div>}
+        {!loading && items.length === 0 && <div className="empty big">No approval gates in this view.</div>}
       </section>
 
       {selected && (
-        <div className="inbox-drawer-layer" role="dialog" aria-modal="true" aria-label="Approval details">
-          <button className="inbox-drawer-scrim" aria-label="Close approval details" onClick={() => setSelected(null)} />
-          <aside className="inbox-detail-drawer">
-            <header className="inbox-drawer-head">
-              <div>
-                <span className={`inbox-status ${selected.status}`}>{selected.status}</span>
-                <h2>{selected.title}</h2>
-                <p>{selected.provenance}</p>
-              </div>
-              <button className="inbox-drawer-close" onClick={() => setSelected(null)} aria-label="Close">×</button>
-            </header>
+        <SlideOverDrawer
+          title={selected.title}
+          subtitle={selected.provenance}
+          eyebrow={selected.status}
+          statusClassName={`inbox-status ${selected.status}`}
+          onClose={() => setSelected(null)}
+          closeLabel="Close approval details"
+          ariaLabel="Approval details"
+          width="wide"
+          className="inbox-detail-drawer"
+        >
 
             <div className="inbox-kv">
               <Info label="Kind" value={selected.kind} />
@@ -174,7 +175,7 @@ export function Approvals() {
             </div>
 
             <section className="inbox-section">
-              <h3>Edit before approval</h3>
+              <h3>Edit decision artifact before approval</h3>
               <label>Title<input value={draft.title ?? ""} onChange={(e) => setDraft({ ...draft, title: e.target.value })} /></label>
               <label>Destination<input value={draft.destination ?? ""} onChange={(e) => setDraft({ ...draft, destination: e.target.value })} /></label>
               <label>Summary<textarea value={draft.description ?? ""} onChange={(e) => setDraft({ ...draft, description: e.target.value })} /></label>
@@ -191,8 +192,7 @@ export function Approvals() {
               <h3>Raw source body</h3>
               <pre>{selected.body}</pre>
             </section>
-          </aside>
-        </div>
+        </SlideOverDrawer>
       )}
     </div>
   );

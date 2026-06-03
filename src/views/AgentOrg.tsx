@@ -94,7 +94,7 @@ function NodeCard({ agent, selected, onClick }: { agent: OrgAgent; selected: boo
       <h3>{agent.name}</h3>
       <p>{agent.role}</p>
       <div className="chip-row compact"><span>{agent.type || "logical_agent"}</span><span>{agent.runtime || "hermes"}</span><span>{agent.mode}</span></div>
-      <div className="org-node-stats"><b>{agent.automations.length}</b><small>flows</small><b>{openWork}</b><small>queue</small><b>{agent.inbox.length}</b><small>reviews</small></div>
+      <div className="org-node-stats"><b>{agent.automations.length}</b><small>routines</small><b>{openWork}</b><small>queue</small><b>{agent.inbox.length}</b><small>gates</small></div>
       <div className="org-node-foot"><span>{agent.mode}</span><span>{agent.lastActivity ? formatSingaporeShort(agent.lastActivity) : "No recent run"}</span></div>
     </button>
   );
@@ -243,8 +243,8 @@ function DetailDrawer({ agent, agents, onClose, onAction, onCreateGoal, onApprov
             <div><span>Cost 7d</span><b>{fmtMoney(agent.cost7d)} · {fmtNum(agent.tokens7d)} tokens</b></div>
           </div>
           {agent.active_goal && <section><h3>Active goal</h3><GoalCard goal={agent.active_goal} compact onRunAction={(goal, action) => onGoalAction(agent, goal, action, 'running', true)} onDoneAction={(goal, action) => onGoalAction(agent, goal, action, 'done')} /></section>}
-          <section><h3>Run from Mission Control</h3><div className="runtime-workflows">{agent.automations.map((automation) => <div className="runtime-workflow" key={automation.id}><div><b>{automation.name}</b><small>{automation.schedule || "manual"} · last {automation.last_status || automation.status || "—"}</small></div><button className="btn dark" onClick={() => onAction(agent, "run_automation", { job_id: automation.id })}>Run</button></div>)}{!agent.automations.length && <p className="muted">This agent has no mapped runtime workflow yet. Assign a cron/job automation before it can be run from the UI.</p>}</div></section>
-          <section><h3>Operational footprint</h3><div className="org-footprint"><span>{agent.goals?.length || 0} goals</span><span>{agent.automations.length} automations</span><span>{agent.tasks.length} tasks</span><span>{agent.skills_detail.length || agent.skills.length} skills</span><span>{agent.inbox.length} approvals</span><span>{agent.runs.length} recent runs</span><span>{agent.outputs.length} outputs</span><span>{agent.activity?.length || 0} activity events</span></div></section>
+          <section><h3>Run from Mission Control</h3><div className="runtime-workflows">{agent.automations.map((automation) => <div className="runtime-workflow" key={automation.id}><div><b>{automation.name}</b><small>{automation.schedule || "manual"} · last {automation.last_status || automation.status || "—"}</small></div><button className="btn dark" onClick={() => onAction(agent, "run_automation", { job_id: automation.id })}>Run</button></div>)}{!agent.automations.length && <p className="muted">This agent has no mapped routine yet. Assign a cron routine before it can be run from the UI.</p>}</div></section>
+          <section><h3>Operational footprint</h3><div className="org-footprint"><span>{agent.goals?.length || 0} goals</span><span>{agent.automations.length} routines</span><span>{agent.tasks.length} tasks</span><span>{agent.skills_detail.length || agent.skills.length} skills</span><span>{agent.inbox.length} approvals</span><span>{agent.runs.length} recent runs</span><span>{agent.outputs.length} outputs</span><span>{agent.activity?.length || 0} activity events</span></div></section>
           <section><h3>Responsibilities</h3><p>{agent.role}. {agent.summary}</p></section>
         </>}
 
@@ -252,7 +252,7 @@ function DetailDrawer({ agent, agents, onClose, onAction, onCreateGoal, onApprov
 
         {tab === "queue" && <section><h3>Queue</h3><div className="queue-pills"><span>Queued {agent.queue.queued}</span><span>Running {agent.queue.running}</span><span>Blocked {agent.queue.blocked}</span><span>Done {agent.queue.done}</span><span>Failed {agent.queue.failed}</span></div>{agent.tasks.slice(0, 12).map((t) => <MiniRow key={t.id} title={t.title} meta={`${t.status} · ${t.priority_label || "normal"} · ${t.updated_at || "—"}`} body={t.body} />)}{!agent.tasks.length && <p className="muted">No queue items assigned yet. Use Assign task to create the first operational item.</p>}</section>}
 
-        {tab === "approvals" && <section><h3>Approvals</h3>{agent.inbox.map((i) => <MiniRow key={i.id} title={i.title} meta={`${i.status} · ${i.risk} risk · ${i.destination || "no destination"}`} body={i.description || i.body} />)}{!agent.inbox.length && <p className="muted">No pending approvals for this agent.</p>}</section>}
+        {tab === "approvals" && <section><h3>Approval Gates</h3>{agent.inbox.map((i) => <MiniRow key={i.id} title={i.title} meta={`${i.status} · ${i.risk} risk · ${i.destination || "no destination"}`} body={i.description || i.body} />)}{!agent.inbox.length && <p className="muted">No pending approval gates for this agent.</p>}</section>}
 
         {tab === "runs" && <section><h3>Recent runs</h3>{agent.runs.map((r) => <MiniRow key={r.id} title={r.title || r.automation_name || r.id} meta={`${r.status} · ${r.started_at || "—"} · ${r.tool_call_count || 0} tools · ${fmtNum(r.tokens || 0)} tokens`} />)}{!agent.runs.length && <p className="muted">No recent runtime traces mapped to this agent yet.</p>}</section>}
 
@@ -375,7 +375,7 @@ export function AgentOrg() {
         <Metric label="Digital Coworkers" value={data.summary.digital_coworkers ?? agents.length} sub="registered agents" />
         <Metric label="Running Now" value={data.summary.running_now ?? 0} sub="agent queues in progress" tone={(data.summary.running_now ?? 0) ? "good" : ""} />
         <Metric label="Queued Work" value={data.summary.queued_work ?? 0} sub="assigned tasks waiting" />
-        <Metric label="Approvals Needed" value={data.summary.approvals_needed ?? 0} sub="human gates pending" tone={(data.summary.approvals_needed ?? 0) ? "warn" : "good"} />
+        <Metric label="Approval Gates" value={data.summary.approvals_needed ?? 0} sub="human gates pending" tone={(data.summary.approvals_needed ?? 0) ? "warn" : "good"} />
         <Metric label="Active Goals" value={data.summary.active_goals ?? agents.reduce((n, a) => n + (a.goals?.length || 0), 0)} sub={`${data.summary.goal_progress_avg ?? 0}% avg progress`} tone={(data.summary.active_goals ?? 0) ? "good" : ""} />
       </section>
 
@@ -383,7 +383,7 @@ export function AgentOrg() {
 
       <nav className="org-tabs">{tabs.map((item) => <button key={item} className={tab === item ? "on" : ""} onClick={() => setTab(item)}>{item}</button>)}</nav>
 
-      {loading && <div className="empty">Loading registry-backed Agent Org from tasks, automations, approvals, audit runs, skills, costs, projects, and outputs…</div>}
+      {loading && <div className="empty">Loading registry-backed Agent Org from tasks, routines, approvals, audit runs, skills, costs, projects, and outputs…</div>}
 
       {!loading && tab === "org" && <section className="org-chart">
         <div className="human-card"><span>Human Operator</span><b>Melverick Ng</b><small>Approves risk, defines operating model, owns business judgment</small></div>

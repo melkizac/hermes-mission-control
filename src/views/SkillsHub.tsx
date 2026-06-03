@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import type { SkillHubRecord, SkillsHubResponse } from "../types";
+import type { SkillFileResponse, SkillHubRecord, SkillsHubResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { formatSingaporeTime } from "../utils/time";
+import { SlideOverDrawer } from "../components/SlideOverDrawer";
+import hermesSkillIcon from "../assets/hermes-skill-icon.png";
+import openclawSkillIcon from "../assets/openclaw-skill-icon.png";
 
 const client = new HttpHermesClient();
 
@@ -68,7 +71,7 @@ export function SkillsHub() {
           <span className="stub-tag">SKILL LIBRARY</span>
           <h1>Skills Hub</h1>
           <p>
-            Real Hermes skill inventory from installed SKILL.md files. Search capabilities, inspect routing evidence, and open dense details in a right-side drawer.
+            Inventory across Hermes, OpenClaw, and shared SKILL.md files. Search capabilities, inspect source labels and routing evidence, and open dense details in a right-side drawer.
           </p>
         </div>
         <div className="task-hero-actions">
@@ -77,10 +80,10 @@ export function SkillsHub() {
       </header>
 
       <section className="skills-metrics">
-        <Metric label="Total" value={summary?.total ?? skills.length} sub="Installed skills" />
-        <Metric label="Editable" value={summary?.editable ?? 0} sub="Local/profile files" />
-        <Metric label="Assigned" value={summary?.assigned ?? 0} sub="Agents, routines, tasks" tone="good" />
-        <Metric label="User" value={summary?.user ?? 0} sub={`${summary?.plugin ?? 0} plugin`} />
+        <Metric label="Total" value={summary?.total ?? skills.length} sub="All skill sources" />
+        <Metric label="Hermes" value={summary?.hermes ?? summary?.user ?? 0} sub="Hermes-owned skills" />
+        <Metric label="OpenClaw" value={summary?.openclaw ?? 0} sub="OpenClaw-only skills" />
+        <Metric label="Shared" value={summary?.shared ?? 0} sub="Runtime-neutral skills" tone="good" />
       </section>
 
       <section className="skills-filters">
@@ -165,12 +168,13 @@ function SkillCard({ skill, active, onSelect }: { skill: SkillHubRecord; active:
     <article className={`skill-card ${active ? "on" : ""}`}>
       <button className="skill-card-main" onClick={onSelect}>
         <div className="skill-card-top">
-          <div className="skill-icon">✦</div>
-          <span className={`tag ${skill.enabled ? "good" : "muted"}`}>{skill.enabled ? "Enabled" : "Disabled"}</span>
+          <div className="skill-card-badges">
+            <SourceLogo source={skill.source} />
+            <EnabledIcon enabled={skill.enabled} />
+          </div>
         </div>
         <div className="skill-title-row">
           <h2>{skill.name}</h2>
-          <span className="tag muted">{skill.source}</span>
         </div>
         <p>{skill.description}</p>
         <div className="skill-chips">
@@ -186,6 +190,48 @@ function SkillCard({ skill, active, onSelect }: { skill: SkillHubRecord; active:
         </div>
       </button>
     </article>
+  );
+}
+
+function SourceLogo({ source }: { source: string }) {
+  const normalized = source.toLowerCase();
+  const label = source || "Skill source";
+  if (normalized === "openclaw") {
+    return (
+      <span className="skill-source-logo openclaw" title="OpenClaw" aria-label="OpenClaw source">
+        <img src={openclawSkillIcon} alt="" aria-hidden="true" />
+      </span>
+    );
+  }
+  if (normalized === "shared") {
+    return (
+      <span className="skill-source-logo shared" title="Shared" aria-label="Shared skill source">
+        <svg viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <circle cx="17" cy="24" r="8" />
+          <circle cx="31" cy="24" r="8" />
+          <path d="M23 24h2" />
+          <path d="M15 16c3-6 15-6 18 0" />
+          <path d="M15 32c3 6 15 6 18 0" />
+        </svg>
+      </span>
+    );
+  }
+  return (
+    <span className="skill-source-logo hermes" title={label} aria-label={`${label} source`}>
+      <img src={hermesSkillIcon} alt="" aria-hidden="true" />
+    </span>
+  );
+}
+
+function EnabledIcon({ enabled }: { enabled: boolean }) {
+  return (
+    <span
+      className={`skill-enabled-icon ${enabled ? "on" : "off"}`}
+      title={enabled ? "Enabled" : "Disabled"}
+      aria-label={enabled ? "Enabled" : "Disabled"}
+    >
+      {enabled ? "✓" : "—"}
+    </span>
   );
 }
 
@@ -226,72 +272,95 @@ function SkillDrawer({ skill, tab, setTab, onClose }: {
   setTab: (tab: SkillTab) => void;
   onClose: () => void;
 }) {
+  const [file, setFile] = useState<SkillFileResponse | null>(null);
+  const [fileLoading, setFileLoading] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setFile(null);
+    setFileError(null);
+    setFileLoading(true);
+    client.getSkillFile(skill.id)
+      .then((next) => {
+        if (!cancelled) setFile(next);
+      })
+      .catch((err) => {
+        if (!cancelled) setFileError(err instanceof Error ? err.message : "Unable to read SKILL.md");
+      })
+      .finally(() => {
+        if (!cancelled) setFileLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [skill.id]);
+
   return (
-    <div className="skill-drawer-layer" role="dialog" aria-modal="true" aria-label="Skill details">
-      <button className="skill-drawer-scrim" aria-label="Close skill details" onClick={onClose} />
-      <aside className="skill-detail skill-detail-drawer">
-        <header className="skill-detail-head skill-drawer-head">
-          <div>
-            <span className="tag good">{skill.readiness}</span>
-            <h2>{skill.name}</h2>
-            <p className="mono">{skill.id}</p>
+    <SlideOverDrawer
+      title={skill.name}
+      subtitle={<span className="mono">{skill.id}</span>}
+      eyebrow={skill.readiness}
+      statusClassName="tag good"
+      onClose={onClose}
+      closeLabel="Close skill details"
+      ariaLabel="Skill details"
+      tabs={["overview", "routing", "source"] as const}
+      activeTab={tab}
+      onTabChange={setTab}
+      className="skill-detail skill-detail-drawer"
+    >
+      {tab === "overview" && (
+        <>
+          <div className="skill-kv">
+            <Info label="Category" value={skill.category} />
+            <Info label="Source" value={skill.source} />
+            <Info label="Editable" value={skill.editable ? "Yes" : "No"} />
+            <Info label="Version" value={skill.version} />
+            <Info label="Author" value={skill.author} />
+            <Info label="Updated" value={formatSingaporeTime(skill.updated_at)} />
+            <Info label="Model affinity" value={skill.model} />
+            <Info label="Routes" value={compact(skill.used_by_count)} />
           </div>
-          <button className="skill-drawer-close" onClick={onClose} aria-label="Close">×</button>
-        </header>
-
-        <div className="skill-drawer-tabs">
-          {(["overview", "routing", "source"] as SkillTab[]).map((item) => <button key={item} className={tab === item ? "on" : ""} onClick={() => setTab(item)}>{item}</button>)}
-        </div>
-
-        {tab === "overview" && (
-          <>
-            <div className="skill-kv">
-              <Info label="Category" value={skill.category} />
-              <Info label="Source" value={skill.source} />
-              <Info label="Editable" value={skill.editable ? "Yes" : "No"} />
-              <Info label="Version" value={skill.version} />
-              <Info label="Author" value={skill.author} />
-              <Info label="Updated" value={formatSingaporeTime(skill.updated_at)} />
-              <Info label="Model affinity" value={skill.model} />
-              <Info label="Routes" value={compact(skill.used_by_count)} />
+          <section className="skill-section">
+            <h3>Description</h3>
+            <p>{skill.description}</p>
+          </section>
+          <section className="skill-section">
+            <h3>Tags / related skills</h3>
+            <div className="skill-chip-cloud">
+              {(skill.tags.length ? skill.tags : ["no tags"]).map((tag) => <span key={tag}>{tag}</span>)}
+              {skill.related_skills.map((item) => <em key={item}>{item}</em>)}
             </div>
-            <section className="skill-section">
-              <h3>Description</h3>
-              <p>{skill.description}</p>
-            </section>
-            <section className="skill-section">
-              <h3>Tags / related skills</h3>
-              <div className="skill-chip-cloud">
-                {(skill.tags.length ? skill.tags : ["no tags"]).map((tag) => <span key={tag}>{tag}</span>)}
-                {skill.related_skills.map((item) => <em key={item}>{item}</em>)}
-              </div>
-            </section>
-          </>
-        )}
+          </section>
+        </>
+      )}
 
-        {tab === "routing" && (
-          <>
-            <RoutingBlock title="Agents / profiles" rows={skill.used_by_agents} empty="No profile/channel assignment detected." />
-            <RoutingBlock title="Automations" rows={skill.used_by_automations} empty="No cron routine currently declares this skill." />
-            <RoutingBlock title="Task Board" rows={skill.used_by_tasks} empty="No Kanban task currently declares this skill." />
-          </>
-        )}
+      {tab === "routing" && (
+        <>
+          <RoutingBlock title="Agents / profiles" rows={skill.used_by_agents} empty="No profile/channel assignment detected." />
+          <RoutingBlock title="Routines" rows={skill.used_by_automations} empty="No routine currently declares this skill." />
+          <RoutingBlock title="Task Board" rows={skill.used_by_tasks} empty="No Kanban task currently declares this skill." />
+        </>
+      )}
 
-        {tab === "source" && (
-          <>
-            <section className="skill-section">
-              <h3>Filesystem</h3>
-              <div className="skill-path mono">{skill.path}</div>
-              <div className="skill-path mono">{skill.skill_dir}</div>
-            </section>
-            <section className="skill-section">
-              <h3>SKILL.md preview</h3>
-              <pre>{skill.preview}</pre>
-            </section>
-          </>
-        )}
-      </aside>
-    </div>
+      {tab === "source" && (
+        <>
+          <section className="skill-section">
+            <h3>Filesystem</h3>
+            <div className="skill-path mono">{skill.path}</div>
+            <div className="skill-path mono">{skill.skill_dir}</div>
+          </section>
+          <section className="skill-section">
+            <div className="skill-section-heading">
+              <h3>Full SKILL.md</h3>
+              <small>{file ? `${compact(file.size)} bytes · ${formatSingaporeTime(file.updated_at)}` : "Read from filesystem"}</small>
+            </div>
+            {fileLoading && <div className="empty">Reading SKILL.md…</div>}
+            {fileError && <div className="skills-error">{fileError}</div>}
+            {!fileLoading && !fileError && <pre className="skill-file-full">{file?.content ?? skill.preview}</pre>}
+          </section>
+        </>
+      )}
+    </SlideOverDrawer>
   );
 }
 

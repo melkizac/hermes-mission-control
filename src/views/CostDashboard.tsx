@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { CostBreakdownRow, CostSessionRecord, CostsResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { formatSingaporeTime } from "../utils/time";
+import { SlideOverDrawer } from "../components/SlideOverDrawer";
 
 const client = new HttpHermesClient();
 const windows = [7, 14, 30, 90, 365];
@@ -188,37 +189,35 @@ function SessionRow({ session, onClick }: { session: CostSessionRecord; onClick:
 
 function CostDrawer({ session, onClose }: { session: CostSessionRecord; onClose: () => void }) {
   return (
-    <div className="cost-drawer-layer" role="dialog" aria-modal="true" aria-label="Cost session details">
-      <button className="cost-drawer-scrim" aria-label="Close cost details" onClick={onClose} />
-      <aside className="cost-detail cost-detail-drawer">
-        <header className="cost-detail-head cost-drawer-head">
-          <div>
-            <span className="tag muted">{session.status}</span>
-            <h2>{session.title}</h2>
-            <p className="mono">{session.id}</p>
-          </div>
-          <button className="cost-drawer-close" onClick={onClose} aria-label="Close">×</button>
-        </header>
-        <div className="cost-kv">
-          <Info label="Displayed cost" value={money(session.display_cost_usd)} />
-          <Info label="Estimated" value={money(session.estimated_cost_usd)} />
-          <Info label="Actual" value={session.actual_cost_usd == null ? "—" : money(session.actual_cost_usd)} />
-          <Info label="Provider" value={session.billing_provider || "—"} />
-          <Info label="Source" value={session.source} />
-          <Info label="Started" value={formatSingaporeTime(session.started_at)} />
-          <Info label="Messages" value={String(session.message_count)} />
-          <Info label="API calls" value={String(session.api_call_count)} />
-        </div>
-        <section className="cost-section">
-          <h3>Token breakdown</h3>
-          <TokenMix summary={session} />
-        </section>
-        <section className="cost-section">
-          <h3>Billing metadata</h3>
-          <pre>{JSON.stringify({ cost_status: session.cost_status, cost_source: session.cost_source, provider: session.billing_provider, model: session.model }, null, 2)}</pre>
-        </section>
-      </aside>
-    </div>
+    <SlideOverDrawer
+      title={session.title}
+      subtitle={<span className="mono">{session.id}</span>}
+      eyebrow={session.status}
+      statusClassName="tag muted"
+      onClose={onClose}
+      closeLabel="Close cost details"
+      ariaLabel="Cost session details"
+      className="cost-detail cost-detail-drawer"
+    >
+      <div className="cost-kv">
+        <Info label="Displayed cost" value={money(session.display_cost_usd)} />
+        <Info label="Estimated" value={money(session.estimated_cost_usd)} />
+        <Info label="Actual" value={session.actual_cost_usd == null ? "—" : money(session.actual_cost_usd)} />
+        <Info label="Provider" value={session.billing_provider || "—"} />
+        <Info label="Source" value={session.source} />
+        <Info label="Started" value={formatSingaporeTime(session.started_at)} />
+        <Info label="Messages" value={String(session.message_count)} />
+        <Info label="API calls" value={String(session.api_call_count)} />
+      </div>
+      <section className="cost-section">
+        <h3>Token breakdown</h3>
+        <TokenMix summary={session} />
+      </section>
+      <section className="cost-section">
+        <h3>Billing metadata</h3>
+        <pre>{JSON.stringify({ cost_status: session.cost_status, cost_source: session.cost_source, provider: session.billing_provider, model: session.model }, null, 2)}</pre>
+      </section>
+    </SlideOverDrawer>
   );
 }
 
