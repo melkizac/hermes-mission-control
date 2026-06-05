@@ -20,11 +20,28 @@ function cap(value: string) {
   return value ? value[0].toUpperCase() + value.slice(1) : "—";
 }
 
+function displayType(value?: string) {
+  const raw = String(value || "tool").toLowerCase();
+  if (raw === "mcp-server") return "MCP server";
+  if (raw === "cli-tool") return "CLI tool";
+  if (raw === "toolset") return "Toolset";
+  return cap(raw.replace(/-/g, " "));
+}
+
+function displaySource(value?: string) {
+  const raw = String(value || "config.yaml").toLowerCase();
+  if (raw.includes("openclaw")) return "OpenClaw";
+  if (raw.includes("shared")) return "Shared";
+  if (raw.includes("mission control") || raw.includes("user") || raw.includes("mcp_servers")) return "User";
+  if (raw.includes("config.yaml") || raw.includes("profile config") || raw.includes("hermes")) return "Hermes";
+  return cap(String(value || "Hermes"));
+}
+
 export function ToolsHub() {
   const { agents, loading } = useStore();
   const [q, setQ] = useState("");
   const [source, setSource] = useState("");
-  const [kind, setKind] = useState("tool");
+  const [kind, setKind] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<ToolTab>("overview");
@@ -60,16 +77,21 @@ export function ToolsHub() {
     return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [agents]);
 
-  const sources = useMemo(() => Array.from(new Set(records.map((item) => item.source || "profile config"))).sort(), [records]);
-  const kinds = useMemo(() => Array.from(new Set(records.map((item) => item.kind || "toolset"))).sort(), [records]);
+  const visibleRecords = useMemo(() => records.filter((item) => item.kind !== "toolset" && item.name !== "Full Hermes CLI tools" && item.id !== "hermes-cli"), [records]);
+  const sources = useMemo(() => Array.from(new Set(visibleRecords.map((item) => displaySource(item.source)))).sort(), [visibleRecords]);
+  const kinds = useMemo(() => Array.from(new Set(visibleRecords.map((item) => displayType(item.kind)))).sort(), [visibleRecords]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return records.filter((item) => {
+    return visibleRecords.filter((item) => {
+      const itemSource = displaySource(item.source);
+      const itemKind = displayType(item.kind);
       const haystack = [
         item.name,
         item.id,
         item.description,
+        itemSource,
+        itemKind,
         item.source,
         item.kind,
         item.toolName,
@@ -81,16 +103,15 @@ export function ToolsHub() {
         ...(item.categories ?? []).map((cat) => cat.name),
         ...item.agents.map((agent) => agent.name),
       ].join(" ").toLowerCase();
-      return (!needle || haystack.includes(needle)) && (!source || (item.source || "profile config") === source) && (!kind || (item.kind || "toolset") === kind);
+      return (!needle || haystack.includes(needle)) && (!source || itemSource === source) && (!kind || itemKind === kind);
     });
-  }, [records, q, source, kind]);
+  }, [visibleRecords, q, source, kind]);
 
-  const selectedTool = useMemo(() => records.find((item) => item.id === selected), [records, selected]);
-  const individualTools = records.filter((item) => item.kind === "tool");
-  const toolsets = records.filter((item) => item.kind === "toolset");
-  const totalToolCalls = individualTools.length || toolsets.reduce((sum, item) => sum + (item.toolCount ?? 0), 0);
+  const selectedTool = useMemo(() => visibleRecords.find((item) => item.id === selected), [visibleRecords, selected]);
+  const individualTools = visibleRecords.filter((item) => item.kind === "tool");
+  const totalToolCalls = individualTools.length || visibleRecords.length;
   const enabledRecords = filtered.filter((item) => item.enabledAgents > 0).length;
-  const categoryCount = new Set(records.flatMap((item) => (item.categories ?? []).map((cat) => cat.id))).size;
+  const categoryCount = new Set(visibleRecords.flatMap((item) => (item.categories ?? []).map((cat) => cat.id))).size;
 
   const openTool = (tool: ToolRecord) => {
     setSelected(tool.id);
@@ -123,7 +144,7 @@ export function ToolsHub() {
           <span className="stub-tag">TOOL REGISTRY</span>
           <h1>Tools</h1>
           <p>
-            Individual Hermes CLI tools are shown as assignment-ready capabilities, not hidden inside the broad “Full Hermes CLI tools” bundle. Switch Kind to Toolset only when you need to inspect the parent bundles/config source.
+            Mission Control lists each executable tool as an assignment-ready capability. Use Type and Source to see whether a capability comes from Hermes, User-installed integrations, or another connected runtime.
           </p>
         </div>
         <div className="task-hero-actions">
@@ -134,9 +155,9 @@ export function ToolsHub() {
       </header>
 
       <section className="skills-metrics">
-        <Metric label="Individual Tools" value={totalToolCalls} sub="Assignment-ready functions" />
+        <Metric label="Tools" value={totalToolCalls} sub="Assignment-ready functions" />
         <Metric label="Enabled" value={enabledRecords} sub="Shown in current filter" tone="good" />
-        <Metric label="Toolsets" value={toolsets.length} sub="Parent bundles" />
+        <Metric label="Sources" value={sources.length} sub="Hermes, User, and runtimes" />
         <Metric label="Categories" value={categoryCount} sub="Capability areas" />
       </section>
 
@@ -144,7 +165,7 @@ export function ToolsHub() {
         <div className="filter-search-with-view">
           <label>
             <span>Search</span>
-            <input value={q} onChange={(event) => setQ(event.target.value)} placeholder="toolset, tool name, category, agent…" />
+            <input value={q} onChange={(event) => setQ(event.target.value)} placeholder="tool name, type, source, category, agent…" />
           </label>
           <div className="view-switch filter-view-switch" aria-label="Tools view mode">
             <button className={viewMode === "cards" ? "on" : ""} onClick={() => setViewMode("cards")}>Cards</button>
@@ -152,9 +173,9 @@ export function ToolsHub() {
           </div>
         </div>
         <label>
-          <span>Kind</span>
+          <span>Type</span>
           <select value={kind} onChange={(event) => setKind(event.target.value)}>
-            <option value="">All kinds</option>
+            <option value="">All types</option>
             {kinds.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
         </label>
@@ -165,7 +186,7 @@ export function ToolsHub() {
             {sources.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
         </label>
-        <div className="skills-filter-note">Default view shows each executable tool separately so agents can be assigned precise powers. Toolsets remain visible as parent bundles for audit/config context.</div>
+        <div className="skills-filter-note">Tool cards show executable capabilities only. Source labels identify whether each tool is from Hermes, User-installed integrations, or another connected runtime.</div>
       </section>
 
       {viewMode === "cards" ? (
@@ -227,13 +248,13 @@ function ToolCard({ tool, active, onSelect }: { tool: ToolRecord; active: boolea
           <div className="skill-card-badges">
             <span className={`skill-enabled-icon ${tool.enabledAgents > 0 ? "on" : "off"}`}>{tool.enabledAgents > 0 ? "✓" : "—"}</span>
           </div>
-          <span className="tag muted">{tool.kind || "toolset"}</span>
+          <span className="tag muted">{displayType(tool.kind)}</span>
         </div>
         <div className="skill-title-row"><h2>{tool.name}</h2></div>
         <p>{tool.description || "No description reported for this capability."}</p>
         <div className="skill-chips">
-          <span>{tool.kind === "tool" ? "Individual tool" : (tool.source || "profile config")}</span>
-          {tool.parentToolsetName && <span>{tool.parentToolsetName}</span>}
+          <span>Type: {displayType(tool.kind)}</span>
+          <span>Source: {displaySource(tool.source)}</span>
           <span>{tool.agents.length} agent{tool.agents.length === 1 ? "" : "s"}</span>
           <span>{tool.enabledAgents} enabled</span>
         </div>
@@ -260,7 +281,7 @@ function ToolListRow({ tool, active, onSelect }: { tool: ToolRecord; active: boo
       </div>
       <div className="ops-row-meta">
         <span>{tool.toolCount ?? 0} tools</span>
-        <small>{tool.kind || "toolset"} · {tool.source || "profile config"}</small>
+        <small>{displayType(tool.kind)} · Source: {displaySource(tool.source)}</small>
         <em>{tool.agents.length} agent{tool.agents.length === 1 ? "" : "s"} · {tool.categories?.length ?? 0} categories</em>
       </div>
     </button>
@@ -275,7 +296,7 @@ function Mini({ label, value }: { label: string; value: number | string }) {
 
 function ToolDrawer({ tool, tab, setTab, onClose }: { tool: ToolRecord; tab: ToolTab; setTab: (tab: ToolTab) => void; onClose: () => void }) {
   return (
-    <SlideOverDrawer title={tool.name} subtitle={`${tool.kind || "toolset"} · ${tool.source || "profile config"}`} onClose={onClose} className="tool-drawer">
+    <SlideOverDrawer title={tool.name} subtitle={`${displayType(tool.kind)} · Source: ${displaySource(tool.source)}`} onClose={onClose} className="tool-drawer">
       <div className="tabs drawer-tabs">
         {(["overview", "agents", "tools"] as ToolTab[]).map((item) => (
           <button key={item} className={tab === item ? "tab on" : "tab"} onClick={() => setTab(item)}>{cap(item)}</button>
@@ -299,9 +320,8 @@ function ToolDrawer({ tool, tab, setTab, onClose }: { tool: ToolRecord; tab: Too
           </div>
           <Info label="Capability ID" value={tool.id} mono />
           {tool.assignmentUnit && <Info label="Assignment key" value={tool.assignmentUnit} mono />}
-          {tool.parentToolsetName && <Info label="Parent toolset" value={tool.parentToolsetName} />}
-          <Info label="Kind" value={tool.kind || "toolset"} />
-          <Info label="Source" value={tool.source || "profile config"} />
+          <Info label="Type" value={displayType(tool.kind)} />
+          <Info label="Source" value={displaySource(tool.source)} />
         </div>
       )}
 
