@@ -33,9 +33,13 @@ export function ContextPanel({
 }) {
   const [tab, setTab] = useState<Tab>("overview");
   const [editing, setEditing] = useState<ConfigFile | null>(null);
-  const { addSkill, removeSkill, deleteAgent } = useStore();
+  const { addSkill, removeSkill, deleteAgent, permissions } = useStore();
+  const canEditAgent = permissions.canEditGlobalAgents;
+  const canEditAgentIdentity = permissions.canEditAgentIdentity;
+  const canEditFile = (file: ConfigFile) => canEditAgent || Boolean(file.editable) || (canEditAgentIdentity && file.kind === "soul");
 
   const onAddSkill = () => {
+    if (!canEditAgent) return;
     const name = window.prompt("Skill to install (from Hub or your repo):");
     if (name) void addSkill({ id: Math.random().toString(36).slice(2), name, source: "hub" });
   };
@@ -131,7 +135,7 @@ export function ContextPanel({
 
             <div className="sec-l">Identity files</div>
             {identityFiles.slice(0, 5).map((f) => (
-              <FileRow key={f.name} file={f} onOpen={() => setEditing(f)} />
+              <FileRow key={`${f.scope || "profile"}-${f.name}`} file={f} disabled={!canEditFile(f)} onOpen={() => { if (canEditFile(f)) setEditing(f); }} />
             ))}
             {identityFiles.length === 0 && <div className="empty">No identity files found for this profile.</div>}
 
@@ -140,14 +144,20 @@ export function ContextPanel({
               {agent.skills.slice(0, 16).map((s) => (
                 <span className="skill" key={s.id}>
                   {s.name}
-                  <span className="x" onClick={() => void removeSkill(s.id)} title="Remove">
-                    ×
-                  </span>
+                  {canEditAgent && (
+                    <span className="x" onClick={() => void removeSkill(s.id)} title="Remove">
+                      ×
+                    </span>
+                  )}
                 </span>
               ))}
-              <span className="skill add" onClick={onAddSkill}>
-                + Add skill
-              </span>
+              {canEditAgent ? (
+                <span className="skill add" onClick={onAddSkill}>
+                  + Add skill
+                </span>
+              ) : (
+                <span className="skill readonly">Read-only workspace selection</span>
+              )}
             </div>
             {agent.skills.length > 16 && <div className="mini-note">+ {agent.skills.length - 16} more skills in the Skills tab.</div>}
 
@@ -162,9 +172,11 @@ export function ContextPanel({
               )}
             </div>
 
-            <button className="danger" onClick={() => confirmDelete(agent, deleteAgent)}>
-              Delete agent…
-            </button>
+            {canEditAgent && (
+              <button className="danger" onClick={() => confirmDelete(agent, deleteAgent)}>
+                Delete agent…
+              </button>
+            )}
           </>
         )}
 
@@ -172,7 +184,7 @@ export function ContextPanel({
           <>
             <div className="sec-l">Identity and profile files · {agent.files.length}</div>
             {agent.files.map((f) => (
-              <FileRow key={f.name} file={f} onOpen={() => setEditing(f)} />
+              <FileRow key={`${f.scope || "profile"}-${f.name}`} file={f} disabled={!canEditFile(f)} onOpen={() => { if (canEditFile(f)) setEditing(f); }} />
             ))}
             {otherFiles.length > 0 && <div className="mini-note">Includes {otherFiles.length} supporting profile file(s).</div>}
           </>
@@ -224,18 +236,24 @@ export function ContextPanel({
                     <span className="skill" key={s.id} title={s.source ?? "local"}>
                       {s.name}
                       {s.source && <em>{s.source}</em>}
-                      <span className="x" onClick={() => void removeSkill(s.id)} title="Remove">
-                        ×
-                      </span>
+                      {canEditAgent && (
+                        <span className="x" onClick={() => void removeSkill(s.id)} title="Remove">
+                          ×
+                        </span>
+                      )}
                     </span>
                   ))}
                 </div>
               </div>
             ))}
             {agent.skills.length === 0 && <div className="empty">No skills assigned to this profile.</div>}
-            <button className="btn full" onClick={onAddSkill}>
-              + Add skill
-            </button>
+            {canEditAgent ? (
+              <button className="btn full" onClick={onAddSkill}>
+                + Add skill
+              </button>
+            ) : (
+              <div className="mini-note">Read-only workspace selection: ask an admin to change this workspace template.</div>
+            )}
           </>
         )}
 
@@ -290,9 +308,9 @@ export function ContextPanel({
   );
 }
 
-function FileRow({ file, onOpen }: { file: ConfigFile; onOpen: () => void }) {
+function FileRow({ file, onOpen, disabled }: { file: ConfigFile; onOpen: () => void; disabled?: boolean }) {
   return (
-    <div className="filerow" onClick={onOpen}>
+    <div className={"filerow" + (disabled ? " readonly" : "")} onClick={disabled ? undefined : onOpen} aria-disabled={disabled}>
       <div className="fic">{fileGlyph(file.kind)}</div>
       <div>
         <div className="fn">{file.name}</div>

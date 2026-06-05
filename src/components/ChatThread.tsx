@@ -176,6 +176,11 @@ export function ChatThread({
     () => sortedMessages.find((m) => m.role === "user" && m.requestId === activeBackendRequestId),
     [activeBackendRequestId, sortedMessages],
   );
+  const pendingBackendUserVisible = useMemo(
+    () => sortedMessages.some((m) => m.role === "user" && m.requestId === activeRequestRef.current?.id && Boolean(m.text?.trim() || m.attachments?.length)),
+    [sortedMessages],
+  );
+  const visiblePendingMessage = pendingBackendUserVisible ? null : pendingMessage;
   const activeBackendStartedAt = activeBackendUserMessage?.ts
     ? activeBackendUserMessage.ts * 1000
     : activeBackendRequestDetail?.started_at
@@ -275,12 +280,12 @@ export function ChatThread({
   };
 
   useEffect(() => {
-    const target = unreadStartIndex >= 0 && !pendingMessage ? unreadRef.current : bottomRef.current;
+    const target = unreadStartIndex >= 0 && !visiblePendingMessage ? unreadRef.current : bottomRef.current;
     window.requestAnimationFrame(() => {
-      target?.scrollIntoView({ block: unreadStartIndex >= 0 && !pendingMessage ? "start" : "end" });
+      target?.scrollIntoView({ block: unreadStartIndex >= 0 && !visiblePendingMessage ? "start" : "end" });
       updateJumpButton();
     });
-  }, [agent.id, unreadStartIndex, sortedMessages.length, pendingMessage]);
+  }, [agent.id, unreadStartIndex, sortedMessages.length, visiblePendingMessage]);
 
   useEffect(() => {
     if (!latestMessageKey) return;
@@ -455,10 +460,10 @@ export function ChatThread({
             <MessageView m={m} agent={agent} onReply={(message) => setReplyTo(replyContextForMessage(message, agent))} />
           </div>
         ))}
-        {(pendingMessage || activeBackendRequestId) && (
+        {(visiblePendingMessage || activeBackendRequestId) && (
           <>
-            {pendingMessage && (
-              <MessageView m={{ id: "pending-user", role: "user", text: pendingMessage.text, attachments: pendingMessage.attachments, replyTo: pendingMessage.replyTo, at: "just now" }} agent={agent} />
+            {visiblePendingMessage && (
+              <MessageView m={{ id: "pending-user", role: "user", text: visiblePendingMessage.text, attachments: visiblePendingMessage.attachments, replyTo: visiblePendingMessage.replyTo, at: "just now" }} agent={agent} />
             )}
             <div className="processing-inline" role="status" aria-live="polite" aria-label={`${agent.name} is processing your message`}>
               <span className="processing-inline-dots" aria-hidden="true">

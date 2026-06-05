@@ -1,47 +1,32 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type React from "react";
 import { useStore } from "../services/store";
-import type { AutomationsResponse, BoardResponse, CostsResponse, InboxResponse, ProjectsResponse, SecondBrainResponse, ViewKey } from "../types";
-import { formatSingaporeShort, formatSingaporeTime, singaporeHour } from "../utils/time";
+import type { BoardResponse, BoardTask, Message, ProjectRecord, ProjectsResponse } from "../types";
 
-type RuntimeStatus = {
-  now: string;
-  mode?: string;
-  demo?: boolean;
-  runtime?: { version?: string; profiles?: number };
-  api: { health?: { ok?: boolean }; models?: string[]; error?: string | null };
-  gateway: { running?: boolean; processes?: string[] };
-  sessions: { total?: number; active_recent?: number; tokens?: number; tool_calls?: number };
-  cron: { total?: number; enabled?: number; jobs?: Array<{ id?: string; name?: string; enabled?: boolean; state?: string; schedule?: string; next_run_at?: string; last_status?: string }> };
-};
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
-type SessionRow = {
+type ChatPermissionMode = "ask-critical" | "full-policy" | "draft-only";
+type ChatModelMode = "auto" | "gpt-55-medium" | "fast" | "deep";
+
+type ChatAttachment = {
   id: string;
-  title: string;
-  source: string;
-  started_at: string;
-  messages: number;
-  tools: number;
-  tokens: number;
-  preview: string;
+  name: string;
+  size: number;
+  type: string;
 };
 
-type LoadState = {
-  status: RuntimeStatus | null;
-  sessions: SessionRow[];
-  inbox: InboxResponse | null;
-  automations: AutomationsResponse | null;
-  costs: CostsResponse | null;
-  board: BoardResponse | null;
-  projects: ProjectsResponse | null;
-  brain: SecondBrainResponse | null;
-};
+const permissionModeOptions: Array<{ value: ChatPermissionMode; label: string; promptLabel: string }> = [
+  { value: "full-policy", label: "Full access", promptLabel: "Full access within policy" },
+  { value: "ask-critical", label: "Ask permission", promptLabel: "Ask before critical actions" },
+  { value: "draft-only", label: "Draft only", promptLabel: "Draft only" },
+];
 
-type CockpitLink = {
-  title: string;
-  detail: string;
-  view: ViewKey;
-  tone?: "neutral" | "warn" | "bad";
-};
+const modelModeOptions: Array<{ value: ChatModelMode; label: string; promptLabel: string }> = [
+  { value: "auto", label: "AUTO", promptLabel: "AUTO — Melkizac decides" },
+  { value: "gpt-55-medium", label: "5.5 Medium", promptLabel: "5.5 Medium" },
+  { value: "fast", label: "Fast", promptLabel: "Fast" },
+  { value: "deep", label: "Deep", promptLabel: "Deep reasoning" },
+];
 
 async function request<T>(path: string): Promise<T> {
   const url = `${window.location.protocol}//${window.location.host}${path}`;
@@ -50,254 +35,405 @@ async function request<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-async function safe<T>(path: string, fallback: T): Promise<T> {
-  try {
-    return await request<T>(path);
-  } catch {
-    return fallback;
-  }
+function formatBytes(bytes: number) {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)}MB`;
 }
 
-function fmt(n?: number, digits = 0) {
-  return Number(n ?? 0).toLocaleString(undefined, { maximumFractionDigits: digits });
+function projectLabel(project: ProjectRecord) {
+  return project.name || project.id;
 }
 
-function money(n?: number) {
-  return `$${Number(n ?? 0).toFixed(2)}`;
+function taskMatchesProject(task: BoardTask, project: ProjectRecord) {
+  const haystack = [task.tenant, task.workspace_path, task.title, task.body, task.assignee].filter(Boolean).join(" ").toLowerCase();
+  return [project.id, project.name, project.path].filter(Boolean).some((value) => haystack.includes(String(value).toLowerCase()));
 }
 
-function shortTime(value?: string | null) {
-  return formatSingaporeShort(value);
+function missionRows(project: ProjectRecord | null, tasks: BoardTask[]) {
+  if (!project) return [];
+  const sourceTasks = tasks.filter((task) => taskMatchesProject(task, project));
+  const projectGoals = project.goals ?? [];
+  return [
+    ...projectGoals.map((goal) => {
+      const title = goal.title || goal.name || goal.id || "Untitled mission";
+      return {
+        id: goal.id || title,
+        title,
+        status: goal.status || goal.readiness || "goal",
+      };
+    }),
+    ...sourceTasks.map((task) => ({
+      id: task.id,
+      title: task.mission_result?.workItem?.title || task.title,
+      status: task.status,
+    })),
+  ].filter((row, index, rows) => rows.findIndex((candidate) => candidate.id === row.id || candidate.title === row.title) === index).slice(0, 8);
+}
+
+function isRenderableChatMessage(message: Message) {
+  return (message.role === "user" || message.role === "agent") && Boolean(message.text?.trim() || message.attachments?.length);
+}
+
+function chatMessageLabel(message: Message) {
+  if (message.role === "user") return "You";
+  return "Melkizac";
+}
+
+function chatMessageTime(message: Message) {
+  return message.at || (message.ts ? new Date(message.ts * 1000).toLocaleString() : "");
+}
+
+function chatSessionLabel(message: Message) {
+  if (message.sessionId) return `Session ${message.sessionId}`;
+  if (message.source === "web-ui") return "Web UI · Chat";
+  return message.source || "Mission Control";
+}
+
+function visibleChatText(message: Message) {
+  const raw = message.text || "";
+  const marker = "[Mission Control Chat Context]";
+  const index = raw.indexOf(marker);
+  return (index >= 0 ? raw.slice(0, index) : raw).trim();
 }
 
 export function MissionControl() {
-  const { agents, approvals, setView } = useStore();
-  const [data, setData] = useState<LoadState>({ status: null, sessions: [], inbox: null, automations: null, costs: null, board: null, projects: null, brain: null });
+  const { agents, sendToAgent } = useStore();
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [projects, setProjects] = useState<ProjectRecord[]>([]);
+  const [tasks, setTasks] = useState<BoardTask[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [selectedMissionId, setSelectedMissionId] = useState("");
+  const [permissionMode, setPermissionMode] = useState<ChatPermissionMode>("full-policy");
+  const [modelMode, setModelMode] = useState<ChatModelMode>("gpt-55-medium");
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [hasStartedMainChat, setHasStartedMainChat] = useState(false);
+  const latestMessageRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let alive = true;
-    const load = async () => {
+    async function loadContext() {
       try {
-        const [status, sessions, inbox, automations, costs, board, projects, brain] = await Promise.all([
-          safe<RuntimeStatus | null>("/api/status", null),
-          safe<SessionRow[]>("/api/sessions", []),
-          safe<InboxResponse | null>("/api/inbox", null),
-          safe<AutomationsResponse | null>("/api/automations", null),
-          safe<CostsResponse | null>("/api/costs", null),
-          safe<BoardResponse | null>("/api/task-board", null),
-          safe<ProjectsResponse | null>("/api/projects", null),
-          safe<SecondBrainResponse | null>("/api/second-brain", null),
+        const [projectData, boardData] = await Promise.all([
+          request<ProjectsResponse>("/api/projects"),
+          request<BoardResponse>("/api/task-board"),
         ]);
         if (!alive) return;
-        setData({ status, sessions: sessions.slice(0, 8), inbox, automations, costs, board, projects, brain });
-        setError(null);
-      } catch (err) {
-        if (!alive) return;
-        setError(err instanceof Error ? err.message : "Unable to load dashboard telemetry");
-      } finally {
-        if (alive) setLoading(false);
+        setProjects(projectData.projects ?? []);
+        setTasks(boardData.tasks ?? []);
+      } catch {
+        if (alive) {
+          setProjects([]);
+          setTasks([]);
+        }
       }
-    };
-    void load();
-    const id = window.setInterval(load, 15000);
-    return () => { alive = false; window.clearInterval(id); };
+    }
+    void loadContext();
+    return () => { alive = false; };
   }, []);
 
-  const status = data.status;
-  const apiOk = Boolean(status?.api?.health?.ok);
-  const gatewayOk = Boolean(status?.gateway?.running);
-  const inboxSummary = data.inbox?.summary;
-  const highRisk = inboxSummary?.high_risk ?? data.inbox?.items.filter((i) => i.risk === "high" || i.risk === "critical").length ?? 0;
-  const failedRoutines = data.automations?.summary.error ?? 0;
-  const blockedTasks = (data.board?.summary.blocked ?? 0) + (data.board?.summary.error ?? 0);
-  const totalAttention = (inboxSummary?.drafted ?? approvals.length) + highRisk + failedRoutines + blockedTasks + (!apiOk ? 1 : 0) + (!gatewayOk ? 1 : 0);
-  const runningTasks = data.board?.summary.running ?? agents.filter((a) => a.status === "active" || a.status === "working" || a.status === "waiting").length;
-  const automationRows = data.automations?.automations ?? [];
-  const nextAutomations = [...automationRows].filter((a) => a.enabled).sort((a, b) => (a.next_run_at || "zz").localeCompare(b.next_run_at || "zz")).slice(0, 4);
-  const latestOutputs = automationRows.flatMap((a) => (a.recent_outputs || []).map((o) => ({ ...o, automation: a.name, status: a.last_status || a.status }))).sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || "")).slice(0, 5);
-  const runningBoardTasks = (data.board?.tasks || []).filter((task) => task.status === "running").slice(0, 4);
-  const blockedBoardTasks = (data.board?.tasks || []).filter((task) => task.status === "blocked" || task.status === "error").slice(0, 4);
-  const queuedHumanTasks = (data.board?.tasks || []).filter((task) => task.assignee?.toLowerCase().includes("melverick") && task.status !== "done").slice(0, 3);
-  const today = data.costs?.summary.last_24h;
-  const week = data.costs?.summary.last_7d;
-  const activeAgentCount = agents.filter((a) => a.status === "active" || a.status === "working" || a.status === "waiting").length;
-  const draftApprovals = inboxSummary?.drafted ?? approvals.length;
+  const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
+  const rows = useMemo(() => missionRows(selectedProject, tasks), [selectedProject, tasks]);
+  const selectedMission = rows.find((mission) => mission.id === selectedMissionId) ?? null;
+  const selectedPermission = permissionModeOptions.find((option) => option.value === permissionMode) ?? permissionModeOptions[0];
+  const selectedModel = modelModeOptions.find((option) => option.value === modelMode) ?? modelModeOptions[0];
+  const melkizac = agents.find((agent) => agent.id === "default") ?? agents[0];
+  const mainChatMessages = useMemo(
+    () => (melkizac?.messages ?? []).filter(isRenderableChatMessage).slice(-80),
+    [melkizac?.messages],
+  );
 
-  const healthWarnings = [
-    apiOk ? null : "Hermes API needs attention",
-    gatewayOk ? null : "Gateway process not detected",
-    failedRoutines ? `${failedRoutines} routine error${failedRoutines === 1 ? "" : "s"}` : null,
-    highRisk ? `${highRisk} high-risk approval${highRisk === 1 ? "" : "s"}` : null,
-    data.brain && data.brain.summary.health !== "healthy" ? "Second Brain health warning" : null,
-  ].filter(Boolean) as string[];
+  useEffect(() => {
+    if (!hasStartedMainChat) return;
+    const frame = window.requestAnimationFrame(() => {
+      latestMessageRef.current?.scrollIntoView({ block: "end", behavior: "auto" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [hasStartedMainChat, mainChatMessages.length, sending]);
 
-  const greeting = useMemo(() => {
-    if (status?.demo) return "Welcome, demo visitor.";
-    const hour = singaporeHour();
-    if (hour < 12) return "Good morning, Melverick.";
-    if (hour < 18) return "Good afternoon, Melverick.";
-    return "Good evening, Melverick.";
-  }, [status?.demo]);
+  function handleAttachmentFiles(files: FileList | null) {
+    if (!files?.length) return;
+    setError(null);
+    const next: ChatAttachment[] = [];
+    for (const file of Array.from(files)) {
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        setError(`${file.name} is larger than Max 50MB.`);
+        continue;
+      }
+      next.push({ id: `${file.name}-${file.size}-${file.lastModified}`, name: file.name, size: file.size, type: file.type || "file" });
+    }
+    if (next.length) setAttachments((current) => [...current, ...next]);
+  }
 
-  const attentionItems: CockpitLink[] = [
-    ...(highRisk ? [{ title: `${highRisk} high-risk approval${highRisk === 1 ? "" : "s"}`, detail: "Review before anything is published or sent.", tone: "warn" as const, view: "approvals" as const }] : []),
-    ...blockedBoardTasks.map((task) => ({ title: task.title, detail: `${task.status} · ${task.assignee || "unassigned"} · ${task.priority_label} priority`, tone: "warn" as const, view: "board" as const })),
-    ...(failedRoutines ? [{ title: `${failedRoutines} routine failure${failedRoutines === 1 ? "" : "s"}`, detail: "Open Routines to inspect the failed run and last error.", tone: "warn" as const, view: "automations" as const }] : []),
-    ...(!apiOk ? [{ title: "Hermes API is not healthy", detail: "Agent execution may be unavailable until API health recovers.", tone: "bad" as const, view: "settings" as const }] : []),
-    ...(!gatewayOk ? [{ title: "Gateway is offline", detail: "Desktop/local runtime bridge is not currently detected.", tone: "bad" as const, view: "settings" as const }] : []),
-    ...(draftApprovals ? [{ title: `${draftApprovals} draft approval${draftApprovals === 1 ? "" : "s"}`, detail: "Approve, edit, or reject pending AI-generated output.", tone: "neutral" as const, view: "approvals" as const }] : []),
-  ].slice(0, 6);
+  function composeInstructionContext(instruction: string) {
+    const context = [
+      selectedProject ? `Project: ${projectLabel(selectedProject)} (${selectedProject.id})` : "Project: No Project selected",
+      selectedMission ? `Mission: ${selectedMission.title} (${selectedMission.id})` : null,
+      `Permission: ${selectedPermission.promptLabel}`,
+      `Model: ${selectedModel.promptLabel}`,
+      attachments.length ? `Attachments: ${attachments.map((file) => `${file.name} (${formatBytes(file.size)})`).join(", ")}` : null,
+    ].filter(Boolean);
+    return `${instruction}\n\n[Mission Control Chat Context]\n${context.join("\n")}`;
+  }
 
-  const runningNowItems: CockpitLink[] = [
-    ...runningBoardTasks.map((task) => ({ title: task.title, detail: `${task.assignee || "agent"} · started ${shortTime(task.started_at || task.updated_at)}`, view: "board" as const })),
-    ...agents.filter((a) => a.status === "active" || a.status === "working" || a.status === "waiting").slice(0, 3).map((agent) => ({ title: agent.name, detail: `${agent.statusLabel || agent.status} · ${agent.activity || "active"}`, view: "agents" as const })),
-    ...nextAutomations.slice(0, 3).map((job) => ({ title: job.name, detail: `Next: ${job.next_run_relative || formatSingaporeTime(job.next_run_at) || job.schedule || "schedule unavailable"}`, view: "automations" as const })),
-  ].slice(0, 7);
+  async function submit() {
+    const instruction = draft.trim();
+    if (!instruction || sending) return;
+    setHasStartedMainChat(true);
+    setSending(true);
+    setError(null);
+    try {
+      await sendToAgent("default", composeInstructionContext(instruction));
+      setDraft("");
+      setAttachments([]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Mission Control could not send this instruction.");
+    } finally {
+      setSending(false);
+    }
+  }
 
-  const healthItems = [
-    { label: "Hermes API", value: apiOk ? "Online" : "Needs attention", ok: apiOk, detail: status?.api?.error || `${status?.api?.models?.length ?? 0} model${(status?.api?.models?.length ?? 0) === 1 ? "" : "s"} visible` },
-    { label: "Gateway", value: gatewayOk ? "Online" : "Offline", ok: gatewayOk, detail: `${status?.gateway?.processes?.length ?? 0} process${(status?.gateway?.processes?.length ?? 0) === 1 ? "" : "es"} detected` },
-    { label: "Scheduler", value: `${status?.cron?.enabled ?? 0}/${status?.cron?.total ?? 0} enabled`, ok: !failedRoutines, detail: failedRoutines ? `${failedRoutines} failed routine${failedRoutines === 1 ? "" : "s"}` : "No routine errors in summary" },
-    { label: "Second Brain", value: data.brain?.summary.health || "Unknown", ok: !data.brain || data.brain.summary.health === "healthy", detail: `${fmt(data.brain?.summary.wiki_pages)} wiki pages · ${fmt(data.brain?.summary.raw_sources)} sources` },
-  ];
+  function handleComposerKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void submit();
+    }
+  }
 
-  const recommendedActions: CockpitLink[] = [
-    ...(attentionItems.length ? [{ title: "Clear the attention queue", detail: "Start with high-risk approvals, blocked tasks, failed jobs, and offline gateway/API warnings.", view: "approvals" as const }] : []),
-    ...(queuedHumanTasks.length ? queuedHumanTasks.map((task) => ({ title: `Melverick: ${task.title.replace(/^Melverick:\s*/i, "")}`, detail: `${task.priority_label} priority · ${task.status} · Task Board`, view: "board" as const })) : []),
-    ...(latestOutputs.length ? [{ title: "Review latest agent outputs", detail: "Open the newest routine artifacts before they go stale.", view: "automations" as const }] : []),
-    ...(nextAutomations.length ? [{ title: "Check the next scheduled runs", detail: `${nextAutomations.length} enabled routine${nextAutomations.length === 1 ? "" : "s"} coming up.`, view: "automations" as const }] : []),
-    { title: "Open Audit Log if something looks wrong", detail: "Use run traces for evidence, tool calls, timestamps, and output provenance.", view: "audit" as const },
-  ].slice(0, 5);
+  return !hasStartedMainChat ? (
+    <div className="clean-chat-page">
+      <section className="clean-chat-shell" aria-label="Clean Chat command center">
+        <h1>{selectedProject ? `What should we work on in ${projectLabel(selectedProject)}?` : "What should Melkizac work on?"}</h1>
 
-  return (
-    <div className="home cockpit scroll">
-      <div className="home-topbar cockpit-topbar">
-        <div>
-          <div className="crumb">Home › Mission Control Cockpit</div>
-          <h1>Mission Control</h1>
-          <p>Operator cockpit focused only on what needs action: attention, live work, fresh outputs, system health, and the next move.</p>
-        </div>
-        <div className={"safe-pill " + (healthWarnings.length ? "warn" : "ok")}>
-          <span className="sdot" /> {healthWarnings.length ? `${healthWarnings.length} warning${healthWarnings.length === 1 ? "" : "s"}` : "Healthy"}
-        </div>
-      </div>
+        <form className="clean-chat-composer" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+          <textarea
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={handleComposerKeyDown}
+            placeholder="Do anything"
+            rows={2}
+          />
 
-      <section className="cockpit-hero">
-        <div className="cockpit-hero-main">
-          <div className="cockpit-mark">✦</div>
-          <div>
-            <span className="cockpit-eyebrow">Operator cockpit</span>
-            <h2>{greeting}</h2>
-            <p>{loading ? "Building the live operating picture…" : `${totalAttention} attention signal${totalAttention === 1 ? "" : "s"}, ${runningTasks} active task${runningTasks === 1 ? "" : "s"}, and ${latestOutputs.length} recent output${latestOutputs.length === 1 ? "" : "s"} to review.`}</p>
+          {attachments.length > 0 && (
+            <div className="clean-chat-attachments" aria-label="Attached files">
+              {attachments.map((file) => (
+                <button type="button" key={file.id} onClick={() => setAttachments((current) => current.filter((item) => item.id !== file.id))}>
+                  {file.name} <span>{formatBytes(file.size)}</span> ×
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="clean-chat-toolbar">
+            <div className="clean-chat-left-controls">
+              <label className="clean-chat-plus" title="Add document or image. Max 50MB">
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.json"
+                  onChange={(event) => {
+                    handleAttachmentFiles(event.target.files);
+                    event.currentTarget.value = "";
+                  }}
+                />
+                <span>＋</span>
+                <small>Add document or image · Max 50MB</small>
+              </label>
+
+              <label className="clean-select clean-permission-select">
+                <span>⌾</span>
+                <select value={permissionMode} onChange={(event) => setPermissionMode(event.target.value as ChatPermissionMode)} aria-label="Permission mode">
+                  {permissionModeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+            </div>
+
+            <div className="clean-chat-right-controls">
+              <label className="clean-select">
+                <select value={modelMode} onChange={(event) => setModelMode(event.target.value as ChatModelMode)} aria-label="AI model selector">
+                  {modelModeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+              <button className="clean-chat-mic" type="button" aria-label="Voice input">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M12 14.5a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5.5a3 3 0 0 0 3 3Z" />
+                  <path d="M18 10.75v.75a6 6 0 0 1-12 0v-.75" />
+                  <path d="M12 17.5V21" />
+                  <path d="M8.5 21h7" />
+                </svg>
+              </button>
+              <button className="clean-chat-send" type="submit" disabled={sending || !draft.trim()} aria-label="Send message">↑</button>
+            </div>
           </div>
+        </form>
+
+        <div className="clean-project-strip">
+          <span>▱</span>
+          <select
+            value={selectedProjectId}
+            onChange={(event) => { setSelectedProjectId(event.target.value); setSelectedMissionId(""); }}
+            aria-label="Project selector"
+          >
+            <option value="">No Project selected</option>
+            {projects.map((project) => <option key={project.id} value={project.id}>{projectLabel(project)}</option>)}
+          </select>
         </div>
-        <div className="cockpit-metrics" aria-label="Mission Control cockpit summary">
-          <Metric label="Needs Attention" value={totalAttention} tone={totalAttention ? "warn" : "good"} />
-          <Metric label="Running Now" value={runningTasks + runningBoardTasks.length} />
-          <Metric label="Recent Outputs" value={latestOutputs.length} />
-          <Metric label="System Health" value={healthWarnings.length ? "Warn" : "Good"} tone={healthWarnings.length ? "warn" : "good"} />
-        </div>
+
+        {error && <div className="clean-chat-error">{error}</div>}
+
+        {selectedProject && (
+          <div className="clean-mission-list" aria-label="Missions created in selected project">
+            {rows.map((mission) => (
+              <button
+                type="button"
+                className={selectedMissionId === mission.id ? "selected" : ""}
+                key={mission.id}
+                onClick={() => setSelectedMissionId(mission.id)}
+              >
+                <span>⌁</span>
+                <em>{mission.title}</em>
+              </button>
+            ))}
+            {rows.length === 0 && (
+              <div className="clean-mission-empty">
+                <span>⌘</span>
+                <em>No missions in this project yet</em>
+              </div>
+            )}
+          </div>
+        )}
       </section>
-
-      {(error || healthWarnings.length > 0) && (
-        <section className="attention-strip cockpit-alerts">
-          <b>Attention signals</b>
-          <div>{error ? <span>{error}</span> : healthWarnings.map((item) => <span key={item}>{item}</span>)}</div>
-        </section>
-      )}
-
-      <section className="cockpit-layout">
-        <div className="cockpit-primary">
-          <Panel title="Needs Attention" action="Review" onAction={() => setView("approvals")}>
-            <div className="cockpit-list attention-list">
-              {attentionItems.map((item, idx) => (
-                <button className={`cockpit-row ${item.tone || "neutral"}`} key={`${item.title}-${idx}`} onClick={() => setView(item.view)}>
-                  <span className="row-signal" />
-                  <div><b>{item.title}</b><small>{item.detail}</small></div>
-                  <em>Open</em>
-                </button>
-              ))}
-              {attentionItems.length === 0 && <div className="cockpit-empty good">No approvals, blockers, failed jobs, or health warnings need operator action.</div>}
+    </div>
+  ) : (
+    <div className="clean-chat-page main-chat-surface">
+      <section className="main-chat-shell" aria-label="Melkizac chat conversation">
+        <header className="main-chat-header">
+          <div className="main-chat-header-identity">
+            <span className="main-chat-avatar">ME</span>
+            <div>
+              <h1>Melkizac — All Groups Agent</h1>
+              <p>{selectedProject ? projectLabel(selectedProject) : "Main Chat"}</p>
             </div>
-          </Panel>
+            <span className="main-chat-status"><i /> {melkizac?.statusLabel || "Active"} · {melkizac?.activityState || "active"}</span>
+          </div>
+          <button className="main-chat-details" type="button" aria-label="Open Melkizac details">Details</button>
+        </header>
 
-          <Panel title="Running Now" action="Task Board" onAction={() => setView("board")}>
-            <div className="running-strip">
-              <Mini label="Running tasks" value={data.board?.summary.running ?? 0} />
-              <Mini label="Active agents" value={activeAgentCount} />
-              <Mini label="Enabled jobs" value={`${status?.cron?.enabled ?? 0}/${status?.cron?.total ?? 0}`} />
+        <main className="main-chat-history" aria-label="Melkizac conversation history">
+          {mainChatMessages.length === 0 ? (
+            <div className="main-chat-empty-state">
+              <span className="main-chat-avatar">ME</span>
+              <strong>Starting the Melkizac conversation…</strong>
+              <p>Your message will appear here while Melkizac responds.</p>
             </div>
-            <div className="cockpit-list">
-              {runningNowItems.map((item, idx) => (
-                <button className="cockpit-row live" key={`${item.title}-${idx}`} onClick={() => setView(item.view)}>
-                  <span className="row-signal pulse" />
-                  <div><b>{item.title}</b><small>{item.detail}</small></div>
-                  <em>Track</em>
-                </button>
-              ))}
-              {runningNowItems.length === 0 && <div className="cockpit-empty">Nothing is actively running. Scheduled jobs will appear here before their next run.</div>}
-            </div>
-          </Panel>
+          ) : (
+            mainChatMessages.map((message) => {
+              const isUser = message.role === "user";
+              return (
+                <article className={`main-chat-row ${isUser ? "user" : "agent"}`} key={`${message.id}-${message.role}`}>
+                  {!isUser && <span className="main-chat-avatar">ME</span>}
+                  <div className="main-chat-message-stack">
+                    <div className="main-chat-meta">
+                      <strong>{chatMessageLabel(message)}</strong>
+                      <span>{chatSessionLabel(message)}</span>
+                      <time>{chatMessageTime(message)}</time>
+                    </div>
+                    {message.replyTo && <div className="main-chat-reply-context">Replying to {message.replyTo.author}: {message.replyTo.text}</div>}
+                    <div className="main-chat-bubble">
+                      <p>{visibleChatText(message)}</p>
+                      {message.attachments?.length ? (
+                        <div className="main-chat-message-attachments">
+                          {message.attachments.map((attachment) => (
+                            <span key={attachment.id || attachment.filename}>{attachment.filename}</span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                  {isUser && <span className="main-chat-user-avatar">M</span>}
+                </article>
+              );
+            })
+          )}
+          <div ref={latestMessageRef} className="main-chat-latest-sentinel" aria-hidden="true" />
+        </main>
 
-          <Panel title="Recent Outputs" action="Outputs" onAction={() => setView("automations")}>
-            <div className="output-list cockpit-outputs">
-              {latestOutputs.map((o) => (
-                <button className="output-row output-button" key={`${o.path}-${o.updated_at}`} onClick={() => setView("automations")}>
-                  <div><b>{o.name}</b><p>{o.preview || "No preview available"}</p><small>{o.automation} · {shortTime(o.updated_at)}</small></div>
-                  <span className={o.status === "error" ? "tag warn" : "tag good"}>{o.status || "output"}</span>
-                </button>
-              ))}
-              {latestOutputs.length === 0 && <div className="cockpit-empty">No recent routine outputs found yet.</div>}
-            </div>
-          </Panel>
-        </div>
+        <form className="main-chat-composer" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+          <textarea
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={handleComposerKeyDown}
+            placeholder="Send a task or message to Melkizac..."
+            rows={2}
+          />
 
-        <aside className="cockpit-secondary">
-          <Panel title="System Health" action="Settings" onAction={() => setView("settings")}>
-            <div className="health-stack">
-              {healthItems.map((item) => (
-                <div className={`health-row ${item.ok ? "ok" : "warn"}`} key={item.label}>
-                  <span className="health-dot" />
-                  <div><b>{item.label}</b><small>{item.detail}</small></div>
-                  <em>{item.value}</em>
-                </div>
-              ))}
-            </div>
-          </Panel>
-
-          <Panel title="Next Recommended Actions" action="Audit" onAction={() => setView("audit")}>
-            <div className="recommend-list">
-              {recommendedActions.map((item, idx) => (
-                <button className="recommend-row" key={`${item.title}-${idx}`} onClick={() => setView(item.view)}>
-                  <span>{idx + 1}</span>
-                  <div><b>{item.title}</b><small>{item.detail}</small></div>
+          {attachments.length > 0 && (
+            <div className="clean-chat-attachments" aria-label="Attached files">
+              {attachments.map((file) => (
+                <button type="button" key={file.id} onClick={() => setAttachments((current) => current.filter((item) => item.id !== file.id))}>
+                  {file.name} <span>{formatBytes(file.size)}</span> ×
                 </button>
               ))}
             </div>
-          </Panel>
+          )}
 
-          <Panel title="Operating Load" action="Costs" onAction={() => setView("costs")}>
-            <div className="usage-stack cockpit-load">
-              <div><span>Last 24h</span><b>{fmt(today?.sessions)} runs</b><small>{fmt(today?.tokens)} tokens · {money(today?.cost)}</small></div>
-              <div><span>Last 7d</span><b>{money(week?.cost)}</b><small>{fmt(week?.sessions)} sessions · {fmt(week?.tool_calls)} tools</small></div>
+          <div className="main-chat-composer-toolbar">
+            <div className="main-chat-left-controls">
+              <label className="clean-chat-plus" title="Add document or image. Max 50MB">
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.md,.json"
+                  onChange={(event) => {
+                    handleAttachmentFiles(event.target.files);
+                    event.currentTarget.value = "";
+                  }}
+                />
+                <span>＋</span>
+                <small>Add document or image · Max 50MB</small>
+              </label>
+
+              <label className="clean-select clean-permission-select">
+                <span>⌾</span>
+                <select value={permissionMode} onChange={(event) => setPermissionMode(event.target.value as ChatPermissionMode)} aria-label="Permission mode">
+                  {permissionModeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+
+              <label className="clean-select main-chat-project-select">
+                <span>▱</span>
+                <select
+                  value={selectedProjectId}
+                  onChange={(event) => { setSelectedProjectId(event.target.value); setSelectedMissionId(""); }}
+                  aria-label="Project selector"
+                >
+                  <option value="">No Project selected</option>
+                  {projects.map((project) => <option key={project.id} value={project.id}>{projectLabel(project)}</option>)}
+                </select>
+              </label>
             </div>
-          </Panel>
-        </aside>
+
+            <div className="main-chat-right-controls">
+              <label className="clean-select">
+                <select value={modelMode} onChange={(event) => setModelMode(event.target.value as ChatModelMode)} aria-label="AI model selector">
+                  {modelModeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+              <button className="clean-chat-mic" type="button" aria-label="Voice input">
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path d="M12 14.5a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5.5a3 3 0 0 0 3 3Z" />
+                  <path d="M18 10.75v.75a6 6 0 0 1-12 0v-.75" />
+                  <path d="M12 17.5V21" />
+                  <path d="M8.5 21h7" />
+                </svg>
+              </button>
+              <button className="clean-chat-send" type="submit" disabled={sending || !draft.trim()} aria-label="Send message">↑</button>
+            </div>
+          </div>
+          {error && <div className="clean-chat-error">{error}</div>}
+        </form>
       </section>
     </div>
   );
-}
-
-function Panel({ title, action, onAction, children }: { title: string; action?: string; onAction?: () => void; children: ReactNode }) {
-  return <div className="dash-panel"><div className="panel-head"><span>{title}</span>{action && <button onClick={onAction}>{action}</button>}</div>{children}</div>;
-}
-
-function Metric({ label, value, tone }: { label: string; value: number | string; tone?: "good" | "warn" }) {
-  return <div className={`hero-metric ${tone || ""}`}><span>✣ {label}</span><b>{value}</b></div>;
-}
-
-function Mini({ label, value, warn }: { label: string; value: number | string; warn?: boolean }) {
-  return <div className={"mini-attn " + (warn ? "warn" : "")}><b>{value}</b><span>{label}</span></div>;
 }

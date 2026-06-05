@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { InboxAction, InboxItem, InboxResponse, InboxStatus } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
+import { parseMissionControlDeepLink } from "../services/deepLinks";
 import { formatSingaporeTime } from "../utils/time";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
 
@@ -21,6 +22,7 @@ export function Approvals() {
   const [draft, setDraft] = useState<Partial<InboxItem>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const deepLinkedApprovalId = useMemo(() => parseMissionControlDeepLink(window.location).approvalId ?? null, []);
 
   const load = async () => {
     try {
@@ -51,6 +53,10 @@ export function Approvals() {
     return () => window.removeEventListener("keydown", close);
   }, []);
 
+  useEffect(() => {
+    if (deepLinkedApprovalId) setStatus("all");
+  }, [deepLinkedApprovalId]);
+
   const items = data?.items ?? [];
   const summary = data?.summary;
   const activeTab = tabs.find((tab) => tab.key === status) ?? tabs[0];
@@ -66,6 +72,14 @@ export function Approvals() {
     setSelected(item);
     setDraft({ title: item.title, description: item.description, body: item.body, destination: item.destination, risk: item.risk });
   };
+
+  useEffect(() => {
+    if (!deepLinkedApprovalId || loading || !data) return;
+    if (selected?.id === deepLinkedApprovalId) return;
+    const match = data.items.find((item) => item.id === deepLinkedApprovalId);
+    if (match) open(match);
+    else setError(`Deep-linked approval ${deepLinkedApprovalId} is not visible in the current workspace.`);
+  }, [deepLinkedApprovalId, loading, data, selected?.id]);
 
   const runAction = async (item: InboxItem, action: InboxAction) => {
     await client.inboxAction(item.id, action);
@@ -161,6 +175,8 @@ export function Approvals() {
           onClose={() => setSelected(null)}
           closeLabel="Close approval details"
           ariaLabel="Approval details"
+          dataDeepLinkTarget="approval"
+          // rendered attribute: data-deeplink-target="approval"
           width="wide"
           className="inbox-detail-drawer"
         >

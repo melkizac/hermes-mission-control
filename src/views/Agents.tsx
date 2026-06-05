@@ -61,7 +61,7 @@ export function Agents() {
   }, [projectSessions, selectedSessionId]);
 
   return (
-    <div className="mc agents-drawer-first">
+    <div className="mc agents-drawer-first" data-deeplink-target="agent-chat">
       <Roster
         projectChats={projectChats}
         selectedProjectId={selectedProjectId}

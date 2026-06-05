@@ -38,6 +38,8 @@ export interface ConfigFile {
   content: string;
   sizeBytes: number;
   updatedAt: string;
+  scope?: "profile" | "workspace-agent" | string;
+  editable?: boolean;
 }
 
 export type MessageRole = "user" | "agent" | "system";
@@ -50,6 +52,306 @@ export interface Artifact {
   sizeBytes: number;
   preview?: string;
   createdAt: string;
+}
+
+export type WorkItemKind = "task" | "goal" | "run" | "approval" | "intake" | "workflow";
+export type RiskLevel = "safe" | "approval-required" | "external-facing" | "destructive" | "account-sensitive";
+export type MissionArtifactKind = "file" | "link" | "screenshot" | "report" | "diff" | "message" | "dataset" | "note";
+export type EvidenceKind = "source" | "tool-call" | "session" | "screenshot" | "file" | "log" | "approval" | "human-note";
+export type PhaseCheckpointStatus = "pending" | "in_progress" | "passed" | "blocked" | "failed";
+
+export interface WorkItemRef {
+  id: string;
+  kind: WorkItemKind;
+  title: string;
+  projectId?: string | null;
+  projectName?: string | null;
+  agentId?: string | null;
+  agentName?: string | null;
+  status?: string;
+  url?: string;
+}
+
+export interface EvidenceRecord {
+  id: string;
+  kind: EvidenceKind;
+  title: string;
+  summary?: string;
+  source: string;
+  sourceId?: string | null;
+  path?: string | null;
+  url?: string | null;
+  createdAt: string;
+  redacted?: boolean;
+  confidence?: "low" | "medium" | "high" | string;
+}
+
+export interface MissionArtifact {
+  id: string;
+  kind: MissionArtifactKind;
+  title: string;
+  summary?: string;
+  filename?: string;
+  path?: string | null;
+  url?: string | null;
+  mime?: string;
+  sizeBytes?: number;
+  preview?: string;
+  createdAt: string;
+  createdBy?: string;
+  evidenceIds?: string[];
+}
+
+export interface ApprovalGate {
+  id: string;
+  title: string;
+  risk: RiskLevel;
+  status: "not-required" | "pending" | "approved" | "rejected" | "changes-requested";
+  reason: string;
+  requestedBy?: string;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  sourceRef?: WorkItemRef;
+}
+
+export interface MissionResult {
+  id: string;
+  workItem: WorkItemRef;
+  summary: string;
+  status: "draft" | "completed" | "blocked" | "failed";
+  artifacts: MissionArtifact[];
+  evidence: EvidenceRecord[];
+  approvalGates: ApprovalGate[];
+  nextActions: string[];
+  model?: string;
+  costUsd?: number | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+}
+
+export interface PhaseCheckpoint {
+  id: string;
+  phase: string;
+  title: string;
+  status: PhaseCheckpointStatus;
+  dependencies: Array<{ id: string; label: string; status: PhaseCheckpointStatus }>;
+  tests: Array<{ command: string; status: PhaseCheckpointStatus; output?: string }>;
+  evidence: EvidenceRecord[];
+  completedAt?: string | null;
+  nextPhase?: string | null;
+}
+
+export interface ProjectMasterInstructions {
+  projectId: string;
+  projectName: string;
+  objective: string;
+  masterInstructions: string;
+  workspacePath?: string | null;
+  linkedSkills: string[];
+  linkedAgents: Array<{ id: string; name: string }>;
+  riskDefaults: RiskLevel[];
+  updatedAt: string;
+}
+
+export interface DelegateWorkPlan {
+  id: string;
+  title: string;
+  userRequest: string;
+  projectId: string;
+  projectName: string;
+  agentId: string;
+  agentName: string;
+  workItem: WorkItemRef;
+  risk: RiskLevel;
+  riskLabel: string;
+  approvalRequired: boolean;
+  routingReason: string;
+  masterInstructions: ProjectMasterInstructions;
+  promptPreview: string;
+  taskBody: string;
+  nextActions: string[];
+  evidence: EvidenceRecord[];
+}
+
+export interface DelegateWorkContextResponse {
+  projects: ProjectRecord[];
+  agents: Array<{ id: string; name: string; status?: string }>;
+  masterInstructions: ProjectMasterInstructions[];
+  defaultProjectId?: string | null;
+  riskLevels: RiskLevel[];
+  error?: string;
+}
+
+export interface DelegateWorkMutationResponse {
+  ok: boolean;
+  plan?: DelegateWorkPlan;
+  task?: Record<string, unknown>;
+  error?: string;
+}
+
+export interface WorkflowStep {
+  id: string;
+  title: string;
+  owner: string;
+  summary: string;
+  evidenceRequired: string[];
+  approvalRequired?: boolean;
+}
+
+export interface BrowserConnectorReadinessItem {
+  label: string;
+  status: "ready" | "blocked" | "warning" | string;
+  detail?: string | null;
+}
+
+export interface BrowserConnectorConfig {
+  id: string;
+  type: "browserbase" | "desktop-browser" | "windows-gateway" | string;
+  label: string;
+  baseUrl?: string | null;
+  credentials?: Record<string, string>;
+  enabled: boolean;
+  approvalStatus: string;
+  approval?: Record<string, unknown>;
+  dryRun?: { status: string; checkedAt?: string; noSubmit?: boolean; summary?: string };
+  lastProbe?: {
+    id?: string;
+    status: string;
+    checkedAt?: string;
+    targetUrl?: string;
+    finalUrl?: string;
+    domain?: string;
+    screenshotPath?: string | null;
+    formsDetected?: number;
+    submitCandidates?: number;
+    noSubmit?: boolean;
+    browserActivityUrl?: string;
+    summary?: string;
+    archived?: boolean;
+    archivedAt?: string;
+    archivedBy?: string;
+    archiveReason?: string;
+  };
+  probeHistory?: Array<NonNullable<BrowserConnectorConfig["lastProbe"]>>;
+  noSubmit: boolean;
+  safeTargetRequired: boolean;
+  accountSensitiveAllowed?: boolean;
+  readinessChecklist: BrowserConnectorReadinessItem[];
+  updatedAt?: string | null;
+}
+
+export interface BrowserConnectorsResponse {
+  connectors: BrowserConnectorConfig[];
+  summary: { total: number; approved: number; enabled: number; needs_approval: number };
+  productionPolicy?: {
+    enablementStatus: string;
+    noSubmit: boolean;
+    safeTargetRequired: boolean;
+    accountSensitiveAllowed: boolean;
+    blockedActions: string;
+    accountSensitiveStatus: string;
+    operatorDecisionRequired: boolean;
+    summary: string;
+  };
+  browserTrackCompletion?: {
+    currentPhase: string;
+    readyForSupervisedDryRuns: boolean;
+    readyForAccountSensitive: boolean;
+    summary: string;
+    checklist: BrowserConnectorReadinessItem[];
+    nextActions: string[];
+  };
+  demo?: boolean;
+  error?: string;
+}
+
+export interface BrowserConnectorMutationResponse {
+  ok: boolean;
+  connector?: BrowserConnectorConfig;
+  action?: string;
+  created?: boolean;
+  demo?: boolean;
+  message?: string;
+  error?: string;
+}
+
+export interface BrowserConnectorProbeResponse {
+  ok: boolean;
+  dryRun?: boolean;
+  connector?: BrowserConnectorConfig;
+  sessionId?: string;
+  browserActivityUrl?: string;
+  screenshotPath?: string | null;
+  summary?: Record<string, unknown>;
+  demo?: boolean;
+  message?: string;
+  error?: string;
+}
+
+export interface FunnelRunStatus {
+  status: string;
+  lastRunAt?: string | null;
+  summary?: string;
+}
+
+export interface FunnelEvidenceHistoryItem {
+  title: string;
+  path?: string | null;
+  url?: string | null;
+  summary?: string | null;
+  createdAt?: string | null;
+}
+
+export interface FunnelConnectorReadinessItem {
+  label: string;
+  status: "ready" | "blocked" | "warning" | string;
+  detail?: string | null;
+}
+
+export interface RoutineBinding {
+  enabled: boolean;
+  latestRunStatus: FunnelRunStatus;
+  evidenceHistory: FunnelEvidenceHistoryItem[];
+}
+
+export interface PackagedWorkflow {
+  id: string;
+  name: string;
+  category: string;
+  summary: string;
+  idealFor: string;
+  projectId?: string | null;
+  projectName?: string | null;
+  agentId: string;
+  agentName: string;
+  risk: RiskLevel;
+  skills: string[];
+  steps: WorkflowStep[];
+  evidence: EvidenceRecord[];
+  artifacts: MissionArtifact[];
+  approvalGates: ApprovalGate[];
+  nextActions: string[];
+  launchPrompt: string;
+  launchDefaults?: { noSubmit?: boolean; safeTargetRequired?: boolean; runMode?: string; scheduleMode?: string; schedule?: string; targetUrl?: string };
+  routineBinding?: RoutineBinding;
+  updatedAt: string;
+}
+
+export interface WorkflowLibraryResponse {
+  workflows: PackagedWorkflow[];
+  categories: string[];
+  summary: { total: number; approval_required: number; skills_linked: number; evidence_ready: number };
+  error?: string;
+}
+
+export interface WorkflowLaunchResponse {
+  ok: boolean;
+  workflow?: PackagedWorkflow;
+  plan?: DelegateWorkPlan;
+  task?: Record<string, unknown>;
+  routine?: Record<string, unknown>;
+  mission_result?: MissionResult | null;
+  error?: string;
 }
 
 export interface Attachment {
@@ -192,6 +494,26 @@ export interface Approval {
   createdAt: string;
 }
 
+export interface MissionControlUser {
+  id: string;
+  email: string;
+  name: string;
+  role: "admin" | "user" | "viewer" | string;
+  status: string;
+}
+
+export interface MissionControlWorkspace {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface MissionControlMe {
+  ok: boolean;
+  user: MissionControlUser;
+  workspace: MissionControlWorkspace;
+}
+
 export interface AuditSession {
   id: string;
   title: string;
@@ -304,6 +626,12 @@ export interface AutomationRoutine {
   recent_runs: AutomationRun[];
   recent_outputs: AutomationOutput[];
   run_count: number;
+  workflow_template_id?: string;
+  targetUrl?: string;
+  noSubmit?: boolean;
+  safeTargetRequired?: boolean;
+  latestRunStatus?: FunnelRunStatus;
+  evidenceHistory?: FunnelEvidenceHistoryItem[];
 }
 
 export interface AutomationsResponse {
@@ -319,13 +647,76 @@ export interface AutomationsResponse {
   error?: string;
 }
 
+export interface AutomationActionPayload {
+  action?: "pause" | "resume" | "run" | "enable_funnel_routine";
+  routine?: Partial<AutomationRoutine> & Record<string, unknown>;
+  approved?: boolean;
+  approvedBy?: string;
+  note?: string;
+}
+
 export interface AutomationActionResponse {
   ok: boolean;
   action?: string;
   job_id?: string;
+  job?: Record<string, unknown>;
+  target?: FunnelTarget;
   stdout?: string;
   stderr?: string;
   returncode?: number;
+  error?: string;
+}
+
+export interface FunnelTarget {
+  id: string;
+  label: string;
+  url: string;
+  targetUrl: string;
+  project: string;
+  expected: string;
+  schedule: string;
+  noSubmit: boolean;
+  safeTargetRequired: boolean;
+  approvalStatus: "approved" | "needs-review" | string;
+  approval?: { status: string; approvedBy?: string | null; approvedAt?: string | null; note?: string | null };
+  routineId: string;
+  routineEnabled: boolean;
+  latestRunStatus?: FunnelRunStatus;
+  evidenceHistory?: FunnelEvidenceHistoryItem[];
+  latestScreenshot?: { title?: string; path?: string | null; url?: string | null; createdAt?: string | null } | null;
+  browserActivityUrl?: string | null;
+  taskResultUrl?: string | null;
+  finalUrl?: string | null;
+  approvalHistory?: Array<{ status: string; approvedBy?: string | null; approvedAt?: string | null; note?: string | null }>;
+  connectorReadiness?: FunnelConnectorReadinessItem[];
+  runNowConfirmation?: { dryRunConfirmed: boolean; confirmedBy?: string | null; confirmedAt?: string | null; mode?: string | null };
+  status?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface FunnelTargetsResponse {
+  targets: FunnelTarget[];
+  summary: { total: number; approved: number; enabled: number; needs_review: number };
+  demo?: boolean;
+  error?: string;
+}
+
+export interface FunnelTargetDetailResponse {
+  ok: boolean;
+  target?: FunnelTarget;
+  demo?: boolean;
+  error?: string;
+}
+
+export interface FunnelTargetMutationResponse {
+  ok: boolean;
+  demo?: boolean;
+  created?: boolean;
+  action?: string;
+  target?: FunnelTarget;
+  job?: Record<string, unknown>;
+  message?: string;
   error?: string;
 }
 
@@ -365,6 +756,17 @@ export interface BoardTaskResultDetails {
   blockers?: string[];
   verification?: Record<string, string>;
   access_needed?: string;
+  artifacts?: MissionArtifact[];
+  evidence?: EvidenceRecord[];
+  approval_gates?: ApprovalGate[];
+  next_actions?: string[];
+}
+
+export interface TaskResultResponse {
+  ok: boolean;
+  task?: BoardTask;
+  mission_result?: MissionResult | null;
+  error?: string;
 }
 
 export interface BoardTask {
@@ -387,6 +789,7 @@ export interface BoardTask {
   tenant?: string | null;
   result: string;
   result_details?: BoardTaskResultDetails | null;
+  mission_result?: MissionResult | null;
   session_id?: string | null;
   current_run_id?: number | null;
   workflow_template_id?: string | null;
@@ -423,6 +826,24 @@ export interface BoardTaskMutationResponse {
   ok: boolean;
   task?: BoardTask;
   comment?: BoardComment & { task_id: string };
+  error?: string;
+}
+
+export interface OperatorLinkPreview {
+  title: string;
+  risk: string;
+  agent: string;
+  action: string;
+  open: string;
+  text: string;
+}
+
+export interface OperatorLinkPreviewResponse {
+  ok: boolean;
+  task?: OperatorLinkPreview;
+  approval?: OperatorLinkPreview;
+  agent?: OperatorLinkPreview;
+  examples?: OperatorLinkPreview[];
   error?: string;
 }
 
@@ -833,8 +1254,243 @@ export interface RuntimeConnectorTokenResponse {
   error?: string;
 }
 
+export interface GatewayHealthProbe {
+  ok: boolean;
+  http_code?: number | null;
+  error?: string | null;
+  status?: Record<string, unknown>;
+  preview?: string;
+}
+
+export interface DesktopGatewayExecutionTarget {
+  id: string;
+  label: string;
+  description: string;
+  ready: boolean;
+  url?: string | null;
+  executionBoundary: string;
+  approvalRequired: boolean;
+}
+
+export interface WindowsGatewayStatus {
+  mode: string;
+  name: string;
+  configured: boolean;
+  url: string;
+  tokenPreview?: string | null;
+  tokenSet: boolean;
+  approvedFolders: string[];
+  health: GatewayHealthProbe;
+  recommendedFolders: string[];
+  setup: { localCommand: string; tunnelExamples: string[] };
+}
+
+export interface DesktopGatewayStatus {
+  mode: string;
+  name: string;
+  remoteUrl: string;
+  sessionTokenPreview?: string | null;
+  tokenSet: boolean;
+  localPort: number;
+  service: { name: string; active: string };
+  local: GatewayHealthProbe;
+  windows: WindowsGatewayStatus;
+  targets: DesktopGatewayExecutionTarget[];
+  desktopSteps: string[];
+  notes: string[];
+  readinessSummary: {
+    remoteReady: boolean;
+    windowsReady: boolean;
+    configuredTargets: number;
+    readyTargets: number;
+    needsAttention: string[];
+  };
+}
+
+export interface WindowsGatewayConfigResponse {
+  ok: boolean;
+  windows?: WindowsGatewayStatus;
+  error?: string;
+}
+
+
+export interface BrowserActionEvent {
+  id: string;
+  ts: string;
+  title: string;
+  summary: string;
+  type: "navigation" | "click" | "input" | "screenshot" | "approval" | "stop" | "note" | string;
+  risk: RiskLevel;
+  approvalRequired: boolean;
+  evidenceIds?: string[];
+}
+
+export interface BrowserSession {
+  id: string;
+  title: string;
+  status: "active" | "idle" | "blocked" | "stopped" | "completed" | "simulated" | string;
+  source?: "simulated" | "runtime-event-bridge" | string;
+  agentId?: string | null;
+  agentName?: string | null;
+  runtimeId: string;
+  runtimeLabel: string;
+  executionTarget: DesktopGatewayExecutionTarget;
+  currentUrl?: string | null;
+  currentDomain: string;
+  accountSensitive: boolean;
+  approvalRequired: boolean;
+  approvalReason: string;
+  screenshot?: MissionArtifact | null;
+  evidence: EvidenceRecord[];
+  actionLog: BrowserActionEvent[];
+  startedAt: string;
+  updatedAt: string;
+  stopAvailable: boolean;
+  takeoverAvailable: boolean;
+  notes: string[];
+}
+
+export interface BrowserSessionsResponse {
+  sessions: BrowserSession[];
+  summary: {
+    total: number;
+    active: number;
+    approvalRequired: number;
+    accountSensitive: number;
+    screenshots: number;
+    liveRuntimeEvents: number;
+    windowsReady: boolean;
+    needsAttention: string[];
+  };
+  updatedAt: string;
+}
+
+export interface BrowserRuntimeEventIngestRequest {
+  sessionId: string;
+  title?: string;
+  status?: string;
+  agentId?: string;
+  agentName?: string;
+  runtimeId?: string;
+  runtimeLabel?: string;
+  currentUrl?: string;
+  currentDomain?: string;
+  accountSensitive?: boolean;
+  approvalRequired?: boolean;
+  approvalReason?: string;
+  taskId?: string;
+  taskUrl?: string;
+  screenshot?: Partial<MissionArtifact>;
+  evidence?: EvidenceRecord[];
+  action?: Partial<BrowserActionEvent> & { body?: string };
+}
+
+export interface BrowserRuntimeEventIngestResponse {
+  ok: boolean;
+  session?: BrowserSession;
+  error?: string;
+}
+
+export interface ResearchRunLane {
+  id: string;
+  agentId: string;
+  agentName: string;
+  title: string;
+  status: "queued" | "running" | "completed" | "blocked" | "error" | string;
+  focus: string;
+  currentStep: string;
+  progress: number;
+  sourcesReviewed: number;
+  evidenceCount: number;
+  confidence: "low" | "medium" | "high" | string;
+  blocker?: string | null;
+  taskId?: string;
+  requiresApproval?: boolean;
+  updatedAt: string;
+}
+
+export interface ResearchSourceCoverage {
+  id: string;
+  label: string;
+  kind: string;
+  status: "queued" | "reviewed" | "blocked" | "rejected" | string;
+  url?: string | null;
+  ownerLaneId?: string | null;
+  confidence: "low" | "medium" | "high" | string;
+  notes: string;
+}
+
+export interface ResearchSynthesisStatus {
+  status: "queued" | "drafting" | "ready" | "blocked" | string;
+  progress: number;
+  leadAgent: string;
+  openQuestions: string[];
+  recommendation: string;
+  updatedAt: string;
+}
+
+export interface ResearchRun {
+  id: string;
+  title: string;
+  status: "queued" | "running" | "completed" | "blocked" | string;
+  summary: string;
+  owner: string;
+  risk: RiskLevel | string;
+  startedAt: string;
+  updatedAt: string;
+  lanes: ResearchRunLane[];
+  sourceCoverage: ResearchSourceCoverage[];
+  synthesis: ResearchSynthesisStatus;
+  evidence: EvidenceRecord[];
+  finalArtifact: MissionArtifact;
+  nextActions: string[];
+  taskId?: string;
+  taskUrl?: string;
+  trackedTaskIds?: string[];
+}
+
+export interface CreateResearchRunRequest {
+  title: string;
+  objective: string;
+  projectId?: string;
+  lanes: Array<Partial<ResearchRunLane> & { title: string; focus?: string; agentId?: string; agentName?: string; requiresApproval?: boolean }>;
+  sources: Array<Partial<ResearchSourceCoverage> & { label: string; kind?: string; notes?: string; ownerLaneId?: string }>;
+}
+
+export type ResearchRunCreateRequest = CreateResearchRunRequest;
+
+export interface CreateResearchRunResponse {
+  ok: boolean;
+  run: ResearchRun;
+  task: Task;
+  trackedTaskIds: string[];
+  taskUrl: string;
+  demo?: boolean;
+  message?: string;
+}
+
+export type ResearchRunCreateResponse = CreateResearchRunResponse;
+
+export interface ResearchRunsResponse {
+  runs: ResearchRun[];
+  summary: {
+    total: number;
+    active_lanes: number;
+    blocked_lanes: number;
+    source_coverage: number;
+    evidence_items: number;
+    synthesis_ready: number;
+  };
+  updatedAt: string;
+}
+
 export type ViewKey =
   | "mission"
+  | "dashboard"
+  | "work"
+  | "evidence"
+  | "delegate-work"
+  | "workflow-library"
   | "profile"
   | "agents"
   | "agent-org"
@@ -849,4 +1505,11 @@ export type ViewKey =
   | "audit"
   | "costs"
   | "models"
+  | "users-workspaces"
+  | "shared-agent-templates"
+  | "desktop-gateway"
+  | "browser-ops"
+  | "research-runs"
+  | "approval-policy"
+  | "quota"
   | "settings";

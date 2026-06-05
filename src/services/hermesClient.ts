@@ -1,4 +1,4 @@
-import type { Agent, Approval, Attachment, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, ModelRoutingSelection, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainResponse, Skill, SkillFileResponse, SkillsHubResponse } from "../types";
+import type { Agent, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionPayload, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, MissionControlMe, ModelRoutingSelection, OperatorLinkPreviewResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, ResearchRunCreateRequest, ResearchRunCreateResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainResponse, Skill, SkillFileResponse, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
 
 /**
  * HermesClient is the ONLY boundary between the UI and the agent runtime.
@@ -16,6 +16,7 @@ import type { Agent, Approval, Attachment, AuditSessionDetailResponse, AuditSess
  * and INTEGRATION.md for the full wiring guide.
  */
 export interface HermesClient {
+  getMe(): Promise<MissionControlMe>;
   listAgents(): Promise<Agent[]>;
   getAgent(id: string): Promise<Agent | undefined>;
   uploadAttachment(agentId: string, file: File): Promise<Attachment>;
@@ -35,20 +36,45 @@ export interface HermesClient {
   listAuditSessions(filters?: { q?: string; source?: string; limit?: number }): Promise<AuditSessionListResponse>;
   getAuditSession(id: string): Promise<AuditSessionDetailResponse>;
   listAutomations(filters?: { q?: string; state?: string }): Promise<AutomationsResponse>;
-  automationAction(id: string, action: "pause" | "resume" | "run"): Promise<AutomationActionResponse>;
+  listFunnelTargets(filters?: { q?: string }): Promise<FunnelTargetsResponse>;
+  getFunnelTarget(id: string): Promise<FunnelTargetDetailResponse>;
+  createFunnelTarget(input: Record<string, unknown>): Promise<FunnelTargetMutationResponse>;
+  funnelTargetAction(id: string, action: "enable" | "pause" | "run_now", payload?: Record<string, unknown>): Promise<FunnelTargetMutationResponse>;
+  listBrowserConnectors(): Promise<BrowserConnectorsResponse>;
+  createBrowserConnector(input: Record<string, unknown>): Promise<BrowserConnectorMutationResponse>;
+  browserConnectorAction(id: string, action: "approve" | "dry_run_probe" | "archive_probe" | "enable", payload?: Record<string, unknown>): Promise<BrowserConnectorMutationResponse>;
+  browserConnectorProbe(id: string, payload?: Record<string, unknown>): Promise<BrowserConnectorProbeResponse>;
+  automationAction(id: string, action: "pause" | "resume" | "run" | "enable_funnel_routine", payload?: AutomationActionPayload): Promise<AutomationActionResponse>;
+  enableAutomationRoutine(id: string, payload: AutomationActionPayload): Promise<AutomationActionResponse>;
   listSkills(filters?: { q?: string; category?: string; source?: string }): Promise<SkillsHubResponse>;
   getSkillFile(id: string): Promise<SkillFileResponse>;
   listRuntimes(filters?: { q?: string }): Promise<RuntimeRegistryResponse>;
   listRuntimeConnectors(): Promise<RuntimeConnectorResponse>;
   createRuntimeConnectorToken(input: { label: string; allowed_types: string[] }): Promise<RuntimeConnectorTokenResponse>;
   revokeRuntimeConnectorToken(id: string): Promise<{ ok: boolean; id: string; status: string }>;
+  getDesktopGateway(): Promise<DesktopGatewayStatus>;
+  listBrowserSessions(): Promise<BrowserSessionsResponse>;
+  ingestBrowserRuntimeEvent(input: BrowserRuntimeEventIngestRequest): Promise<BrowserRuntimeEventIngestResponse>;
+  getBrowserSession(id: string): Promise<BrowserSession | undefined>;
+  stopBrowserSession(id: string): Promise<{ ok: boolean; id: string; status: string }>;
+  takeoverBrowserSession(id: string): Promise<{ ok: boolean; id: string; status: string; instruction?: string }>;
+  listResearchRuns(): Promise<ResearchRunsResponse>;
+  createResearchRun(input: ResearchRunCreateRequest): Promise<ResearchRunCreateResponse>;
+  saveWindowsGatewayConfig(input: Partial<{ url: string; token: string; keepToken: boolean; approvedFolders: string[] }>): Promise<WindowsGatewayConfigResponse>;
   getCosts(filters?: { days?: number }): Promise<CostsResponse>;
   listProjects(filters?: { q?: string; kind?: string }): Promise<ProjectsResponse>;
+  getDelegateWorkContext(): Promise<DelegateWorkContextResponse>;
+  listWorkflows(filters?: { q?: string; category?: string }): Promise<WorkflowLibraryResponse>;
+  launchWorkflow(id: string, input: Partial<{ projectId: string; agentId: string; title: string; request: string; targetUrl: string; expected: string; runMode: string; schedule: string; project: string }>): Promise<WorkflowLaunchResponse>;
+  planDelegateWork(input: { request: string; projectId?: string; agentId?: string; risk?: string }): Promise<DelegateWorkMutationResponse>;
+  createDelegateWork(input: { request: string; projectId?: string; agentId?: string; risk?: string; title?: string }): Promise<DelegateWorkMutationResponse>;
   listProjectChats(filters?: { q?: string; project?: string }): Promise<ProjectChatResponse>;
   getProjectBrief(projectId: string): Promise<ProjectBriefResponse>;
   createProjectTask(projectId: string, input: Partial<{ title: string; body: string; assignee: string; priority: number; skills: string[] }>): Promise<BoardTaskMutationResponse>;
   getSecondBrain(filters?: { q?: string; section?: string }): Promise<SecondBrainResponse>;
   listBoard(filters?: { q?: string; status?: BoardStatus | ""; assignee?: string; project?: string }): Promise<BoardResponse>;
+  getTaskResult(id: string): Promise<TaskResultResponse>;
+  getOperatorLinkPreview(filters?: { task?: string; approval?: string; agent?: string }): Promise<OperatorLinkPreviewResponse>;
   createBoardTask(input: Partial<{ title: string; body: string; assignee: string; status: BoardStatus; priority: number; tenant: string; skills: string[] }>): Promise<BoardTaskMutationResponse>;
   updateBoardTask(id: string, input: Partial<{ title: string; body: string; assignee: string; status: BoardStatus; priority: number; tenant: string; result: string; skills: string[] }>): Promise<BoardTaskMutationResponse>;
   addBoardComment(id: string, body: string): Promise<BoardTaskMutationResponse>;

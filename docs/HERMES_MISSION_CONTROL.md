@@ -1,1314 +1,1243 @@
-# Hermes Mission Control Documentation
+# Hermes Mission Control Operator Documentation
 
-Last verified: 2026-05-31 SGT  
-Live service: `hermes.melverick.com`  
-Local service: `127.0.0.1:19080`  
-Source repo path: `/opt/hermes-mission-control/source`  
-Runtime app path: `/opt/hermes-mission-control`
+Last verified: 2026-06-04 18:55 SGT
+Live service: `https://hermes.melverick.com`
+Local service: `http://127.0.0.1:19080`
+Source repo: `/opt/hermes-mission-control/source`
+Runtime app: `/opt/hermes-mission-control`
+Backend entrypoint: `/opt/hermes-mission-control/app.py`
+Production frontend bundle: `/opt/hermes-mission-control/dist`
 
-## 1. Executive summary
+## 1. What Mission Control is
 
-Hermes Mission Control is the operational control plane for Melverick's Hermes agent system. It is not just a chat UI. It is a dashboard for supervising digital coworkers, automations, approvals, tasks, knowledge, costs, audit history, and agent workflows.
+Hermes is the worker layer. **Mission Control is the management, audit, and trust layer.**
 
-The current implementation turns Hermes from a single chat endpoint into a managed operating system with:
+Mission Control turns Hermes from a set of chats, cron jobs, Kanban records, logs, and profile folders into one operator cockpit for digital coworkers. The product goal is to move from:
 
-- A unified Hermes Agent chat surface.
-- An Agent Org / AI Workforce control plane.
-- Real automations from Hermes cron jobs.
-- A durable approvals inbox for human-in-the-loop review.
-- A task board backed by Hermes Kanban storage.
-- A skills hub backed by installed Hermes skills.
-- A projects/workspaces view built from local workspaces, plans, and knowledge sources.
-- A Second Brain page backed by Melverick's Karpathy-style LLM Wiki.
-- Audit log and cost dashboards backed by Hermes state/session data.
-- Operator activity logging for Agent Org actions.
+> “I chat with an agent”
 
-The product intent is:
+into:
 
-> Melverick operates AI coworkers from one place: see what exists, what is running, what needs approval, what each agent owns, what it produced, how much it cost, and what evidence exists.
+> “I operate a team of digital coworkers with visible work, evidence, approvals, and runtime controls.”
 
-### Why Mission Control exists
+Mission Control is designed around four operating questions:
 
-Hermes is the worker layer. Mission Control is the management, audit, and trust layer.
+1. **What needs me now?** — approvals, blockers, failed routines, gateway warnings.
+2. **What is running?** — active agents, browser sessions, routines, runtime connectors.
+3. **What did agents produce?** — task results, artifacts, screenshots, links, run traces.
+4. **Can I trust it?** — evidence, audit logs, approval gates, costs, source data, execution boundaries.
 
-Hermes agents can act on their own, but without Mission Control their work is scattered across chats, terminal output, cron jobs, Kanban records, logs, and tool traces. Mission Control gives the operator one control room for the AI workforce: what agents are doing, which tasks are queued/running/blocked/done, why a decision was made, where human approval is needed, which workflows are healthy or stale, and what happened across Telegram, cron, Kanban, tools, and subagents.
+## Chat command center
 
-For Melverick, the goal is to move from "I chat with an agent" to "I operate a team of digital coworkers." That requires visibility, accountability, control, handoffs, human-in-the-loop governance, and proof of work. Without Mission Control, orchestration may still happen, but it is hidden. With Mission Control, autonomous work becomes inspectable, governable, and trustworthy.
+Chat is the clean signed-in landing surface for Mission Control. It replaces the old Home concept: the user should not need to choose Goal, Project, Mission, Task, Workflow, Routine, or Approval before speaking. The main chat UI is where the user tells Melkizac what they want done, and Melkizac routes the request to new or existing work.
 
-## 2. Design principles
+The Chat command center intentionally follows a minimal screenshot-like layout: one centered heading, one rounded composer, one project strip, and a lightweight mission list. Operational cards, attention panels, running-work summaries, health cards, output panels, and recommended-action blocks belong on the separate **Dashboard** page, not below Chat.
 
-### 2.1 Orchestrate, do not operate
+The Chat command center contains:
 
-Mission Control exists to reduce manual context switching. Instead of asking an agent to remember everything in a blank chat, the UI exposes structured context: agents, projects, approvals, task queues, skills, automations, run history, and knowledge.
+1. **main input message box** — a large composer with the placeholder `Do anything`. Users can start new goals, continue missions, revise outputs, answer approvals, resolve blockers, ask for status, or modify routines here.
+2. **Add document/image** — `Add document or image` accepts common image/document/data formats and enforces **Add document or image up to 50MB** through the `MAX_ATTACHMENT_BYTES` composer guard. Attachment chips show filename and size before submission.
+3. **Permission mode** — visible selector supports `Full access`, `Ask permission`, and `Draft only`; prompt context maps these to governed permission boundaries such as `Full access within policy` and `Ask before critical actions`.
+4. **AI model selector** — supports `AUTO` and concrete model modes such as `5.5 Medium`. **AUTO means Melkizac chooses the best model per step**.
+5. **Project selector** — shows `No Project selected` when empty. **No Project selected means Melkizac should not assume a project boundary**; it may search across the workspace, but should ask when ambiguous. When no project is selected, Chat does not display any bottom mission list or placeholder rows below the project selector. Selecting a project gives Melkizac a strong context hint, not an absolute override.
+6. **Missions in the selected project** — after a project is selected, Chat shows its goals/tasks as simple mission rows. Selecting a mission adds a `Mission:` context to the next submitted instruction.
 
-### 2.2 Context is the product
+When the user submits from Chat, Mission Control appends an internal context block to the instruction with Project, Mission, Permission, Model, and attachment names/sizes. This makes the routing decision visible and correctable while keeping the user experience simple.
 
-The most important data is not just messages. It is:
+## Glossary: Mission Control terminology
 
-- Agent identity and responsibility.
-- Workflow ownership.
-- Skills and tools.
-- Open tasks.
-- Approval requirements.
-- Outputs and artifacts.
-- Knowledge sources.
-- Audit evidence.
-- Cost and token usage.
+Mission Control uses these canonical terms when turning plain user intent into governed AI work. The short relationship is:
 
-### 2.3 Autonomy needs guardrails
+```text
+Intent → Goal → Project / Mission → Tasks → Outputs / Evidence
 
-Mission Control separates safe inspection from side-effectful execution.
+If repeatable:
+Goal → Workflow → Routine → Runs
+```
 
-Examples:
+### Relationship map
 
-- `Run health check` is safe.
-- `Run now` may execute a real workflow.
-- LinkedIn posting/commenting remains gated by auth, submit-path verification, limits, and approval rules.
-- Inbox approvals support edit-before-approve.
-- Dangerous profile creation/deletion is disabled in the web UI.
+- User expresses **Intent**.
+- Melkizac converts Intent into a **Goal** with success criteria, assumptions, missing context, approval boundaries, and evidence expectations.
+- If the Goal is substantial or persistent, it belongs to a **Project**.
+- To pursue the Goal, Melkizac starts a **Mission**.
+- The Mission is broken into **Tasks**.
+- Tasks are assigned to **Agents**, humans, or system **Routines**.
+- Tasks use **Skills** and **Tools**.
+- Tools may require **Connectors** and **Runtimes**.
+- Sensitive actions require **Approval Gates**.
+- Missing access/context/capability creates **Blockers**.
+- Completed Tasks produce **Outputs / Artifacts**.
+- Outputs are supported by **Evidence**.
+- Everything important is recorded in the **Audit Log**.
+- If the process is repeatable, it becomes a **Workflow**.
+- If the Workflow should recur automatically, it becomes a **Routine**.
 
-### 2.4 Trust requires observability
+### Core definitions
 
-Every operational surface should answer:
+- **Intent**: Raw user request in plain language.
+- **Goal**: Structured business outcome Hermes is trying to achieve.
+- **Project**: Persistent container for related goals, missions, tasks, evidence, and routines.
+- **Mission**: Specific execution effort or run designed to achieve a goal.
+- **Task**: Concrete unit of work assigned to an agent, human, or system routine.
+- **Workflow**: Reusable process template for a type of work.
+- **Routine**: Scheduled or recurring Hermes work.
+- **Automation**: Technical implementation behind a routine, such as cron, webhook, or background worker.
+- **Skill**: Reusable know-how or operating procedure Hermes follows.
+- **Tool**: Execution capability Hermes can use, such as browser, Telegram, GitHub, Supabase, filesystem, or Google Workspace.
+- **Connector**: Integration that gives Hermes access to an external system or account.
+- **Runtime**: Environment where work executes, such as the Hermes server, browser runtime, cron scheduler, or desktop gateway.
+- **Agent**: AI worker or logical role responsible for work.
+- **AI Workforce**: User-facing view of agents and responsibilities.
+- **Approval Gate**: Human approve/reject checkpoint before sensitive external, irreversible, costly, policy-sensitive, or authority-bound action.
+- **Blocker**: Missing access, context, permission, capability, or human decision preventing progress.
+- **Output / Artifact**: Deliverable Hermes produced, such as a draft, report, file, checklist, deck, or code change.
+- **Evidence**: Proof that work was done, such as screenshot, final URL, source link, API response, test result, build output, approval record, or run trace.
+- **Audit Log**: Detailed operational record of what happened, when, why, by whom, using which tools, with errors/retries/costs where available.
+- **Run**: One execution instance of a mission, task, workflow, or routine.
 
-- What happened?
-- Which agent or automation did it?
-- When did it run?
-- What data source did it use?
-- What output did it create?
-- Did it need approval?
-- What did it cost?
-- Where is the trace or evidence?
+### Key distinctions
 
-## 3. System architecture
+- **Goal vs Project**: Goal is the outcome; Project is the persistent container.
+- **Mission vs Task**: Mission is the coordinated execution effort; Task is an individual work item.
+- **Workflow vs Routine**: Workflow = reusable process template; Routine = scheduled or recurring execution.
+- **Routine vs Automation**: Routine is the user-facing term; automation is the technical implementation.
+- **Skill vs Tool**: Skill = reusable know-how; tool = execution capability.
+- **Approval Gate vs Human Task**: Approval Gate = approve/reject checkpoint; human task = manual action.
+- **Output vs Evidence**: Output = deliverable; evidence = proof that the work happened.
 
-### 3.1 Runtime layout
+### Example chain
+
+```text
+Intent:
+“I want more people to sign up for next month’s AI course.”
+
+Goal:
+Increase qualified signups for the June AI Productivity course.
+
+Project:
+Nexius Academy Course Growth.
+
+Mission:
+June course signup campaign setup.
+
+Tasks:
+- Check the website lead form
+- Draft LinkedIn post angles
+- Prepare approval card
+- Monitor new lead captures
+
+Skills:
+Website funnel check, LinkedIn content architect, lead monitoring.
+
+Tools/connectors/runtimes:
+Browser, LinkedIn/browser connector, Supabase, cron scheduler.
+
+Approval Gate:
+Approve LinkedIn post before publishing.
+
+Blocker:
+LinkedIn posting access unavailable or course date missing.
+
+Outputs:
+Funnel audit report, LinkedIn draft, follow-up checklist.
+
+Evidence:
+Screenshot, final URL, browser action log, source links, approval decision.
+
+If repeatable:
+Workflow = Course signup growth loop.
+Routine = Run every Monday at 9am.
+```
+
+## 2. Major revamp summary
+
+The current build is a major revamp from a simple agent dashboard into a phased Mission Control platform.
+
+Implemented phases:
+
+- **Phase 1 — Delegate Work front door:** turn a plain instruction into a routed project/agent task.
+- **Phase 2 — Artifact and evidence result view:** every important task can expose proof of work, artifacts, evidence, approval gates, and next actions.
+- **Phase 3 — Packaged SME Workflow Library:** reusable business workflows such as Nexius Academy lead intake and LinkedIn content operating loop.
+- **Phase 4 — Desktop Gateway / Runtime Readiness:** expose runtime targets, execution boundaries, readiness, and Windows-local setup status without pretending real Windows access exists.
+- **Phase 5 — Browser operation visibility / readiness layer:** expose browser-session contracts and API fields for domain, URL, screenshot evidence, action log, risk labels, approval gates, and final evidence while keeping real Windows-local execution blocked until gateway configuration exists.
+- **Phase 6 — Mobile Operator Hardening + Telegram deep links:** direct links can open task, approval, agent, or result contexts for mobile handoff.
+- **Phase 7 — Browser Activity operator surface:** Browser Activity is now a workspace-visible operator page with stop/takeover controls, drawer-first details, and layout regression protection.
+- **Phase 8 — Mobile Operator Mode / Field Operator UX:** mobile quick-action dock and field-operator interventions for Needs Attention, Running Now, Browser Activity, Delegate Work, and Task Board.
+- **Phase 9 — Research Runs visibility:** research command center for parallel research lanes, evidence, confidence, blockers, and synthesis status.
+- **Phase 10 — Research Run creation bridge:** operator-created wide research missions that create tracked research runs and linked work.
+- **Phase 11 — Browser Runtime Event Bridge:** live browser/runtime connectors can now POST session events into Mission Control; Browser Activity merges runtime-event sessions with the readiness fallback and exposes live-event counts, domains, screenshots, action logs, account-sensitive flags, approval gates, and stop/takeover controls.
+- **Phase 12 — Browser Runtime Producer Client:** browser workers now have a reusable producer client at `source/scripts/browser_runtime_producer.py` for publishing Browserbase/Playwright/desktop-browser lifecycle events, screenshots, final evidence, approval-before-submit/post/send/purchase boundaries, and stop/takeover polling into the Phase 11 bridge.
+- **Phase 13 — Safe Browser Funnel Check Probe:** a real Playwright no-submit website funnel probe at `source/scripts/browser_funnel_check_probe.py` now imports the producer, opens a safe public form page, captures screenshot evidence, detects forms/submit controls, emits final evidence, and leaves Mission Control blocked before submit for operator approval.
+- **Phase 14 — Production Browser Funnel Check Job:** `source/scripts/browser_funnel_check_job.py` turns the probe into a repeatable batch job with JSON target configs, Task Board task creation/update, screenshot/final URL/browser-session evidence handoff, approval-gated submit boundaries, and stop/takeover polling before and after browser execution.
+- **Phase 15 — Website Funnel Check packaged workflow:** Workflow Library now exposes a Website Funnel Check operator workflow that accepts a `targetUrl`, creates a queued Task Board item with Phase 14 job config/command artifacts, keeps `NO_SUBMIT` enforced, and surfaces approval gates before any real form submit.
+- **Phase 16 — Scheduled Funnel Checks:** Website Funnel Check can now prepare paused recurring routine bindings from Workflow Library with a cron schedule, target config, latest-run status, evidence-history fields, and mandatory `NO_SUBMIT`/approval safeguards.
+- **Phase 17 — Enable real scheduled funnel routines:** Routines can now explicitly enable an approved Website Funnel Check binding as a real Hermes cron job only after operator approval, preserving `NO_SUBMIT`, safe-target metadata, local delivery, Browser Activity evidence links, and run-history ingestion.
+- **Phase 18 — Configured target management + routine history UI:** Routines now includes a Website Funnel Check target registry for safe public URLs, target approval status, per-target enable/pause/run-now controls, latest run status, and evidence-history counts while keeping `NO_SUBMIT` and `safeTargetRequired` mandatory.
+- **Phase 19 — Target evidence drill-down + production connector readiness:** Website Funnel Check targets now open evidence detail with latest screenshot, Browser Activity session link, Task result evidence link, final URL, approval history, and production connector readiness while run-now remains dry-run only / `NO_SUBMIT`.
+- **Phase 20 — Production connector configuration gate:** Routines now has a connector gate for Browserbase, desktop-browser, and future Windows gateway connectors. It stores only `[REDACTED]` credentials, requires explicit approval and dry-run connectivity testing, keeps account-sensitive actions disabled, and does not enable any real connector before the checkpoint.
+
+Checkpoint note: the browser operator surface, runtime event bridge, producer-side client, first low-risk real browser job, production-safe batch wrapper, packaged Website Funnel Check workflow, scheduled funnel-check routine binding, approved routine enablement path, target-management/history layer, target evidence/readiness drill-down, and production connector gate are implemented. Real Browserbase, desktop-browser, or Windows gateway execution is still intentionally blocked until the next checkpoint approves connector enablement. **Workflow-specific model compare** is also pending; the current Model Router only supports model allow-listing and route planning.
+
+## 7.6 Task Board
+
+The **Task Board** is the operator-facing work ledger for agent-owned work, Melverick-owned decisions, blockers, and completion evidence. It should be named Task Board in docs and UI, not Task Board / Issues.
+
+Add and refresh controls are icon-only buttons aligned on the right side of the title row so mobile and desktop operators can quickly create a task or reload the board without crowding the page title. The buttons expose accessible labels: `Add action` and `Refresh task board`.
+
+## 3. Access and operating modes
+
+### 3.1 Login
+
+Public entry points:
+
+- `/` — public landing page.
+- `/login` — authenticated operator login.
+- `/demo-login` — demo-only session shortcut used for safe public/demo verification.
+- `/app` — authenticated Mission Control app shell.
+
+Example:
+
+```bash
+curl -i https://hermes.melverick.com/login
+```
+
+Login API:
+
+```bash
+curl -i -X POST https://hermes.melverick.com/api/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"[REDACTED]"}'
+```
+
+Do not document or print real passwords, API keys, gateway tokens, or cookie values.
+
+### 3.2 User mode vs Admin mode
+
+Mission Control has two UI modes.
+
+**User mode** is the day-to-day operator workspace:
+
+- Mission Control
+- Delegate Work
+- Workflow Library
+- My Projects
+- My Task Board
+- Needs Attention
+- My Agents
+- My Agent Org
+- Routines
+- Browser Activity
+- Workspace Knowledge
+- My Audit / Evidence
+- Profile
+
+**Admin mode** is setup/governance:
+
+- Admin Overview
+- Users & Workspaces
+- Platform Agent Org
+- Shared Agent Templates
+- Runtime Connectors
+- Desktop Gateway
+- Browser Activity
+- Model Router
+- Tools
+- Skills
+- Global Audit Log
+- Costs / Usage
+- Approval Policy
+- Quota
+
+Use User mode when supervising real work. Use Admin mode when configuring runtimes, tools, skills, policy, and cost controls.
+
+## 4. Architecture and runtime layout
 
 ```text
 /opt/hermes-mission-control/
   app.py                         Python HTTP backend + static file server
-  dist/                          Served production frontend bundle
-  .basic-password                Basic Auth password file; do not commit
-  approvals.db                   Durable approval/inbox database
-  agent_activity.db              Durable Agent Org operator activity log
-  ui-chat-overlays.json          Web UI-originated chat overlay messages
+  dist/                          Deployed production frontend bundle
+  approvals.db                   Durable approval/inbox data
+  agent_activity.db              Agent Org activity/audit data
+  processing-requests.json       Active web/API request tracking before restarts
+  checkpoints/                   Local recovery checkpoints
 
 /opt/hermes-mission-control/source/
-  src/                           React + TypeScript frontend
-  src/views/                     Page-level UI modules
-  src/services/                  HTTP client, mock client, store
-  src/styles/                    CSS tokens and app styles
-  docs/                          Product and implementation docs
+  src/App.tsx                    App shell and route/view mapping
+  src/components/NavRail.tsx     User/Admin navigation
+  src/views/                     Page-level React views
+  src/services/hermesClient.ts   Frontend client contract
+  src/services/httpHermesClient.ts HTTP implementation
+  src/services/mockHermesClient.ts Demo/mock implementation
+  src/services/deepLinks.ts      Mission Control deep-link parsing
+  src/services/store.tsx         App state, auth, permissions, deep-link target
+  src/types.ts                   Shared frontend domain types
+  src/styles/app.css             App styles and responsive/mobile rules
+  tests/                         Source-level regression tests
+  docs/                          Documentation
 ```
 
-### 3.2 Hermes data layout
+Hermes data sources used by Mission Control:
 
 ```text
-/root/.hermes/
-  state.db                       Hermes sessions, messages, billing/token data
-  cron/jobs.json                 Hermes scheduled jobs
-  cron/output/<job_id>/*.md      Cron output artifacts
-  kanban.db                      Task board / Kanban storage
-  skills/                        Installed Hermes skills
-  agent_registry.yaml            Agent Org registry
-  logs/                          Runtime logs
+/root/.hermes/state.db           Sessions, messages, cost/token fields
+/root/.hermes/cron/jobs.json     Routines / scheduled work
+/root/.hermes/cron/output/       Routine artifacts
+/root/.hermes/kanban.db          Task Board storage
+/root/.hermes/skills/            Installed skill library
+/root/.hermes/agent_registry.yaml Agent Org registry
+/root/.hermes/logs/              Runtime logs
 ```
 
-### 3.3 Second Brain data layout
+Second Brain source:
 
 ```text
 /root/.openclaw/workspace/kb/
-  raw/                           Immutable source inputs
-  wiki/                          LLM-maintained compiled markdown wiki
-  schema/WORKFLOW.md             Workflow/schema rules for the KB
-  wiki/index.md                  Main index
-  wiki/log.md                    Knowledge-base maintenance log
+  raw/                           Source inputs
+  wiki/                          Compiled markdown wiki
+  schema/WORKFLOW.md             KB workflow/schema rules
 ```
 
-### 3.4 Service
+Service:
 
-Systemd service:
-
-```text
-hermes-mission-control.service
-```
-
-Important service settings:
-
-```text
-WorkingDirectory=/opt/hermes-mission-control
-HMC_HOST=127.0.0.1
-HMC_PORT=19080
-HMC_USER=admin
-HMC_PASSWORD_FILE=/opt/hermes-mission-control/.basic-password
-ExecStart=/usr/bin/python3 /opt/hermes-mission-control/app.py
-```
-
-The app is reverse-proxied publicly at:
-
-```text
-https://hermes.melverick.com
-```
-
-## 4. Frontend application structure
-
-### 4.1 App entry
-
-File:
-
-```text
-src/App.tsx
-```
-
-Primary shell:
-
-- `NavRail`
-- `main.main`
-- conditional page rendering based on current `view` from the store
-
-Current views:
-
-```text
-mission        MissionControl
-agents         Agents
-agent-org      AgentOrg
-projects       Projects
-second-brain   SecondBrain
-approvals      Approvals
-board          TaskBoard
-skills         SkillsHub
-automations    Automations
-audit          AuditLog
-costs          CostDashboard
-settings       Placeholder
-```
-
-### 4.2 Navigation
-
-File:
-
-```text
-src/components/NavRail.tsx
-```
-
-Current nav items:
-
-- Mission Control
-- Agents
-- Agent Org
-- Projects
-- Second Brain
-- Task Board
-- Skills Hub
-- Approvals
-- Automations
-- Audit Log
-- Costs
-- Settings
-
-The rail also polls `/api/status` every 15 seconds to show gateway/runtime/session activity.
-
-### 4.3 Service client
-
-Important files:
-
-```text
-src/services/hermesClient.ts
-src/services/httpHermesClient.ts
-src/services/mockHermesClient.ts
-src/services/store.tsx
-```
-
-The live UI uses the HTTP client to call `/api/*` routes on the same origin. Requests include credentials so Basic Auth works through the browser.
-
-## 5. Backend API overview
-
-Backend file:
-
-```text
-/opt/hermes-mission-control/app.py
-```
-
-The backend is a Python `ThreadingHTTPServer` app. It serves the built React bundle and exposes JSON routes.
-
-### 5.1 GET routes
-
-```text
-GET /api/status
-GET /api/sessions
-GET /api/audit/sessions
-GET /api/audit/sessions/<session_id>
-GET /api/costs
-GET /api/automations
-GET /api/inbox
-GET /api/approval-inbox
-GET /api/skills
-GET /api/projects
-GET /api/workspaces
-GET /api/second-brain
-GET /api/tasks
-GET /api/task-board
-GET /api/logs?kind=<kind>
-GET /api/agents
-GET /api/agents/<agent_id>
-GET /api/approvals
-GET /api/agent-org
-```
-
-### 5.2 POST routes
-
-```text
-POST /api/chat
-POST /api/agents/<agent_id>/messages
-POST /api/approvals/<id>
-POST /api/inbox/<id>/action
-POST /api/automations/<job_id>/action
-POST /api/tasks
-POST /api/tasks/<task_id>/comments
-POST /api/agent-org/agents/<agent_id>/action
-```
-
-### 5.3 PUT routes
-
-```text
-PUT /api/agents/<agent_id>/files/<filename>
-PUT /api/inbox/<id>
-PUT /api/tasks/<task_id>
-```
-
-Editable agent files are intentionally limited. `config.yaml` is read-only from the web UI to avoid writing redacted secrets back to disk.
-
-### 5.4 DELETE routes
-
-```text
-DELETE /api/tasks/<task_id>
-```
-
-Agent profile deletion is disabled from the web UI for safety.
-
-## 6. Current live data snapshot
-
-Verified via local authenticated API calls on 2026-05-31:
-
-```text
-/api/agent-org        8 agents, 4 flows
-/api/tasks            1 task
-/api/inbox            41 inbox items; 5 drafted; 33 sent; 3 rejected
-/api/skills           133 skills
-/api/projects         12 projects/workspaces
-/api/second-brain     34 wiki pages surfaced; 5 raw sources
-/api/audit/sessions   50 listed sessions out of 94 total
-```
-
-Agent Org summary at verification time:
-
-```text
-Digital Coworkers: 8
-Running Now: 0
-Queued Work: 1
-Approvals Needed: 5
-Failed Runs: 0
-Active Workflows: 8
-Cost 7d: 0.0
-```
-
-Second Brain summary at verification time:
-
-```text
-Title: Melverick Second Brain
-Wiki pages surfaced: 34
-Raw sources: 5
-Sections: 9
-Log entries: 16
-Health: healthy
-Last updated: 2026-05-30 10:42 SGT
-```
-
-## 7. Page documentation
-
-## 7.1 Mission Control dashboard
-
-View file:
-
-```text
-src/views/MissionControl.tsx
-```
-
-Purpose:
-
-The daily operator cockpit. This page is intended to answer:
-
-- What needs attention now?
-- What changed since the last check?
-- What is running or scheduled next?
-- What did agents produce?
-- Is the system healthy?
-- What should Melverick click next?
-
-Typical data sources:
-
-- `/api/status`
-- `/api/sessions`
-- `/api/approvals`
-- `/api/agent-org`
-- `/api/second-brain`
-- `/api/projects`
-- `/api/costs`
-
-Design pattern:
-
-- Decision-first cards.
-- Attention/approval focus.
-- Latest outputs and health signals.
-- Singapore-time display.
-
-## 7.2 Agents
-
-View file:
-
-```text
-src/views/Agents.tsx
-```
-
-Purpose:
-
-Unified agent chat and context surface. In this Mission Control build, Telegram, Terminal, and Web UI/API are treated as channels for the same Hermes agent unless explicitly represented as separate runtimes.
-
-Key behavior:
-
-- Roster/list of agents or channels.
-- Central chat/activity surface.
-- Detail drawer rather than permanent right panel.
-- Web UI send flow with immediate pending state and persisted UI-originated overlay messages.
-- Agent file inspection/editing for safe files.
-
-Backend routes:
-
-```text
-GET /api/agents
-GET /api/agents/<agent_id>
-POST /api/agents/<agent_id>/messages
-PUT /api/agents/<agent_id>/files/<filename>
-```
-
-Safety:
-
-- Profile creation/deletion disabled in web UI.
-- `config.yaml` is read-only.
-- Tool-call noise is filtered from primary chat; detailed traces belong in Audit Log.
-
-## 7.3 Agent Org / AI Workforce
-
-View file:
-
-```text
-src/views/AgentOrg.tsx
-```
-
-Primary backend contract:
-
-```text
-GET /api/agent-org
-POST /api/agent-org/agents/<agent_id>/action
-```
-
-Purpose:
-
-The operational control plane for digital coworkers. This is V2 of the Agent Org concept: it is not just a visual org chart. It joins registry, automations, tasks, approvals, runs, outputs, permissions, cost, and activity.
-
-Current registered default agents:
-
-```text
-chief-operator
-linkedin-growth
-nexius-leads
-second-brain
-content-ops
-project-task
-email-monitor
-devops-builder
-```
-
-Current default flows:
-
-```text
-Lead capture to follow-up
-LinkedIn daily growth loop
-Raw source to Second Brain
-Build and deploy loop
-```
-
-Page tabs:
-
-```text
-Org
-Agents
-Queues
-Flows
-Runs
-Outputs
-Permissions
-Health
-```
-
-Agent drawer tabs:
-
-```text
-Overview
-Queue
-Approvals
-Runs
-Outputs
-Activity
-Skills
-Permissions
-Config
-```
-
-Supported safe/operational actions:
-
-```text
-create_task
-run_health_check
-run_agent
-run_automation
-pause_automations
-resume_automations
-```
-
-Important distinction:
-
-- V2 operational agent: a named responsibility area mapped to real workflows, tasks, approvals, and logs.
-- V3 runtime agent: independent process/profile/memory/tool/secrets boundary.
-
-Current system is V2 operational. Some agents are promoted to cron-backed runtime responsibility areas, but they are not all isolated V3 runtimes.
-
-### Agent activity timeline
-
-Persistent store:
-
-```text
-/opt/hermes-mission-control/agent_activity.db
-```
-
-Records Mission Control operator actions such as:
-
-- Run agent
-- Run automation
-- Health check
-- Create task
-- Pause automations
-- Resume automations
-- Approval CTAs connected to activity rows where available
-
-This separates operator activity from actual runtime traces.
-
-## 7.4 Automations
-
-View file:
-
-```text
-src/views/Automations.tsx
-```
-
-Backend routes:
-
-```text
-GET /api/automations?q=<query>&state=<state>
-POST /api/automations/<job_id>/action
-```
-
-Data source:
-
-```text
-/root/.hermes/cron/jobs.json
-/root/.hermes/cron/output/<job_id>/*.md
-/root/.hermes/state.db
-```
-
-Purpose:
-
-Expose Hermes cron jobs as operational routines. This page shows schedules, last/next run, state, prompt preview, script/no-agent mode, delivery, skills/toolsets, outputs, and recent traces.
-
-Supported actions:
-
-```text
-pause
-resume
-run
-```
-
-UI behavior:
-
-- Card and list views.
-- Cards/List selector sits on the far right side of the search row.
-- Search and state filters.
-- Routine cards with mode, trigger/schedule chip, prompt preview, run counts, skills, last status, next run.
-- Drawer/details for schedule, delivery, profile, model, script mode, prompt, recent runs, and output previews.
-
-Safety:
-
-`Run now` can execute real workflows and deliveries. The UI warns about this.
-
-### Heartbeat semantics
-
-If `Run Heartbeat` is added, it should not be the same as `Run now`.
-
-Recommended meaning:
-
-- `Run now`: execute the actual workflow.
-- `Run Heartbeat`: run a lightweight diagnostic probe: scheduler active, script exists, config present, last/next run state, recent failures, delivery target, obvious credential failures.
-
-Do not label a full workflow run as a heartbeat unless it is genuinely side-effect-safe.
-
-## 7.5 Approvals / Inbox
-
-View file:
-
-```text
-src/views/Approvals.tsx
-```
-
-Backend routes:
-
-```text
-GET /api/inbox?status=drafted|ready|sent|rejected|all&q=...
-GET /api/approval-inbox
-POST /api/inbox/<id>/action
-PUT /api/inbox/<id>
-GET /api/approvals
-POST /api/approvals/<id>
-```
-
-Persistent store:
-
-```text
-/opt/hermes-mission-control/approvals.db
-```
-
-Purpose:
-
-Human-in-the-loop review queue for:
-
-- Proposed outbound messages.
-- Automation outputs.
-- Generated reports.
-- Risky actions.
-- Follow-ups.
-- Cron output artifacts derived into approval records.
-
-Derived inbox behavior:
-
-Recent non-empty cron output markdown files from:
-
-```text
-/root/.hermes/cron/output/*/*.md
-```
-
-are synced into durable drafted approval records with IDs like:
-
-```text
-cron-output-<sha1-digest>
-```
-
-UI behavior:
-
-- Metrics: drafted, ready, sent, risk watch.
-- Status tabs.
-- Search across title/body/source/destination.
-- Full-width approval cards.
-- Right-side drawer for source/provenance and edit-before-approval.
-- Actions: open, mark reviewed, reject, approve, save edits.
-
-## 7.6 Task Board / Issues
-
-View file:
-
-```text
-src/views/TaskBoard.tsx
-```
-
-Backend routes:
-
-```text
-GET /api/tasks
-GET /api/task-board
-POST /api/tasks
-PUT /api/tasks/<task_id>
-POST /api/tasks/<task_id>/comments
-DELETE /api/tasks/<task_id>
-```
-
-Persistent source:
-
-```text
-/root/.hermes/kanban.db
-```
-
-Purpose:
-
-Operational queue for tasks, issues, and agent-assigned work.
-
-Main tables ensured by backend:
-
-```text
-tasks
-task_comments
-task_events
-task_runs
-task_links
-```
-
-Status normalization:
-
-```text
-open/todo/backlog      -> queued
-in_progress/working   -> running
-completed/closed      -> done
-failed/crashed        -> error
-```
-
-UI behavior:
-
-- Five lanes: queued, running, blocked, done, error.
-- Card and list views.
-- Cards/List selector sits on the far right side of the search row.
-- Collapsed create form behind `+ Add Action`.
-- Search/status/assignee filters.
-- Slide-over drawer for detailed task metadata.
-- Per-card status move and delete.
-- Inline assignee update.
-
-## 7.7 Skills Hub
-
-View file:
-
-```text
-src/views/SkillsHub.tsx
-```
-
-Backend route:
-
-```text
-GET /api/skills
-```
-
-Data sources:
-
-```text
-/root/.hermes/skills/**/SKILL.md
-Hermes profiles and profile skill directories
-Hermes cron job skill declarations
-Kanban task skill fields
-Agent registry mappings
-```
-
-Purpose:
-
-Expose reusable Hermes procedures and capabilities as an operational library.
-
-Current verified count:
-
-```text
-133 skills surfaced
-133 assigned/routed somewhere
-```
-
-UI behavior:
-
-- Total/editable/plugin/user/assigned summary metrics.
-- Card and list views.
-- Cards/List selector sits on the far right side of the search row.
-- Search by skill name, description, tag, or model.
-- Filter by category/source.
-- Skill cards show source, editability, routing evidence, usage, and preview.
-- Right-side drawer for details and SKILL.md preview.
-
-Backend performance rule:
-
-Do not rescan every routing surface once per skill. Build routing/usage indexes once and join them to the skill list.
-
-## 7.8 Projects / Workspaces
-
-View file:
-
-```text
-src/views/Projects.tsx
-```
-
-Backend routes:
-
-```text
-GET /api/projects
-GET /api/workspaces
-```
-
-Purpose:
-
-Context cockpit for active workspaces and project memory. This page connects filesystem workspaces, implementation plans, second-brain/wiki context, Kanban tasks, and recent sessions where available.
-
-Current verified count:
-
-```text
-12 projects/workspaces
-```
-
-UI behavior:
-
-- Portfolio metrics.
-- Search and kind/source filters.
-- Project cards.
-- Health/progress/source chips.
-- Temporary right-side detail drawer with overview, knowledge/artifacts, activity, and sessions.
-- No drawer auto-open on page load.
-
-## 7.9 Second Brain
-
-View file:
-
-```text
-src/views/SecondBrain.tsx
-```
-
-Backend route:
-
-```text
-GET /api/second-brain?q=<search>&section=<section>
-```
-
-Data root:
-
-```text
-/root/.openclaw/workspace/kb
-```
-
-Important paths:
-
-```text
-raw/                         immutable source inputs
-wiki/                        compiled maintained wiki
-schema/WORKFLOW.md           KB workflow/schema rules
-wiki/index.md                index
-wiki/log.md                  maintenance log
-```
-
-Purpose:
-
-Expose Melverick's Karpathy-style LLM Wiki as a first-class Mission Control page.
-
-Important product rule:
-
-This is not plain RAG and not just a document library. It is a maintained knowledge system with source-of-truth inputs, compiled wiki pages, schema/workflow rules, index/log, and health checks.
-
-Tabs:
-
-```text
-Overview
-Wiki
-Raw Sources
-Schema
-Index & Log
-Health
-```
-
-Current source types:
-
-- Raw Google Docs exports.
-- Manual notes / seed notes.
-- Setup docs/articles.
-- OpenClaw documentation summaries.
-- Human/agent-maintained wiki pages.
-
-Currently not automatic by default unless explicitly ingested:
-
-- Telegram messages.
-- LinkedIn posts/comments/DMs.
-- Email.
-- Calendar.
-- Meeting recordings/transcripts.
-- CRM leads.
-- Website leads.
-- Raw PDFs/images/screenshots.
-
-## 7.10 Audit Log
-
-View file:
-
-```text
-src/views/AuditLog.tsx
-```
-
-Backend routes:
-
-```text
-GET /api/audit/sessions
-GET /api/audit/sessions/<session_id>
-```
-
-Data source:
-
 ```text
-/root/.hermes/state.db
+systemctl status hermes-mission-control.service
 ```
 
-Purpose:
+Safe deploy rule:
 
-Run/session trace viewer for Hermes activity from Telegram, cron, CLI, and API sessions.
+1. Build frontend in `/opt/hermes-mission-control/source`.
+2. Check `/opt/hermes-mission-control/processing-requests.json` for active requests.
+3. Sync `source/dist/` to `/opt/hermes-mission-control/dist/`.
+4. Restart `hermes-mission-control.service` only when safe.
+5. Verify local API and browser UI.
 
-UI behavior:
+## 5. Common usage patterns
 
-- Search and source filters.
-- Full-width list.
-- Right-side drawer for run detail.
-- Messages/tool calls/events shown as trace evidence.
-- Session metadata, token/cost details where available.
+### 5.1 “I want an agent to do work”
 
-Verified summary at documentation time:
+Use **Delegate Work**.
 
-```text
-94 total sessions
-50 sessions listed in default API window
-4465 tool calls
-241603162 tokens
-```
-
-## 7.11 Cost Dashboard
-
-View file:
-
-```text
-src/views/CostDashboard.tsx
-```
-
-Backend route:
-
-```text
-GET /api/costs?days=<n>
-```
+Example:
 
-Data source:
+1. Open `Delegate Work`.
+2. Select project context, e.g. `Nexius Academy`.
+3. Select execution target/agent, e.g. `Content Ops` or `Melkizac`.
+4. Enter a clear outcome:
 
 ```text
-/root/.hermes/state.db
+Audit the Nexius Academy lead intake flow and produce a list of missing tracking, form, or follow-up issues with evidence.
 ```
 
-Purpose:
+5. Use preview/dry-run if available.
+6. Create delegated task.
+7. Open the Task Board card and review result evidence.
 
-Token and cost observability for agent operations.
+API example:
 
-Includes:
-
-- Selected window spend.
-- 24h / 7d / all-time spend where data exists.
-- Token totals and breakdowns.
-- Spend/token breakdown by model/source.
-- Daily trend bars.
-- Highest-cost/highest-token sessions.
-- Drawer-style session details.
-
-Current caveat:
-
-Estimated cost may be zero even when token usage is high if billing fields are unavailable or unset.
-
-## 8. Agent registry
-
-Registry path:
-
-```text
-/root/.hermes/agent_registry.yaml
-```
-
-This file makes agents explicit instead of only inferred from keywords.
-
-Each agent can define:
-
-```yaml
-id: linkedin-growth
-name: LinkedIn Growth Agent
-type: runtime_agent
-runtime: hermes-cron
-profile: default
-reports_to: chief-operator
-mode: approval
-skills: []
-automations: []
-permissions: {}
-health_policy: {}
+```bash
+curl -s -b cookie.txt http://127.0.0.1:19080/api/delegate-work/context | jq
 ```
-
-Agent Org joins registry data with:
-
-- Cron jobs.
-- Kanban tasks.
-- Inbox approvals.
-- Session/audit data.
-- Cost data.
-- Skills.
-- Projects.
-- Outputs.
-- Activity events.
 
-Use `automation_match: explicit` when known runtime job ownership exists. This prevents broad keywords from incorrectly attaching unrelated workflows.
+### 5.2 “I need to review what needs me”
 
-## 9. Current runtime agents and workflows
+Use **Mission Control** or **Needs Attention**.
 
-### 9.1 LinkedIn Growth Agent
+- Mission Control shows the daily cockpit: attention, running work, recent outputs, system health, and next actions.
+- Needs Attention shows approval/review items requiring human action.
 
-Runtime type:
+Example human action:
 
 ```text
-runtime_agent / hermes-cron
+A LinkedIn post draft is ready.
+Open Needs Attention → review source/evidence → edit if needed → approve or reject.
 ```
 
-Mapped to LinkedIn block jobs such as:
+### 5.3 “I need proof of what an agent did”
 
-- Morning block.
-- Content block.
-- Midday block.
-- Afternoon block.
-- Evening block.
+Use **Task Board** or **Audit / Evidence**.
 
-Safety posture:
+- Task Board shows the operational task and result drawer.
+- Audit / Evidence shows session/run traces, messages, costs, tool calls, and provenance.
 
-- Uses Melverick Ng `/in/melverick/` only.
-- Does not use Enrico Huang profile.
-- Live comments/posts/DMs/connection requests require auth, submit-path verification, dedup checks, limits, and approval-safe behavior.
+Example:
 
-### 9.2 Nexius Lead Agent
-
-Runtime type:
-
 ```text
-runtime_agent / hermes-cron / no-agent script watchdog
+Open My Task Board → click a completed task → open Result / Evidence → inspect artifacts, evidence records, approval gates, and next actions.
 ```
 
-Primary mapped workflow:
+### 5.4 “I need to see what an agent is doing in a browser”
 
-```text
-daily-nexius-lead-check
-```
+Use **Browser Activity**.
 
-Script mode:
+Example:
 
 ```text
-no_agent: true
+Open Browser Activity → choose a session → inspect domain, URL, screenshot, action log, approval gate, and final evidence → Stop or Takeover if needed.
 ```
-
-Purpose:
 
-Checks Nexius Labs and Nexius Academy lead sources and sends Telegram alerts only when new leads are found. Empty stdout means silent no-op.
+External-facing actions such as submit, post, send, or purchase should be approval-gated.
 
-### 9.3 Email Attention Agent
+### 5.5 “I want to launch a repeatable SME workflow”
 
-Runtime type:
+Use **Workflow Library**.
 
-```text
-script watchdog / no-agent
-```
-
-Primary mapped workflow:
+Example:
 
 ```text
-email-immediate-attention-monitor
+Open Workflow Library → select “Nexius Academy lead intake” → review steps and approval gates → launch → follow the created Task Board item.
 ```
-
-Purpose:
-
-Scans configured email accounts for immediate-attention messages and emits Telegram-ready alerts only when needed.
-
-### 9.4 Other logical/operational agents
-
-Other registered agents currently provide responsibility mapping and control-plane structure:
-
-- Chief Operator.
-- Second Brain Agent.
-- Content Ops Agent.
-- Project & Task Agent.
-- DevOps / Builder Agent.
-
-They may map to tasks, skills, approvals, sessions, or future runtime workflows.
-
-## 10. Human-in-the-loop model
-
-Mission Control uses a layered safety model.
-
-### Observe
-
-Agent/system can read and summarize but not change external state.
-
-### Draft
-
-Agent can create drafts, tasks, or proposed outputs.
-
-### Approval required
-
-Agent can prepare a side-effectful action, but the user must approve it.
 
-### Execute
+### 5.6 “I received a Telegram link”
 
-Agent/workflow can execute a safe or pre-authorized action directly.
+Open the link on mobile or desktop. Deep links are designed to route you to the relevant surface and auto-open the right context.
 
 Examples:
 
-- New lead detection can send Telegram alerts.
-- Cron output is converted into approvals when reviewable.
-- LinkedIn live actions require verified auth and submit path.
-- Profile creation/deletion remains CLI-only.
+```text
+/app?view=board&task=<task_id>
+/app?view=approvals&approval=<approval_id>
+/app?view=agents&agent=<agent_id>
+/app?view=task-result&task=<task_id>
+```
 
-## 11. Operational workflows
+Expected behavior:
 
-### 11.1 Build/deploy/restart
+- Task link opens Task Board and the linked task drawer.
+- Approval link opens Needs Attention and the linked approval drawer.
+- Agent link opens the Agents page with the selected agent context.
+- Task result link opens result/evidence context.
 
-Run from source directory:
+## 6. Feature guide
+
+### 6.1 Mission Control cockpit
+
+**Purpose:** daily operator homepage.
+
+Use it to answer:
+
+- What needs attention?
+- What is running now?
+- What did agents recently produce?
+- Is the system healthy?
+- What should I do next?
+
+Typical controls:
+
+- Review attention item.
+- Open Task Board.
+- Track running agent/task.
+- Open Audit / Evidence.
+- Open Settings when health/setup issues appear.
+
+Example workflow:
+
+```text
+Start your day → open Mission Control → review Needs Attention → inspect Running Now → open recent output evidence → act on Next Recommended Action.
+```
+
+Representative API inputs:
+
+- `/api/status`
+- `/api/inbox`
+- `/api/automations`
+- `/api/task-board`
+
+### 6.2 Delegate Work
+
+**Purpose:** simple front door for assigning work to digital coworkers.
+
+What it does:
+
+- Loads projects, agents, skills, and execution targets.
+- Helps convert a human request into a structured task.
+- Creates Task Board work with routing/evidence metadata.
+- Adds operator-ready links where available.
+
+How to use:
+
+1. Describe the outcome, not just a command.
+2. Select project/workspace if relevant.
+3. Pick agent/runtime if known; otherwise let Mission Control route.
+4. Review the generated brief.
+5. Create task.
+
+Good example:
+
+```text
+Find the top 5 funnel issues on nexiusacademy.com that could reduce course enquiries. Provide screenshots or URLs as evidence and create follow-up tasks for each issue.
+```
+
+Poor example:
+
+```text
+Check website.
+```
+
+APIs:
+
+```text
+GET  /api/delegate-work/context
+POST /api/delegate-work/plan
+POST /api/delegate-work
+```
+
+### 6.3 Workflow Library
+
+**Purpose:** packaged SME workflows that can be launched repeatedly.
+
+Current workflow examples:
+
+- Nexius Academy lead intake.
+- LinkedIn content operating loop.
+
+How to use:
+
+1. Open Workflow Library.
+2. Search/filter for the workflow.
+3. Review steps, expected artifacts, evidence, and approval gates.
+4. Launch the workflow.
+5. Track the generated task/result in Task Board.
+
+API examples:
+
+```bash
+curl -s -b cookie.txt http://127.0.0.1:19080/api/workflows | jq '.workflows[].name'
+```
+
+```bash
+curl -s -b cookie.txt -X POST \
+  http://127.0.0.1:19080/api/workflows/linkedin-content-operating-loop/launch \
+  -H 'Content-Type: application/json' \
+  -d '{"project_id":"demo","notes":"Prepare this week’s operator-led LinkedIn draft set."}' | jq
+```
+
+### 6.4 My Projects
+
+**Purpose:** project/workspace context cockpit.
+
+Use it to understand:
+
+- what initiatives exist;
+- what workspace/files/plans are linked;
+- open actions and blockers;
+- knowledge and activity associated with a project;
+- which agents/workflows relate to it.
+
+Example:
+
+```text
+Open My Projects → choose Nexius Academy → review open actions → create a project task for missing lead-source tracking → assign to Nexius Leads or Melkizac.
+```
+
+APIs:
+
+```text
+GET  /api/projects
+GET  /api/workspaces
+GET  /api/projects/<project_id>/brief
+POST /api/projects/<project_id>/tasks
+```
+
+### 6.5 My Task Board
+
+**Purpose:** operational queue for tasks, blockers, manual actions, and agent work.
+
+Use it for:
+
+- queued/running/blocked/done/error task states;
+- human-only tasks assigned to Melverick;
+- agent tasks assigned to Melkizac, Content Ops, DevOps Builder, etc.;
+- evidence/result review;
+- comments/operator instructions;
+- task status changes.
+
+Example:
+
+```text
+Open My Task Board → filter blocked → open card → read blocker and expected action → add comment “I have granted access” → move status or let agent resume.
+```
+
+Result/evidence example:
+
+```text
+Open completed task → Result Summary → inspect artifacts → check Evidence Timeline → review Approval Gates → follow Next Actions.
+```
+
+APIs:
+
+```text
+GET    /api/task-board
+POST   /api/tasks
+PATCH  /api/tasks/<task_id>
+DELETE /api/tasks/<task_id>
+GET    /api/tasks/<task_id>/result
+POST   /api/tasks/<task_id>/comments
+```
+
+### 6.6 Needs Attention / Approval Gates
+
+**Purpose:** human-in-the-loop review and approval.
+
+Use this for:
+
+- outbound messages or posts;
+- destructive changes;
+- costly/high-risk actions;
+- external submit/post/send/purchase actions;
+- policy-sensitive changes.
+
+Not every human item belongs here. Use Task Board for manual actions, blockers, auth/payment/access issues, or “please review this” items that are not approve/reject gates.
+
+Example:
+
+```text
+Open Needs Attention → open approval card → inspect draft and source → edit text if needed → approve, reject, or mark reviewed.
+```
+
+APIs:
+
+```text
+GET    /api/inbox
+GET    /api/approvals
+PATCH  /api/inbox/<item_id>
+POST   /api/inbox/<item_id>/action
+POST   /api/approvals/<approval_id>
+DELETE /api/inbox/<item_id>
+```
+
+### 6.7 My Agents
+
+**Purpose:** interact with Hermes agents and inspect agent context.
+
+Current behavior:
+
+- Aggregates meaningful Hermes chat across Terminal, Telegram, and Web UI where possible.
+- Shows agent/profile-backed runtime identities.
+- Supports selected-agent routing.
+- Supports attachments.
+- Keeps dense metadata in drawers/panels rather than taking over chat width.
+
+How to use:
+
+```text
+Open My Agents → select Melkizac or DevOps Builder → send instruction → watch processing state → review response and attached evidence.
+```
+
+Example instruction:
+
+```text
+Check the latest Mission Control service health and summarize only blockers that need operator action.
+```
+
+APIs:
+
+```text
+GET    /api/agents
+GET    /api/agents/<agent_id>
+POST   /api/agents/<agent_id>/messages
+POST   /api/agents/<agent_id>/messages/stop
+POST   /api/agents/<agent_id>/attachments
+GET    /api/project-chats
+```
+
+### 6.8 My Agent Org
+
+**Purpose:** AI workforce control plane.
+
+Use it to see:
+
+- digital coworker roles;
+- work/personal domains;
+- active goals;
+- queues;
+- runs and outputs;
+- permissions;
+- health;
+- collaboration flows.
+
+Agent-owned goal rule:
+
+- Agents should own strategy, step design, routine execution, and evidence.
+- Melverick should only receive human-only tasks when tooling, access, legal authority, or external accounts require him.
+
+Example:
+
+```text
+Open My Agent Org → select Content Ops → create goal “Generate 5 operator-led LinkedIn post angles this week” → check generated steps → ensure LinkedIn Growth is collaborator for scheduling/publishing.
+```
+
+APIs:
+
+```text
+GET  /api/agent-org
+GET  /api/agent-goals
+POST /api/agent-org/agents/<agent_id>/goals
+POST /api/agent-org/agents/<agent_id>/action
+POST /api/agent-org/agents/<agent_id>/goals/<goal_id>/actions/<action_id>
+```
+
+### 6.9 Routines
+
+**Purpose:** scheduled/background Hermes cron work.
+
+Use it to:
+
+- see enabled/paused/error jobs;
+- inspect schedules and outputs;
+- run a routine now;
+- pause/resume;
+- inspect output evidence.
+
+Example:
+
+```text
+Open Routines → find LinkedIn daily planner → check last/next run → open output → pause only if it is producing stale or duplicate work.
+```
+
+APIs:
+
+```text
+GET  /api/automations
+POST /api/automations/<job_id>/action
+```
+
+Actions usually include run, pause, resume, or inspect depending on job state.
+
+### 6.10 Browser Activity
+
+**Purpose:** supervise live or simulated browser work.
+
+Use it for:
+
+- LinkedIn work;
+- website funnel testing;
+- form checks;
+- lead capture checks;
+- client research;
+- Browserbase-style sessions;
+- account-sensitive submit/post/send/purchase workflows.
+
+Visible fields:
+
+- current domain/site;
+- current URL;
+- screenshot preview/evidence slot;
+- action log;
+- browser session status;
+- account-sensitive indicator;
+- approval-required indicator;
+- stop/takeover controls;
+- final screenshot/link evidence.
+
+Example:
+
+```text
+Open Browser Activity → select active session → verify it is only browsing → if it reaches a submit/post/send/purchase action, check approval gate → approve externally only after reviewing screenshot and action log.
+```
+
+APIs:
+
+```text
+GET  /api/browser-sessions
+GET  /api/browser-sessions/<session_id>
+POST /api/browser-sessions/<session_id>/stop
+POST /api/browser-sessions/<session_id>/takeover
+```
+
+Safety rule:
+
+- A simulated readiness session is not real browser access.
+- Windows-local execution remains blocked until `WINDOWS_HERMES_GATEWAY_URL`, token, approved folders, and a connection probe are configured.
+
+### 6.11 Workspace Knowledge / Second Brain
+
+**Purpose:** expose Melverick’s Second Brain knowledge base.
+
+Use it to:
+
+- browse raw sources;
+- inspect wiki pages;
+- check KB health;
+- find workflow rules;
+- provide structured project context to agents.
+
+Example:
+
+```text
+Open Workspace Knowledge → search “SGQR PayNow” → open the wiki topic → use it as source context for a task or agent instruction.
+```
+
+API:
+
+```text
+GET /api/second-brain
+```
+
+### 6.12 My Audit / Evidence
+
+**Purpose:** inspect run traces and proof of work.
+
+Use it to answer:
+
+- What did the agent do?
+- Which tool calls happened?
+- What did it cost?
+- What was the source channel?
+- Which session produced this result?
+
+Example:
+
+```text
+Open My Audit / Evidence → filter source “telegram” → open a recent session → review messages, timestamps, tool traces, and cost metadata.
+```
+
+APIs:
+
+```text
+GET /api/audit/sessions
+GET /api/audit/sessions/<session_id>
+GET /api/sessions
+```
+
+### 6.13 Skills
+
+**Purpose:** inspect reusable Hermes operating procedures.
+
+Use it to:
+
+- search installed skills;
+- see source/category/usage;
+- inspect full `SKILL.md` where available;
+- understand which workflows/agents use which skills.
+
+Example:
+
+```text
+Open Skills → search “Mission Control” → open a skill → read Source tab → use linked references for implementation or troubleshooting.
+```
+
+APIs:
+
+```text
+GET /api/skills
+GET /api/skills/<skill_id>/file
+```
+
+### 6.14 Tools
+
+**Purpose:** inspect available tool/toolset capabilities.
+
+Use it to understand what Mission Control/Hermes can do: browser, terminal, web, file, scheduling, messaging, etc.
+
+Example:
+
+```text
+Open Tools → check whether browser or terminal capabilities are enabled for the relevant runtime/profile before assigning work that requires them.
+```
+
+### 6.15 Costs / Usage
+
+**Purpose:** token and cost observability.
+
+Use it to:
+
+- see last 24h/7d/30d usage;
+- inspect model/source costs;
+- identify expensive sessions;
+- decide when to route simpler work to cheaper models.
+
+Example:
+
+```text
+Open Costs / Usage → select 7 days → inspect highest-token sessions → open audit trace for the expensive run → adjust model router policy if needed.
+```
+
+API:
+
+```text
+GET /api/costs?days=30
+```
+
+### 6.16 Model Router
+
+**Purpose:** cost-aware model routing policy.
+
+Use it to:
+
+- reserve frontier models for strategy/planning/high-risk work;
+- route easy tasks to cheaper models;
+- preview which model a message would use;
+- require approval for high-cost or high-risk work.
+
+Example:
+
+```text
+Open Model Router → test an instruction “summarize this short transcript” → confirm it routes to an easy/low-cost model → test “design a multi-agent rollout plan” → confirm frontier model routing.
+```
+
+APIs:
+
+```text
+GET  /api/model-router
+POST /api/model-router
+POST /api/model-router/route
+```
+
+### 6.17 Runtime Connectors
+
+**Purpose:** connect and monitor external runtimes.
+
+Use it to:
+
+- create connector tokens;
+- register runtime connectors;
+- receive heartbeats/events;
+- inspect runtime status.
+
+Example flow:
+
+```text
+Admin mode → Runtime Connectors → create token for a runtime → configure the external runtime with token → verify heartbeat appears → inspect events.
+```
+
+APIs:
+
+```text
+GET  /api/runtime-connect
+POST /api/runtime-connect/tokens
+POST /api/runtime-connect/tokens/<token_id>/revoke
+POST /api/runtime-connect/register
+POST /api/runtime-connect/heartbeat
+POST /api/runtime-connect/events
+GET  /api/runtimes
+GET  /api/runtimes/<runtime_id>
+```
+
+### 6.18 Desktop Gateway
+
+**Purpose:** readiness/configuration surface for local/desktop execution.
+
+Use it to:
+
+- inspect execution boundaries;
+- see remote/VPS target readiness;
+- see Windows-local setup requirements;
+- configure Windows gateway URL/token/folders when ready;
+- keep Windows-local execution explicitly blocked until real connection is verified.
+
+Example:
+
+```text
+Admin mode → Desktop Gateway → check Windows status → if not configured, follow setup steps → add WINDOWS_HERMES_GATEWAY_URL and approved folders only when the real Windows gateway is reachable.
+```
+
+APIs:
+
+```text
+GET  /api/desktop-gateway
+GET  /api/windows-gateway
+POST /api/windows-gateway/config
+```
+
+Safety rule:
+
+```text
+Never claim access to the user's Windows PC until the gateway URL, token, approved folders, and probe are configured and verified.
+```
+
+### 6.19 Operator links and Telegram handoff
+
+**Purpose:** create mobile-ready Mission Control links for alerts.
+
+Operator alert payloads should include:
+
+- short title;
+- risk/status;
+- owner/agent;
+- direct Mission Control link;
+- exact completion instruction.
+
+Examples:
+
+```text
+Task: /app?view=board&task=<task_id>
+Approval: /app?view=approvals&approval=<approval_id>
+Agent: /app?view=agents&agent=<agent_id>
+Task result: /app?view=task-result&task=<task_id>
+```
+
+API:
+
+```text
+GET /api/operator-links/preview
+```
+
+Example alert copy:
+
+```text
+Needs approval: LinkedIn comment draft
+Risk: account-sensitive external post
+Owner: LinkedIn Growth
+Open: https://hermes.melverick.com/app?view=approvals&approval=abc123
+Action: Review the draft, edit if needed, then approve or reject.
+```
+
+## 7. API smoke-check snapshot
+
+The following local demo smoke checks were run against `127.0.0.1:19080` on 2026-06-04.
+
+```text
+/api/me                         user demo, role viewer
+/api/status                     mode demo, api ok true, gateway running true
+/api/agent-org                  agents 3, flows 1
+/api/delegate-work/context      projects 1, agents 3
+/api/workflows                  workflows 2
+/api/task-board                 tasks 4; queued 1, running 1, blocked 1, done 1
+/api/inbox                      items 1
+/api/automations                summary total 1, enabled 1
+/api/projects                   projects 1
+/api/skills                     skills 3
+/api/audit/sessions             sessions 2
+/api/costs                      window days 30
+/api/desktop-gateway            demo targets 2
+/api/browser-sessions           sessions 1, approvalRequired 1, accountSensitive 1
+/api/operator-links/preview     ok true
+/api/model-router               policy present
+/api/runtimes                   runtimes 6
+/api/runtime-connect            tokens 1
+```
+
+Important interpretation:
+
+- Demo data is safe and synthetic.
+- Demo Windows readiness is not proof of real Windows-local execution.
+- The live environment check during prior checkpoint showed `WINDOWS_HERMES_GATEWAY_URL` unset, so real Windows-local execution remains intentionally blocked.
+
+## 8. Development, build, and deploy workflow
+
+From source repo:
 
 ```bash
 cd /opt/hermes-mission-control/source
-npm run build
-rm -rf /opt/hermes-mission-control/dist/*
-cp -a /opt/hermes-mission-control/source/dist/. /opt/hermes-mission-control/dist/
+```
+
+Run backend syntax check:
+
+```bash
 python3 -m py_compile /opt/hermes-mission-control/app.py
+```
+
+Run tests:
+
+```bash
+python3 -m pytest tests -q
+```
+
+Build frontend:
+
+```bash
+npm run build
+```
+
+Before live restart:
+
+```bash
+cat /opt/hermes-mission-control/processing-requests.json
+```
+
+Deploy frontend and restart:
+
+```bash
+rsync -a --delete /opt/hermes-mission-control/source/dist/ /opt/hermes-mission-control/dist/
 systemctl restart hermes-mission-control.service
 systemctl is-active hermes-mission-control.service
 ```
 
-### 11.2 API smoke tests
+Local demo smoke:
 
 ```bash
-PW=$(cat /opt/hermes-mission-control/.basic-password)
-curl -fsS -u "admin:$PW" http://127.0.0.1:19080/api/status | python3 -m json.tool >/dev/null
-curl -fsS -u "admin:$PW" http://127.0.0.1:19080/api/agent-org | python3 -m json.tool >/dev/null
-curl -fsS -u "admin:$PW" http://127.0.0.1:19080/api/second-brain | python3 -m json.tool >/dev/null
+COOKIE=/tmp/hmc-demo.cookie
+curl -sk -c "$COOKIE" -o /dev/null -L http://127.0.0.1:19080/demo-login
+curl -sk -b "$COOKIE" http://127.0.0.1:19080/api/browser-sessions | jq '.summary'
 ```
 
-### 11.3 Agent Org health checks
+## 9. Testing map
+
+Representative phase tests:
+
+```text
+tests/test_phase0_foundation_primitives.py
+tests/test_phase1_delegate_work_front_door.py
+tests/test_phase2_artifact_evidence_result_view.py
+tests/test_phase3_packaged_sme_workflows.py
+tests/test_phase4_desktop_gateway_runtime_readiness.py
+tests/test_phase5_browser_operation_visibility.py
+tests/test_phase6_mobile_operator_hardening.py
+tests/test_phase7_browser_operation_visibility.py
+```
+
+Use these when checking the phased revamp has not regressed.
+
+Full suite command:
 
 ```bash
-PW=$(cat /opt/hermes-mission-control/.basic-password)
-for agent in chief-operator linkedin-growth nexius-leads second-brain devops-builder; do
-  curl -sS -u admin:$PW -H 'Content-Type: application/json' \
-    -d '{"action":"run_health_check"}' \
-    http://127.0.0.1:19080/api/agent-org/agents/$agent/action \
-    | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('agent_id'), d.get('ok'), d.get('status'))"
-done
+python3 -m pytest tests -q
 ```
 
-### 11.4 Frontend verification
+Build command:
 
-Use Playwright or browser automation to verify:
-
-- Mission Control loads.
-- No console errors.
-- Nav items render.
-- Agent Org shows 8 agents and 4 flows.
-- Agent drawer does not auto-open on page load.
-- Drawer opens on agent click.
-- Approvals cards open detail drawer.
-- Task Board card/list selector is on the right side of the search bar.
-- Skills Hub card/list selector is on the right side of the search bar.
-- Automations card/list selector is on the right side of the search bar.
-- Second Brain tabs render real counts and source cards.
-
-## 12. Authentication and secrets
-
-The public app is protected by Basic Auth.
-
-Credentials are loaded from:
-
-```text
-HMC_USER
-HMC_PASSWORD_FILE
+```bash
+npm run build
 ```
 
-Default user:
+## 10. Safety rules
 
-```text
-admin
+1. **Never print secrets.** Passwords, tokens, API keys, session cookies, and connection strings must be redacted as `[REDACTED]`.
+2. **Do not overstate runtime access.** Demo/runtime readiness is not the same as live Windows-local or browser control.
+3. **Check active requests before restart.** Use `processing-requests.json`.
+4. **Approval-gate external actions.** Submit/post/send/purchase and account-sensitive browser work require explicit approval.
+5. **Use evidence for trust.** Task results and browser runs should produce screenshots, links, artifacts, or audit records where possible.
+6. **Keep Task Board and Approval Gates distinct.** Manual actions and blockers go to Task Board; approve/reject gates go to Needs Attention.
+7. **Preserve mobile usability.** No horizontal overflow; drawers and bottom nav must remain usable around 390px width.
+8. **Version big checkpoints.** The current revamp has a local checkpoint at `/opt/hermes-mission-control/checkpoints/phase1-7-20260604T082617Z`.
+
+## 11. Troubleshooting
+
+### Browser Activity cards look stretched or URL wraps vertically
+
+Use the Browser Activity layout regression fix pattern:
+
+- `.browser-detail-grid` for Browser Activity detail metrics.
+- `.browser-url-kv` full-width URL row.
+- `white-space: nowrap`, `overflow: hidden`, `text-overflow: ellipsis` for long URLs.
+- Run `tests/test_phase7_browser_operation_visibility.py`.
+
+### Agent chat “hi” or simple sends fail
+
+Check in order:
+
+1. Browser console/network.
+2. `/api/agents` and selected agent id.
+3. `/api/agents/<agent_id>/messages` direct POST.
+4. Profile-backed routing in `app.py`.
+5. Processing state clears in UI.
+6. Agent response persists to the right profile/session source.
+
+### Windows-local appears available when it should not
+
+Confirm:
+
+```bash
+printenv WINDOWS_HERMES_GATEWAY_URL
 ```
 
-Password file:
+If unset, real Windows-local execution must remain blocked. Demo mode may show synthetic readiness and must be labeled as demo/simulated.
 
-```text
-/opt/hermes-mission-control/.basic-password
+### UI changed but live site did not
+
+Check:
+
+```bash
+npm run build
+stat /opt/hermes-mission-control/source/dist/index.html
+stat /opt/hermes-mission-control/dist/index.html
+systemctl is-active hermes-mission-control.service
 ```
 
-Rules:
+The live site serves `/opt/hermes-mission-control/dist`, not `source/dist`.
 
-- Never commit `.basic-password`.
-- Never print full secrets into docs or logs.
-- Do not write redacted secrets back into config files.
-- Web UI config editing intentionally blocks `config.yaml` writes.
+## 12. Roadmap after this documentation checkpoint
 
-## 13. Known implementation notes and pitfalls
+Recommended next browser-runtime phase:
 
-### 13.1 Service PATH
+### Phase 11 — Browser Runtime Event Bridge
 
-Systemd may not inherit the interactive shell PATH. Backend code that shells out to Hermes should resolve the CLI using:
+Goal:
 
-- `HMC_HERMES_BIN`, or
-- `shutil.which('hermes')`, or
-- known fallback path such as `/root/hermes-agent/venv/bin/hermes`.
+- Convert Browser Activity from an operator-ready visibility surface into a live runtime-fed supervision layer.
 
-Do not assume plain `subprocess.run(['hermes', ...])` works under systemd.
+Scope:
 
-### 13.2 Avoid fake metrics
+- ingest real browser-session events from Browserbase, desktop browser agents, or runtime connectors;
+- persist and refresh current domain/URL, screenshot previews, action log events, status, and account-sensitive indicators;
+- enforce approval gates before submit/post/send/purchase operations;
+- make Stop/Takeover affect the underlying runtime when the connected runtime supports it;
+- attach final screenshot/link evidence back to Task Board results, approvals, and audit traces;
+- keep Windows-local execution visibly blocked until `WINDOWS_HERMES_GATEWAY_URL`, token, approved folders, and a successful probe are configured.
 
-If data is missing, show an honest empty state. Do not invent runs, outputs, costs, or approvals.
+Deferred governance phase:
 
-### 13.3 Keep details in drawers
+### Workflow-specific model compare
 
-For dense operational pages, use temporary right-side drawers instead of permanent side panels. This preserves the primary workspace width.
+Goal:
 
-Current drawer-first pages include:
+- Compare model quality, cost, latency, reliability, and evidence completeness for a specific workflow before assigning that model policy to a routine or packaged workflow.
 
-- Agents.
-- Agent Org.
-- Task Board.
-- Automations.
-- Audit Log.
-- Approvals.
-- Skills Hub.
-- Projects.
-- Costs.
-- Second Brain.
+This is **not implemented yet**. The current Model Router supports model allow-listing and route planning only.
 
-### 13.4 Singapore time
+Following operator/research continuation:
 
-Operator-facing timestamps should display in Singapore time (`Asia/Singapore`, `SGT`) wherever possible.
+### Research Runs hardening
 
-### 13.5 Run Now versus Heartbeat
+Goal:
 
-Do not blur the semantics:
+- Continue turning parallel research into fully auditable agent work with citations, evidence, approval gates, and task/result linkage.
 
-- `Run now` can execute a real workflow.
-- `Run heartbeat` should be diagnostic and side-effect-safe.
+## 13. Glossary
 
-### 13.6 Agent activity versus run trace versus output
+**Agent** — a digital coworker or Hermes profile/runtime identity.
+**Agent Org** — workforce map showing agents, goals, flows, queues, permissions, health, and outputs.
+**Approval Gate** — explicit human approve/reject checkpoint before an external-facing, costly, destructive, or policy-sensitive action.
+**Artifact** — output file/link/document/screenshot created by a task or workflow.
+**Browser Activity** — operator view of browsing sessions with domain, URL, screenshot, action log, approval gate, stop/takeover, and final evidence.
+**Delegate Work** — front door for submitting work to agents with context and routing.
+**Evidence** — proof record such as artifact, screenshot, link, session id, source path, or audit trace.
+**Mission Result** — structured task result containing summary, artifacts, evidence, approval gates, and next actions.
+**Routine** — recurring/scheduled Hermes cron job.
+**Task Board** — operational queue for agent tasks, human-only work, blockers, and result review.
+**Workflow Library** — packaged repeatable SME workflows that launch into tracked tasks/results.
+**Runtime Connector** — external runtime that registers, heartbeats, and sends events to Mission Control.
+**Windows Gateway** — optional local Windows bridge; real execution requires URL, token, approved folders, and successful probe.
 
-Keep these concepts separate:
-
-- Activity: Mission Control operator/UI events.
-- Runs: actual Hermes/cron/script execution traces.
-- Outputs: artifacts, reports, approval items, generated files.
-
-## 14. Roadmap
-
-### 14.1 Short-term improvements
-
-- Add explicit `Run Heartbeat` diagnostics for automations and agents.
-- Add richer flow runtime state in Agent Org.
-- Improve linked approval matching for Agent Org activity rows.
-- Add more live sources into Second Brain.
-- Add more robust public endpoint verification in deploy scripts.
-- Add automated frontend smoke tests in repo.
-
-### 14.2 Medium-term improvements
-
-- Promote more logical agents into real runtime-backed workflows.
-- Add profile-specific agent runtime boundaries where needed.
-- Add per-agent cost caps and budget controls.
-- Add event-driven webhook subscriptions.
-- Add meeting transcript ingestion into Second Brain.
-- Add LinkedIn/Telegram/email summarization pipelines into Second Brain.
-
-### 14.3 V3 direction
-
-V3 means independent runtime agents with their own:
-
-- Hermes profile.
-- Memory.
-- Skills.
-- Tool permissions.
-- Schedules.
-- Secrets boundary.
-- Audit/cost accounting.
-- Approval policy.
-
-V2, which is currently implemented, is the operational control plane that prepares for V3 without prematurely fragmenting runtime state.
-
-## 15. Glossary
-
-### Agent
-
-A named responsibility area or runtime worker in Mission Control. In V2, not every agent is an independent process.
-
-### Runtime agent
-
-An agent mapped to a real execution substrate such as Hermes cron, no-agent script watchdog, Kanban worker, or external runtime.
-
-### Logical agent
-
-A responsibility area represented in Agent Org but not yet backed by an isolated runtime.
-
-### Workflow / automation
-
-A scheduled or manually triggerable routine, usually backed by Hermes cron.
-
-### Approval
-
-A human-in-the-loop review item in `approvals.db` or derived from cron output.
-
-### Activity
-
-A Mission Control operator event, such as clicking Run Agent or Health Check.
-
-### Run
-
-A real Hermes session, cron execution, script run, or agent execution trace.
-
-### Output
-
-A generated artifact, cron output markdown, report, draft, or approval item.
-
-### Second Brain
-
-Melverick's maintained LLM Wiki at `/root/.openclaw/workspace/kb`.
-
-## 16. File map
-
-Important backend file:
+## 14. Important file map
 
 ```text
+Backend/API:
 /opt/hermes-mission-control/app.py
+
+Frontend shell/navigation:
+/opt/hermes-mission-control/source/src/App.tsx
+/opt/hermes-mission-control/source/src/components/NavRail.tsx
+/opt/hermes-mission-control/source/src/services/store.tsx
+/opt/hermes-mission-control/source/src/services/uiPermissions.ts
+
+Frontend contracts/clients:
+/opt/hermes-mission-control/source/src/types.ts
+/opt/hermes-mission-control/source/src/services/hermesClient.ts
+/opt/hermes-mission-control/source/src/services/httpHermesClient.ts
+/opt/hermes-mission-control/source/src/services/mockHermesClient.ts
+/opt/hermes-mission-control/source/src/services/deepLinks.ts
+
+Key views:
+/opt/hermes-mission-control/source/src/views/MissionControl.tsx
+/opt/hermes-mission-control/source/src/views/DelegateWork.tsx
+/opt/hermes-mission-control/source/src/views/WorkflowLibrary.tsx
+/opt/hermes-mission-control/source/src/views/TaskBoard.tsx
+/opt/hermes-mission-control/source/src/views/Approvals.tsx
+/opt/hermes-mission-control/source/src/views/Agents.tsx
+/opt/hermes-mission-control/source/src/views/AgentOrg.tsx
+/opt/hermes-mission-control/source/src/views/Automations.tsx
+/opt/hermes-mission-control/source/src/views/BrowserOperations.tsx
+/opt/hermes-mission-control/source/src/views/AdminSetupPage.tsx
+/opt/hermes-mission-control/source/src/views/SkillsHub.tsx
+/opt/hermes-mission-control/source/src/views/SecondBrain.tsx
+/opt/hermes-mission-control/source/src/views/AuditLog.tsx
+/opt/hermes-mission-control/source/src/views/CostDashboard.tsx
+/opt/hermes-mission-control/source/src/views/ModelRouter.tsx
+
+Shared components/styles:
+/opt/hermes-mission-control/source/src/components/MissionFoundation.tsx
+/opt/hermes-mission-control/source/src/components/SlideOverDrawer.tsx
+/opt/hermes-mission-control/source/src/styles/app.css
 ```
-
-Important frontend files:
-
-```text
-src/App.tsx
-src/components/NavRail.tsx
-src/views/MissionControl.tsx
-src/views/Agents.tsx
-src/views/AgentOrg.tsx
-src/views/Projects.tsx
-src/views/SecondBrain.tsx
-src/views/Approvals.tsx
-src/views/TaskBoard.tsx
-src/views/SkillsHub.tsx
-src/views/Automations.tsx
-src/views/AuditLog.tsx
-src/views/CostDashboard.tsx
-src/services/hermesClient.ts
-src/services/httpHermesClient.ts
-src/services/mockHermesClient.ts
-src/services/store.tsx
-src/styles/app.css
-src/styles/tokens.css
-```
-
-Important runtime files:
-
-```text
-/root/.hermes/agent_registry.yaml
-/root/.hermes/cron/jobs.json
-/root/.hermes/kanban.db
-/root/.hermes/state.db
-/opt/hermes-mission-control/approvals.db
-/opt/hermes-mission-control/agent_activity.db
-/root/.openclaw/workspace/kb/wiki/index.md
-/root/.openclaw/workspace/kb/wiki/log.md
-/root/.openclaw/workspace/kb/schema/WORKFLOW.md
-```
-
-## 17. One-line product definition
-
-Hermes Mission Control is Melverick's AI workforce operating system: a supervised control plane where agents, automations, tasks, approvals, knowledge, audit evidence, and costs converge so digital coworkers can be operated with trust.

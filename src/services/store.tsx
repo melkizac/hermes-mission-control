@@ -2,17 +2,32 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
+  useLayoutEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
-import type { Agent, Approval, Attachment, ConfigFile, ModelRoutingSelection, ReplyContext, RouterConfig, Skill, ViewKey } from "../types";
+import type { Agent, Approval, Attachment, ConfigFile, Message, MissionControlMe, ModelRoutingSelection, ReplyContext, RouterConfig, Skill, ViewKey } from "../types";
+import type { UiPermissions } from "./uiPermissions";
+import { canAccessView, permissionsForRole, safeDefaultViewForRole } from "./uiPermissions";
 import type { HermesClient } from "./hermesClient";
 import { HttpHermesClient } from "./httpHermesClient";
+import { initialDeepLinkTarget, parseMissionControlDeepLink, type MissionControlDeepLinkTarget } from "./deepLinks";
+
+type UiMode = "workspace" | "admin";
+const defaultViewForUiMode = (mode: UiMode): ViewKey => mode === "admin" ? "settings" : "mission";
 
 // Production Mission Control talks to the same authenticated origin.
 const client: HermesClient = new HttpHermesClient();
+
+function mergeMessages(existing: Agent["messages"], incoming: Agent["messages"]) {
+  const merged = [...existing, ...incoming];
+  const byId = new Map<string, Message>();
+  for (const message of merged) {
+    byId.set(String(message.id), message);
+  }
+  return Array.from(byId.values());
+}
 
 interface StoreValue {
   agents: Agent[];
@@ -20,11 +35,17 @@ interface StoreValue {
   selectedId: string | null;
   selected: Agent | undefined;
   view: ViewKey;
+  uiMode: UiMode;
+  me: MissionControlMe | null;
+  permissions: UiPermissions;
   loading: boolean;
   setView: (v: ViewKey) => void;
+  applyDeepLinkTarget: (target: MissionControlDeepLinkTarget) => void;
+  setUiMode: (mode: UiMode) => void;
   select: (id: string) => void;
   uploadAttachment: (file: File) => Promise<Attachment>;
   send: (text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection }) => Promise<void>;
+  sendToAgent: (agentId: string, text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection }) => Promise<void>;
   getModelRouter: () => Promise<RouterConfig>;
   stopProcessing: (requestId?: string) => Promise<void>;
   refreshSelected: () => Promise<void>;
@@ -39,21 +60,45 @@ interface StoreValue {
 const StoreContext = createContext<StoreValue | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
+  const startingDeepLink = initialDeepLinkTarget();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [view, setView] = useState<ViewKey>("mission");
+  const [view, setRawView] = useState<ViewKey>(startingDeepLink.view ?? "mission");
+  const [uiMode, setRawUiMode] = useState<UiMode>("workspace");
+  const [me, setMe] = useState<MissionControlMe | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const effectiveRole = me?.user.role === "admin" && uiMode === "admin" ? "admin" : me?.user.role === "admin" ? "user" : me?.user.role;
+  const permissions = useMemo(() => permissionsForRole(effectiveRole, me?.user.role), [effectiveRole, me?.user.role]);
+
+  const setView = useCallback((next: ViewKey) => {
+    setRawView((current) => {
+      if (canAccessView(effectiveRole, next)) return next;
+      return canAccessView(effectiveRole, current) ? current : safeDefaultViewForRole(effectiveRole);
+    });
+  }, [effectiveRole]);
+
+  const setUiMode = useCallback((mode: UiMode) => {
+    setRawUiMode(mode);
+    setRawView(defaultViewForUiMode(mode));
+  }, []);
+
   const refresh = useCallback(async () => {
-    const [a, ap] = await Promise.all([client.listAgents(), client.listApprovals()]);
+    const nextMe = await client.getMe();
+    setMe(nextMe);
+    const [agentsResult, approvalsResult] = await Promise.allSettled([client.listAgents(), client.listApprovals()]);
+    const a = agentsResult.status === "fulfilled" ? agentsResult.value : [];
+    const ap = approvalsResult.status === "fulfilled" ? approvalsResult.value : [];
     setAgents(a);
     setApprovals(ap);
     setSelectedId((cur) => cur ?? a[0]?.id ?? null);
+    const nextRole = nextMe?.user.role === "admin" && uiMode === "admin" ? "admin" : nextMe?.user.role === "admin" ? "user" : nextMe?.user.role;
+    setRawView((next) => canAccessView(nextRole, next) ? next : safeDefaultViewForRole(nextRole));
     setLoading(false);
-  }, []);
+  }, [uiMode]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     void refresh();
   }, [refresh]);
 
@@ -64,6 +109,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const select = useCallback((id: string) => setSelectedId(id), []);
 
+  const applyDeepLinkTarget = useCallback((target: MissionControlDeepLinkTarget) => {
+    if (target.view) setView(target.view);
+    if (target.agentId) setSelectedId(target.agentId);
+  }, [setView]);
+
+  useLayoutEffect(() => {
+    applyDeepLinkTarget(parseMissionControlDeepLink(window.location));
+  }, [applyDeepLinkTarget]);
+
   const uploadAttachment = useCallback(
     async (file: File) => {
       if (!selectedId) throw new Error("No agent selected");
@@ -72,13 +126,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [selectedId],
   );
 
-  const send = useCallback(
-    async (text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection } = {}) => {
-      if (!selectedId || (!text.trim() && attachments.length === 0)) return;
-      const requestId = options.requestId;
+  const sendToAgent = useCallback(
+    async (agentId: string, text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection } = {}) => {
+      if (!agentId || (!text.trim() && attachments.length === 0)) return;
+      const requestId = options.requestId ?? `ui-${agentId}-${Date.now()}`;
+      const optimisticUserMessage: Message = {
+        id: `pending-${requestId}`,
+        role: "user",
+        text: text.trim(),
+        attachments,
+        replyTo: options.replyTo,
+        at: "just now",
+        ts: Date.now() / 1000,
+        source: "web-ui",
+        requestId,
+      };
       setAgents((cur) =>
         cur.map((agent) =>
-          agent.id === selectedId
+          agent.id === agentId
             ? {
                 ...agent,
                 status: "active",
@@ -87,13 +152,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
                 statusDetail: "Mission Control request is processing.",
                 activity: "Processing Mission Control message",
                 lastActive: "now",
+                messages: mergeMessages(agent.messages, [optimisticUserMessage]),
                 processingRequests: requestId
                   ? Array.from(new Set([...(agent.processingRequests ?? []), requestId]))
                   : agent.processingRequests,
                 processingRequestDetails: requestId
                   ? [
                       ...(agent.processingRequestDetails ?? []).filter((item) => item.id !== requestId),
-                      { id: requestId, agent_id: selectedId, started_at: Date.now() / 1000 },
+                      { id: requestId, agent_id: agentId, started_at: Date.now() / 1000 },
                     ]
                   : agent.processingRequestDetails,
               }
@@ -101,13 +167,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ),
       );
       try {
-        const newMessages = await client.sendMessage(selectedId, text.trim(), attachments, options);
+        const newMessages = await client.sendMessage(agentId, text.trim(), attachments, { ...options, requestId });
         setAgents((cur) =>
           cur.map((agent) =>
-            agent.id === selectedId
+            agent.id === agentId
               ? {
                   ...agent,
-                  messages: [...agent.messages, ...newMessages],
+                  messages: mergeMessages(agent.messages.filter((message) => message.id !== optimisticUserMessage.id), newMessages),
                   status: "active",
                   activityState: "active",
                   statusLabel: "Active",
@@ -125,9 +191,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         setAgents((cur) =>
           cur.map((agent) =>
-            agent.id === selectedId
+            agent.id === agentId
               ? {
                   ...agent,
+                  messages: agent.messages.filter((message) => message.id !== optimisticUserMessage.id),
                   processingRequests: requestId ? (agent.processingRequests ?? []).filter((id) => id !== requestId) : agent.processingRequests,
                   processingRequestDetails: requestId
                     ? (agent.processingRequestDetails ?? []).filter((item) => item.id !== requestId)
@@ -139,7 +206,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         throw err;
       }
     },
-    [selectedId],
+    [],
+  );
+
+  const send = useCallback(
+    async (text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection } = {}) => {
+      if (!selectedId) return;
+      return sendToAgent(selectedId, text, attachments, options);
+    },
+    [selectedId, sendToAgent],
   );
 
   const stopProcessing = useCallback(
@@ -218,11 +293,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     selectedId,
     selected,
     view,
+    uiMode,
+    me,
+    permissions,
     loading,
     setView,
+    applyDeepLinkTarget,
+    setUiMode,
     select,
     uploadAttachment,
     send,
+    sendToAgent,
     getModelRouter,
     stopProcessing,
     refreshSelected,

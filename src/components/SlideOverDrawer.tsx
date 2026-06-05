@@ -18,6 +18,7 @@ type SlideOverDrawerProps<Tab extends string = string> = {
   className?: string;
   contentClassName?: string;
   ariaLabel?: string;
+  dataDeepLinkTarget?: string;
 };
 
 export function SlideOverDrawer<Tab extends string = string>({
@@ -36,6 +37,7 @@ export function SlideOverDrawer<Tab extends string = string>({
   className = "",
   contentClassName = "",
   ariaLabel,
+  dataDeepLinkTarget,
 }: SlideOverDrawerProps<Tab>) {
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -46,7 +48,7 @@ export function SlideOverDrawer<Tab extends string = string>({
   }, [onClose]);
 
   return (
-    <div className="mc-drawer-layer" role="dialog" aria-modal="true" aria-label={ariaLabel || closeLabel.replace(/^Close /, "") || "Details"}>
+    <div className="mc-drawer-layer" role="dialog" aria-modal="true" aria-label={ariaLabel || closeLabel.replace(/^Close /, "") || "Details"} data-deeplink-target={dataDeepLinkTarget}>
       <button className="mc-drawer-scrim" aria-label={closeLabel} onClick={onClose} />
       <aside className={`mc-drawer mc-drawer-${width} ${className}`.trim()}>
         <header className="mc-drawer-head">

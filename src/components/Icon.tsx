@@ -5,11 +5,13 @@ type Name =
   | "profile"
   | "logout"
   | "mission"
+  | "chat"
   | "agents"
   | "projects"
   | "board"
   | "skills"
   | "approvals"
+  | "bell"
   | "automations"
   | "audit"
   | "costs"
@@ -22,6 +24,7 @@ type Name =
   | "secondBrain"
   | "setup"
   | "plus"
+  | "refresh"
   | "search"
   | "send"
   | "download"
@@ -42,11 +45,13 @@ const paths: Record<Name, string> = {
   profile: "M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0",
   logout: "M10 17l5-5-5-5M15 12H3M21 5v14a2 2 0 01-2 2h-6M13 3h6a2 2 0 012 2",
   mission: "M4 5h16v12H4zM8 21h8M12 17v4M8 9h3M14 9h3M8 13h8",
+  chat: "M5 6.5A3.5 3.5 0 018.5 3h7A3.5 3.5 0 0119 6.5v4A3.5 3.5 0 0115.5 14H11l-4.2 3.4A.5.5 0 016 17v-3.2A3.5 3.5 0 015 10.5zM9 8h6M9 11h4",
   agents: "M9 11a4 4 0 118 0v2a4 4 0 11-8 0zM6 21a6 6 0 0112 0M7 8H5a3 3 0 00-3 3v1M19 8h-2a3 3 0 013 3v1",
   projects: "M3 7h7l2 2h9v10a2 2 0 01-2 2H5a2 2 0 01-2-2zM3 7V5a2 2 0 012-2h4l2 2h8a2 2 0 012 2v2",
   board: "M4 5h16M6 9h4v5H6zM14 9h4v9h-4zM6 18h4",
   skills: "M12 3l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.2 6.8 19l1-5.8L3.6 9.1l5.8-.8z",
   approvals: "M9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+  bell: "M18 8a6 6 0 10-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4",
   automations: "M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2M15 12a3 3 0 11-6 0 3 3 0 016 0z",
   audit: "M4 5h16M4 12h16M4 19h10",
   costs: "M12 3v18M17 7.5c0-1.9-1.8-3-5-3s-5 1.1-5 3 1.5 3 5 3 5 1.1 5 3-1.8 3-5 3-3.9-.4-5-2.1",
@@ -59,6 +64,7 @@ const paths: Record<Name, string> = {
   secondBrain: "M9 4a3 3 0 00-3 3v1a3 3 0 00-2 5.2V14a4 4 0 004 4h1M15 4a3 3 0 013 3v1a3 3 0 012 5.2V14a4 4 0 01-4 4h-1M12 5v16M9 10h3M12 14h3",
   setup: "M14.7 6.3a4 4 0 00-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 005.4-5.4L15 12l-3-3z",
   plus: "M12 5v14M5 12h14",
+  refresh: "M20 6v5h-5M4 18v-5h5M18.4 9A7 7 0 006.8 6.8L4 11M5.6 15a7 7 0 0011.6 2.2L20 13",
   search: "M21 21l-4.3-4.3M11 18a7 7 0 100-14 7 7 0 000 14z",
   send: "M12 19V5M5 12l7-7 7 7",
   download: "M12 3v12M7 11l5 5 5-5M5 21h14",

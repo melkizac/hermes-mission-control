@@ -1,75 +1,77 @@
 # Hermes Mission Control
 
-A mission-control UI for orchestrating multiple [Hermes](https://hermes-agent.nousresearch.com)
-(Nous Research) agents — view what every agent is doing, chat with any of them,
-inspect their output, edit the files that make up each agent (SOUL.md, MEMORY.md,
-AGENTS.md, config.yaml), manage their skills, and approve gated actions.
+Hermes Mission Control is the operator cockpit for Melverick's Hermes-based digital coworker system.
 
-Hermes is the worker layer. Mission Control is the management, audit, and trust layer: the control room that makes autonomous agent work visible, accountable, governable, and trustworthy instead of scattered across chats, cron jobs, Kanban records, logs, and tool traces.
+Hermes is the worker layer. **Mission Control is the management, audit, and trust layer**: the control room that makes autonomous agent work visible, accountable, governable, and trustworthy instead of scattered across chats, cron jobs, Kanban records, browser sessions, runtime logs, and tool traces.
 
-> In Hermes, **one agent = one profile** (an isolated `HERMES_HOME`).
-> A **task** = a gateway session/job. **Output** = files in the agent's workspace.
+## What Mission Control does
 
-## Quick start
+Mission Control helps an operator answer:
 
-```bash
-npm install
-npm run dev          # http://localhost:5173
-```
+- **What needs me now?** Approval gates, blockers, failed routines, and runtime warnings.
+- **What is running?** Active agents, tasks, browser sessions, routines, and runtime connectors.
+- **What did agents produce?** Task results, artifacts, screenshots, links, evidence, and audit traces.
+- **Can I trust it?** Human-in-the-loop approvals, proof of work, execution boundaries, source data, and cost telemetry.
 
-That's it — the app runs against an in-memory mock (`MockHermesClient`), so you
-can click around with no backend. `npm run build` produces a production bundle.
+## Major revamp status
 
-## Detailed documentation
+The current build includes the phased Mission Control revamp through Browser Activity and mobile/deep-link hardening:
 
-The current live implementation is documented in:
+- **Mission Control** — daily operator cockpit for attention, running work, outputs, system health, and next actions.
+- **Delegate Work** — front door for routing a plain instruction into a project/agent task.
+- **Workflow Library** — packaged SME workflows such as Nexius Academy lead intake and LinkedIn content operating loop.
+- **Task Board** — operational queue for agent tasks, human-only tasks, blockers, comments, result review, artifacts, evidence, approval gates, and next actions.
+- **Needs Attention / Approval Gates** — human-in-the-loop queue for approve/reject decisions before external-facing, destructive, costly, or policy-sensitive actions.
+- **Agents** — profile-backed agent chat and runtime context.
+- **Agent Org / AI Workforce** — registry-backed digital coworker map with goals, flows, queues, outputs, permissions, and health.
+- **Routines** — Hermes cron jobs with schedule, status, outputs, and controls.
+- **Browser Activity** — browser session visibility with current domain/URL, screenshot slot, action log, account-sensitive and approval indicators, stop/takeover controls, and final evidence.
+- **Runtime Connectors / Desktop Gateway** — runtime readiness, connector tokens, execution boundaries, and delayed Windows-local enablement.
+- **Workspace Knowledge / Second Brain** — Karpathy-style LLM Wiki and source context browser.
+- **Audit / Evidence** — session/run trace inspection backed by Hermes state.
+- **Costs / Model Router** — usage visibility and cost-aware model routing policy.
+- **Mobile / Telegram handoff** — deep links for task, approval, agent, and task-result contexts.
+
+## Detailed operator documentation
+
+The major-revamp documentation is here:
 
 ```text
 docs/HERMES_MISSION_CONTROL.md
 ```
 
-That document covers the product model, architecture, API routes, data sources, Agent Org V2, automations, approvals, Task Board, Skills Hub, Projects, Second Brain, Audit Log, Costs, deployment, verification, safety rules, and roadmap.
+It explains each Mission Control function, how to use it, representative API routes, and examples for common operator workflows.
 
-## What's implemented
+## Quick local development
 
-- **Mission Control** — daily operator cockpit for attention, outputs, health, activity, and next actions.
-- **Agents** — unified Hermes agent/channel chat surface with drawer-first details.
-- **Agent Org / AI Workforce** — registry-backed operational control plane with 8 digital coworkers, queues, flows, runs, outputs, permissions, health, and safe actions.
-- **Approvals / Inbox** — durable human-in-the-loop review queue with edit-before-approve and cron-output-derived items.
-- **Task Board / Issues** — Kanban/list task queue backed by Hermes `kanban.db`.
-- **Skills Hub** — searchable/routable library of installed Hermes skills.
-- **Automations** — Hermes cron routines with schedule, status, run, pause/resume, outputs, and traces.
-- **Projects / Workspaces** — context cockpit for workspaces, plans, knowledge, and activity.
-- **Second Brain** — Karpathy-style LLM Wiki browser backed by `/root/.openclaw/workspace/kb`.
-- **Audit Log** — session/run trace viewer backed by Hermes `state.db`.
-- **Costs** — token/cost observability backed by Hermes session billing fields.
-
-## Project layout
-
-```
-src/
-  types.ts                 Domain types (Agent, Task, Skill, ConfigFile, …)
-  data/mockData.ts         Seed data (6 agents, approvals)
-  services/
-    hermesClient.ts        ← THE integration interface (read this first)
-    mockHermesClient.ts    In-memory implementation (default)
-    store.tsx              React context wiring the client to the UI
-  components/              NavRail, Roster, ChatThread, ContextPanel,
-                           FileEditorDrawer, NewAgentModal, Icon
-  views/                   MissionControl, Approvals, Placeholder
-  styles/                  tokens.css + app.css
-server/                    Optional Express bridge to a real Hermes install
+```bash
+cd /opt/hermes-mission-control/source
+npm install
+npm run dev          # http://localhost:5173
+npm run build        # production frontend bundle in source/dist
 ```
 
-## Going live
+The React app can run against `MockHermesClient` for UI-only work. The deployed Mission Control backend is `/opt/hermes-mission-control/app.py`, and the live static bundle is served from `/opt/hermes-mission-control/dist`.
 
-Everything the UI does flows through one interface: `src/services/hermesClient.ts`.
-To connect a real Hermes install, implement that interface against the backend
-in `server/` (start the bridge, then point an `HttpHermesClient` at it) and swap
-the one line in `store.tsx`. See **INTEGRATION.md** for the full guide.
+## Production verification commands
 
-## Stack
+```bash
+cd /opt/hermes-mission-control/source
+python3 -m py_compile /opt/hermes-mission-control/app.py
+python3 -m pytest tests -q
+npm run build
+systemctl is-active hermes-mission-control.service
+```
 
-Vite + React 18 + TypeScript (strict). Plain CSS with design tokens — no UI
-framework, so it's easy to port to Tailwind/shadcn if you prefer. Zero runtime
-dependencies beyond React.
+Before any live restart, check:
+
+```bash
+cat /opt/hermes-mission-control/processing-requests.json
+```
+
+## Safety notes
+
+- Do not print or commit passwords, API keys, tokens, session cookies, or connection strings.
+- Real Windows-local execution is not enabled until `WINDOWS_HERMES_GATEWAY_URL`, token, approved folders, and a connection probe are configured.
+- Demo readiness and simulated browser/Windows sessions must not be described as real local-PC access.
+- External submit/post/send/purchase actions should go through approval gates.

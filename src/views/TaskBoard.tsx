@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Agent, BoardStatus, BoardTask } from "../types";
+import { ArtifactCard, EvidenceTimeline, ResultSummaryPanel } from "../components/MissionFoundation";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { useStore } from "../services/store";
+import { parseMissionControlDeepLink } from "../services/deepLinks";
 import { formatSingaporeTime } from "../utils/time";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
+import { Icon } from "../components/Icon";
 
 const client = new HttpHermesClient();
 const TASK_PAGE_SIZE = 5;
@@ -41,6 +44,7 @@ export function TaskBoard() {
   const [agentTarget, setAgentTarget] = useState("");
   const [laneVisibleCounts, setLaneVisibleCounts] = useState<Record<BoardStatus, number>>(() => initialLaneCounts());
   const [listVisibleCount, setListVisibleCount] = useState(TASK_PAGE_SIZE);
+  const deepLinkedTaskId = useMemo(() => parseMissionControlDeepLink(window.location).taskId ?? null, []);
 
   const load = async () => {
     try {
@@ -74,6 +78,22 @@ export function TaskBoard() {
     return () => window.removeEventListener("keydown", close);
   }, []);
 
+  useEffect(() => {
+    if (!deepLinkedTaskId || loading) return;
+    if (selectedId === deepLinkedTaskId) return;
+    const found = tasks.find((task) => task.id === deepLinkedTaskId);
+    if (found) {
+      setSelectedId(found.id);
+      setDetailTab("overview");
+      void client.getTaskResult(deepLinkedTaskId).then((result) => {
+        if (!result.ok || !result.task) return;
+        setTasks((current) => current.map((item) => item.id === deepLinkedTaskId ? { ...item, ...result.task, mission_result: result.mission_result ?? result.task?.mission_result ?? null } : item));
+      }).catch(() => undefined);
+    } else {
+      setNotice(`Deep-linked task ${deepLinkedTaskId} is not visible in the current board filters.`);
+    }
+  }, [deepLinkedTaskId, loading, selectedId, tasks]);
+
   const selected = useMemo(() => tasks.find((task) => task.id === selectedId), [tasks, selectedId]);
   const availableAgents = useMemo(() => agents.filter((agent) => agent.id), [agents]);
 
@@ -82,6 +102,10 @@ export function TaskBoard() {
     setDetailTab("overview");
     setHumanNote("");
     setAgentTarget("");
+    void client.getTaskResult(task.id).then((result) => {
+      if (!result.ok || !result.task) return;
+      setTasks((current) => current.map((item) => item.id === task.id ? { ...item, ...result.task, mission_result: result.mission_result ?? result.task?.mission_result ?? null } : item));
+    }).catch(() => undefined);
   };
 
   const create = async () => {
@@ -200,14 +224,25 @@ export function TaskBoard() {
   return (
     <div className="task-page task-board-first scroll">
       <header className="task-hero task-hero-compact">
-        <div>
+        <div className="task-hero-copy">
           <span className="stub-tag">ACTION TRACKER</span>
-          <h1>Task Board / Issues</h1>
+          <div className="task-title-row">
+            <h1>Task Board</h1>
+            <div className="task-title-actions" aria-label="Task board actions">
+              <button
+                className={"task-icon-action primary" + (showCreate ? " on" : "")}
+                aria-label={showCreate ? "Close add action form" : "Add action"}
+                title={showCreate ? "Close add action form" : "Add action"}
+                onClick={() => setShowCreate((value) => !value)}
+              >
+                <Icon name="plus" size={18} />
+              </button>
+              <button className="task-icon-action dark" aria-label="Refresh task board" title="Refresh task board" onClick={() => void load()}>
+                <Icon name="refresh" size={18} />
+              </button>
+            </div>
+          </div>
           <p>Board-first operating view. Click a card to inspect details in a temporary drawer without shrinking the Kanban lanes.</p>
-        </div>
-        <div className="task-hero-actions">
-          <button className="btn primary" onClick={() => setShowCreate((value) => !value)}>{showCreate ? "Close Form" : "+ Add Action"}</button>
-          <button className="btn dark" onClick={() => void load()}>Refresh</button>
         </div>
       </header>
 
@@ -352,6 +387,8 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
       onClose={onClose}
       closeLabel="Close task details"
       ariaLabel="Task details"
+      dataDeepLinkTarget="task"
+      // rendered attribute: data-deeplink-target="task"
       tabs={["overview", "activity", "execution"] as const}
       activeTab={tab}
       onTabChange={setTab}
@@ -373,6 +410,7 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
               <button className="ghost tiny danger" onClick={() => void onDelete(task)}>Delete</button>
             </div>
             <label className="task-inline-edit"><span>Assign owner/profile</span><input defaultValue={task.assignee === "unassigned" ? "" : task.assignee} onBlur={(e) => e.target.value !== task.assignee && void onSaveAssignee(task, e.target.value)} /></label>
+            <TaskMissionResultView task={task} />
             <StructuredResult task={task} />
             <HumanActionPanel task={task} intent={intent} note={humanNote} setNote={setHumanNote} onHumanAction={onHumanAction} agents={agents} agentTarget={agentTarget} setAgentTarget={setAgentTarget} onAssignToAgent={onAssignToAgent} />
             <section className="task-section"><h3>Description</h3><pre>{task.body || "No description yet."}</pre></section>
@@ -415,6 +453,25 @@ function TaskCard({ task, selected, onSelect, onMove, onDelete }: { task: BoardT
   );
 }
 
+
+function TaskMissionResultView({ task }: { task: BoardTask }) {
+  const result = task.mission_result;
+  const artifacts = result?.artifacts ?? task.result_details?.artifacts ?? [];
+  const evidence = result?.evidence ?? task.result_details?.evidence ?? [];
+  const approvalGates = result?.approvalGates ?? task.result_details?.approval_gates ?? [];
+  const nextActions = result?.nextActions ?? task.result_details?.next_actions ?? [];
+  if (!result && artifacts.length === 0 && evidence.length === 0 && approvalGates.length === 0 && nextActions.length === 0) return null;
+  return (
+    <section className="task-section task-mission-result-view">
+      <div className="task-result-heading"><span className="stub-tag">Proof of work</span><h3>Artifact / evidence result view</h3></div>
+      {result && <ResultSummaryPanel result={result} />}
+      {artifacts.length > 0 && <div className="task-result-block"><h4>Artifacts</h4><div className="mc-artifact-grid">{artifacts.map((artifact) => <ArtifactCard key={artifact.id} artifact={artifact} />)}</div></div>}
+      {evidence.length > 0 && <div className="task-result-block"><h4>Evidence</h4><EvidenceTimeline evidence={evidence} /></div>}
+      {approvalGates.length > 0 && <div className="task-result-block"><h4>Approval gates</h4>{approvalGates.map((gate) => <div className="task-approval-gate" key={gate.id}><b>{gate.title}</b><span>{gate.status} · {gate.risk}</span><p>{gate.reason}</p></div>)}</div>}
+      {nextActions.length > 0 && <div className="task-result-block"><h4>Next actions</h4><ul>{nextActions.map((action) => <li key={action}>{action}</li>)}</ul></div>}
+    </section>
+  );
+}
 
 function StructuredResult({ task }: { task: BoardTask }) {
   const details = task.result_details;

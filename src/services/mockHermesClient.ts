@@ -1,4 +1,4 @@
-import type { Agent, Approval, Attachment, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, ConfigFile, CostsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, ModelRoutingSelection, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainResponse, Skill, SkillsHubResponse } from "../types";
+import type { Agent, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, MissionControlMe, ModelRoutingSelection, OperatorLinkPreviewResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, CreateResearchRunRequest, CreateResearchRunResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainResponse, Skill, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
 import { seedAgents, seedApprovals } from "../data/mockData";
 
@@ -15,6 +15,15 @@ const colors = ["#0e8f84", "#3b6fe0", "#e8941b", "#7b8494", "#dc4040", "#8b5cf6"
 export class MockHermesClient implements HermesClient {
   private agents: Agent[] = clone(seedAgents);
   private approvals: Approval[] = clone(seedApprovals);
+
+  async getMe(): Promise<MissionControlMe> {
+    await delay(30);
+    return {
+      ok: true,
+      user: { id: "mock-admin", email: "admin@example.local", name: "Mock Admin", role: "admin", status: "active" },
+      workspace: { id: "mock-workspace", name: "Mock Workspace", slug: "mock-workspace" },
+    };
+  }
 
   async listAgents() {
     await delay();
@@ -73,9 +82,161 @@ export class MockHermesClient implements HermesClient {
     };
   }
 
+  async listWorkflows(): Promise<WorkflowLibraryResponse> {
+    await delay(40);
+    return { workflows: [], categories: [], summary: { total: 0, approval_required: 0, skills_linked: 0, evidence_ready: 0 } };
+  }
+
+  async launchWorkflow(): Promise<WorkflowLaunchResponse> {
+    await delay(40);
+    return { ok: true };
+  }
+
+  async listResearchRuns(): Promise<ResearchRunsResponse> {
+    await delay(40);
+    return {
+      runs: [
+        {
+          id: "research-parallel-visibility-demo",
+          title: "ICP and funnel research sprint",
+          status: "running",
+          summary: "Mock parallel lanes comparing market, client-site, LinkedIn, and evidence synthesis signals.",
+          owner: "Melkizac",
+          risk: "medium",
+          startedAt: "now",
+          updatedAt: "now",
+          lanes: [
+            { id: "lane-market", agentId: "melkizac", agentName: "Melkizac", title: "Market scan", status: "running", focus: "Competitor and ICP claims", currentStep: "Reviewing source credibility", progress: 62, sourcesReviewed: 7, evidenceCount: 3, confidence: "medium", updatedAt: "now" },
+            { id: "lane-linkedin", agentId: "content-ops", agentName: "Content Ops Demo", title: "LinkedIn signal lane", status: "completed", focus: "Operator-led post angles", currentStep: "Evidence packaged", progress: 100, sourcesReviewed: 5, evidenceCount: 2, confidence: "high", updatedAt: "now" },
+            { id: "lane-client-sites", agentId: "devops-builder", agentName: "DevOps Builder Demo", title: "Client site checks", status: "blocked", focus: "Lead capture and funnel forms", currentStep: "Waiting for approval before form submit", progress: 38, sourcesReviewed: 3, evidenceCount: 1, confidence: "medium", blocker: "Human approval required before submitting a demo form.", updatedAt: "now" },
+          ],
+          sourceCoverage: [
+            { id: "src-competitors", label: "Competitor websites", kind: "web", status: "reviewed", confidence: "medium", notes: "Claims captured and deduplicated.", ownerLaneId: "lane-market" },
+            { id: "src-linkedin", label: "LinkedIn operator posts", kind: "social", status: "reviewed", confidence: "high", notes: "High-signal posts mapped to themes.", ownerLaneId: "lane-linkedin" },
+            { id: "src-client-sites", label: "Client lead forms", kind: "browser", status: "blocked", confidence: "medium", notes: "Submit/post/send style actions stay approval-gated.", ownerLaneId: "lane-client-sites" },
+            { id: "src-audit", label: "Mission Control audit evidence", kind: "internal", status: "reviewed", confidence: "high", notes: "Evidence trail linked to synthesis.", ownerLaneId: "lane-market" },
+          ],
+          synthesis: { status: "drafting", progress: 72, leadAgent: "Melkizac", openQuestions: ["Which lead form findings need human approval?"], recommendation: "Prioritize governed browser checks and operator-ready evidence before outreach.", updatedAt: "now" },
+          evidence: [{ id: "mock-research-evidence", title: "Research lane evidence bundle", kind: "source", source: "mock-research", createdAt: "now", confidence: "medium" }],
+          finalArtifact: { id: "mock-final-synthesis", title: "Final synthesis / recommendation evidence", kind: "report", summary: "Final recommendation package will attach citations, screenshots, and link evidence.", createdAt: "now" },
+          nextActions: ["Approve blocked browser form check.", "Review synthesis recommendation.", "Open supporting evidence before publishing findings."],
+        },
+      ],
+      summary: { total: 1, active_lanes: 2, blocked_lanes: 1, source_coverage: 4, evidence_items: 1, synthesis_ready: 0 },
+      updatedAt: "now",
+    };
+  }
+
+  async createResearchRun(input: CreateResearchRunRequest): Promise<CreateResearchRunResponse> {
+    await delay(40);
+    const now = "now";
+    const lanes = input.lanes.map((lane, index) => ({
+      id: lane.id || `mock-lane-${index + 1}`,
+      agentId: lane.agentId || "melkizac",
+      agentName: lane.agentName || lane.agentId || "Melkizac",
+      title: lane.title,
+      status: lane.requiresApproval ? "blocked" : "queued",
+      focus: lane.focus || "Research lane created from Mission Control.",
+      currentStep: "Tracked task created and waiting for lane execution.",
+      progress: 0,
+      sourcesReviewed: 0,
+      evidenceCount: 1,
+      confidence: "medium",
+      blocker: lane.requiresApproval ? "Approval required before browser submit/post/send/purchase action." : null,
+      taskId: `mock-research-task-${index + 1}`,
+      requiresApproval: Boolean(lane.requiresApproval),
+      updatedAt: now,
+    }));
+    return {
+      ok: true,
+      task: { id: "mock-research-parent", title: input.title, body: input.objective, status: "running", assignee: "Melkizac", priority: 45, tenant: input.projectId || "research-runs", comments: [], children: lanes.map((l) => l.taskId || ""), created_by: "research-runs", result_details: {} } as any,
+      trackedTaskIds: ["mock-research-parent", ...lanes.map((l) => l.taskId || "")],
+      taskUrl: "/app?view=board&task=mock-research-parent",
+      run: {
+        id: "mock-created-research-run",
+        taskId: "mock-research-parent",
+        taskUrl: "/app?view=board&task=mock-research-parent",
+        trackedTaskIds: ["mock-research-parent", ...lanes.map((l) => l.taskId || "")],
+        title: input.title,
+        status: "running",
+        summary: input.objective,
+        owner: "Melkizac",
+        risk: lanes.some((l) => l.requiresApproval) ? "approval-required" : "safe",
+        startedAt: now,
+        updatedAt: now,
+        lanes,
+        sourceCoverage: input.sources.map((source, index) => ({ id: source.id || `mock-source-${index + 1}`, label: source.label, kind: source.kind || "web", status: "queued", ownerLaneId: source.ownerLaneId || lanes[index % Math.max(1, lanes.length)]?.id, confidence: "medium", notes: source.notes || "Queued for source coverage." })),
+        synthesis: { status: "drafting", progress: 5, leadAgent: "Melkizac", openQuestions: ["Which lane has enough evidence for synthesis?"], recommendation: "Collect lane evidence before external action.", updatedAt: now },
+        evidence: [{ id: "mock-created-source-plan", kind: "source", title: "Source coverage plan", source: "mock-research-runs", createdAt: now, confidence: "medium" }],
+        finalArtifact: { id: "mock-created-final", kind: "report", title: "Final synthesis / recommendation evidence", summary: "Final synthesis will roll up lane evidence.", createdAt: now },
+        nextActions: ["Monitor lane tasks on the Task Board", "Review source coverage gaps", "Complete synthesis"],
+      },
+    };
+  }
+
   async stopMessage() {
     await delay(20);
     return { ok: true, stopped: [], count: 0 };
+  }
+
+  private mockBrowserSession(): BrowserSession {
+    return {
+      id: "mock-browser-session",
+      source: "simulated",
+      title: "Mock browser checkout review",
+      status: "simulated",
+      agentId: "melkizac",
+      agentName: "Melkizac",
+      runtimeId: "vps",
+      runtimeLabel: "Run on VPS",
+      executionTarget: { id: "vps", label: "Run on VPS", description: "Mock server browser runtime.", ready: true, url: "mock://browser", executionBoundary: "Mock browser runtime only.", approvalRequired: false },
+      currentUrl: "https://example.com/review",
+      currentDomain: "example.com",
+      accountSensitive: true,
+      approvalRequired: true,
+      approvalReason: "Form submission / account-sensitive page requires operator approval.",
+      screenshot: { id: "mock-browser-shot", kind: "screenshot", title: "Latest screenshot", summary: "Mock screenshot evidence.", url: "mock://screenshot", createdAt: "now" },
+      evidence: [
+        { id: "mock-browser-evidence", kind: "screenshot", title: "Latest screenshot captured", source: "mock-browser", createdAt: "now", confidence: "medium" },
+        { id: "mock-browser-final", kind: "screenshot", title: "Final screenshot/link evidence", summary: "Mock final screenshot and link evidence slot.", source: "mock-browser", createdAt: "now", confidence: "medium" },
+      ],
+      actionLog: [
+        { id: "a1", ts: "now", title: "Opened domain", summary: "Navigated to example.com for browser visibility demo.", type: "navigation", risk: "safe", approvalRequired: false },
+        { id: "a2", ts: "now", title: "Detected submit action", summary: "Submit/send/purchase-style actions would be gated before execution.", type: "approval", risk: "account-sensitive", approvalRequired: true },
+      ],
+      startedAt: "now",
+      updatedAt: "now",
+      stopAvailable: true,
+      takeoverAvailable: true,
+      notes: ["Windows-local execution is blocked until WINDOWS_HERMES_GATEWAY_URL is configured."],
+    };
+  }
+
+  async listBrowserSessions(): Promise<BrowserSessionsResponse> {
+    await delay(40);
+    const session = this.mockBrowserSession();
+    return { sessions: [session], summary: { total: 1, active: 0, approvalRequired: 1, accountSensitive: 1, screenshots: 1, liveRuntimeEvents: 0, windowsReady: false, needsAttention: ["Windows-local execution is blocked until WINDOWS_HERMES_GATEWAY_URL is configured."] }, updatedAt: "now" };
+  }
+
+  async ingestBrowserRuntimeEvent(input: BrowserRuntimeEventIngestRequest): Promise<BrowserRuntimeEventIngestResponse> {
+    await delay(20);
+    return { ok: true, session: { ...this.mockBrowserSession(), id: input.sessionId, source: "runtime-event-bridge", title: input.title ?? "Mock runtime event session", status: input.status ?? "active", currentUrl: input.currentUrl ?? "https://example.com", currentDomain: input.currentDomain ?? "example.com" } };
+  }
+
+  async getBrowserSession(id: string): Promise<BrowserSession | undefined> {
+    await delay(30);
+    const session = this.mockBrowserSession();
+    return id === session.id ? session : undefined;
+  }
+
+  async stopBrowserSession(id: string): Promise<{ ok: boolean; id: string; status: string }> {
+    await delay(20);
+    return { ok: true, id, status: "stopped" };
+  }
+
+  async takeoverBrowserSession(id: string): Promise<{ ok: boolean; id: string; status: string; instruction?: string }> {
+    await delay(20);
+    return { ok: true, id, status: "takeover_ready", instruction: "Mock takeover ready." };
   }
 
   async createAgent(input: { name: string; squad: string; model: string }) {
@@ -238,9 +399,84 @@ export class MockHermesClient implements HermesClient {
     };
   }
 
-  async automationAction(id: string, action: "pause" | "resume" | "run"): Promise<AutomationActionResponse> {
+  async listFunnelTargets(): Promise<FunnelTargetsResponse> {
+    await delay(90);
+    return { targets: [{ id: "mock-target", label: "Mock public form", url: "https://httpbingo.org/forms/post", targetUrl: "https://httpbingo.org/forms/post", project: "browser-funnel-checks", expected: "lead capture form", schedule: "0 9 * * 1", noSubmit: true, safeTargetRequired: true, approvalStatus: "approved", approval: { status: "approved", approvedBy: "Mock operator" }, routineId: "website-funnel-check-browser-funnel-checks-mock-target", routineEnabled: false, latestRunStatus: { status: "not-run", lastRunAt: null }, evidenceHistory: [], browserActivityUrl: "/app?view=browser-ops&session=mock-target", taskResultUrl: "/app?view=board&task=mock-task", finalUrl: "https://httpbingo.org/forms/post", connectorReadiness: [{ label: "NO_SUBMIT locked", status: "ready", detail: "External submits disabled." }] }], summary: { total: 1, approved: 1, enabled: 0, needs_review: 0 } };
+  }
+
+  async getFunnelTarget(id: string): Promise<FunnelTargetDetailResponse> {
+    await delay(90);
+    const list = await this.listFunnelTargets();
+    return { ok: true, target: { ...list.targets[0], id } };
+  }
+
+  async createFunnelTarget(): Promise<FunnelTargetMutationResponse> {
+    await delay(90);
+    const list = await this.listFunnelTargets();
+    return { ok: true, created: true, target: list.targets[0] };
+  }
+
+  async funnelTargetAction(id: string, action: "enable" | "pause" | "run_now"): Promise<FunnelTargetMutationResponse> {
+    await delay(90);
+    const list = await this.listFunnelTargets();
+    const target = { ...list.targets[0], id, latestRunStatus: { status: action === "run_now" ? "queued-manual-run" : action, lastRunAt: null } };
+    return { ok: true, action, target };
+  }
+
+  async listBrowserConnectors(): Promise<BrowserConnectorsResponse> {
+    await delay(90);
+    const connector = { id: "mock-browserbase", type: "browserbase", label: "Mock Browserbase gate", baseUrl: "mock://browserbase", credentials: { apiKey: "[REDACTED]" }, enabled: false, approvalStatus: "needs-approval", noSubmit: true, safeTargetRequired: true, accountSensitiveAllowed: false, readinessChecklist: [{ label: "No real connector is enabled yet", status: "blocked", detail: "Mock connector gate only." }] };
+    return { connectors: [connector], summary: { total: 1, approved: 0, enabled: 0, needs_approval: 1 }, productionPolicy: { enablementStatus: "blocked", noSubmit: true, safeTargetRequired: true, accountSensitiveAllowed: false, blockedActions: "submit/post/send/purchase blocked", accountSensitiveStatus: "account-sensitive blocked", operatorDecisionRequired: true, summary: "Production browser connector actions remain blocked; only safe NO_SUBMIT dry-runs are allowed." }, browserTrackCompletion: { currentPhase: "Phase 25", readyForSupervisedDryRuns: true, readyForAccountSensitive: false, summary: "Ready for supervised dry-runs; not ready for account-sensitive autonomy.", checklist: [{ label: "Evidence drill-through", status: "ready", detail: "Mock evidence link available." }, { label: "Production external actions", status: "blocked", detail: "External actions blocked." }], nextActions: ["Review Browser Activity evidence."] } };
+  }
+
+  async createBrowserConnector(): Promise<BrowserConnectorMutationResponse> {
+    await delay(90);
+    const list = await this.listBrowserConnectors();
+    return { ok: true, created: true, connector: list.connectors[0] };
+  }
+
+  async browserConnectorAction(id: string, action: "approve" | "dry_run_probe" | "archive_probe" | "enable"): Promise<BrowserConnectorMutationResponse> {
+    await delay(90);
+    const list = await this.listBrowserConnectors();
+    const connector = { ...list.connectors[0], id, action, enabled: false };
+    return { ok: true, action, connector, message: "Mock connector action simulated; no real connector is enabled." };
+  }
+
+  async browserConnectorProbe(id: string): Promise<BrowserConnectorProbeResponse> {
+    await delay(90);
+    const list = await this.listBrowserConnectors();
+    const sessionId = "mock-phase21-desktop-probe";
+    const connector = {
+      ...list.connectors[0],
+      id,
+      type: "desktop-browser",
+      enabled: false,
+      approvalStatus: "approved",
+      dryRun: { status: "passed", noSubmit: true, summary: "Mock NO_SUBMIT probe passed." },
+      lastProbe: {
+        status: "blocked_before_submit",
+        targetUrl: "https://httpbingo.org/forms/post",
+        finalUrl: "https://httpbingo.org/forms/post",
+        domain: "httpbingo.org",
+        screenshotPath: "/uploads/mock/phase21.png",
+        formsDetected: 1,
+        submitCandidates: 1,
+        noSubmit: true,
+        browserActivityUrl: `/app?view=browser-ops&session=${sessionId}`,
+        summary: "Mock dry-run probe stopped before submit.",
+      },
+    };
+    return { ok: true, dryRun: true, connector, sessionId, browserActivityUrl: connector.lastProbe.browserActivityUrl, screenshotPath: connector.lastProbe.screenshotPath, summary: connector.lastProbe, message: "Mock desktop-browser probe simulated with NO_SUBMIT." };
+  }
+
+  async automationAction(id: string, action: "pause" | "resume" | "run" | "enable_funnel_routine"): Promise<AutomationActionResponse> {
     await delay(90);
     return { ok: true, job_id: id, action };
+  }
+
+  async enableAutomationRoutine(id: string): Promise<AutomationActionResponse> {
+    await delay(90);
+    return { ok: true, job_id: id, action: "enable_funnel_routine", job: { id, enabled: false, state: "mock-not-created", metadata: { workflow_template_id: "website-funnel-check", noSubmit: true, safeTargetRequired: true } } };
   }
 
   async listSkills(): Promise<SkillsHubResponse> {
@@ -320,6 +556,46 @@ export class MockHermesClient implements HermesClient {
     return { ok: true, id, status: "revoked" };
   }
 
+  async getDesktopGateway(): Promise<DesktopGatewayStatus> {
+    await delay(90);
+    return {
+      mode: "remote_gateway",
+      name: "Mock Hermes Desktop Remote Gateway",
+      remoteUrl: "https://example.test/desktop-gateway",
+      sessionTokenPreview: "…mocked",
+      tokenSet: true,
+      localPort: 9119,
+      service: { name: "hermes-desktop-gateway.service", active: "inactive" },
+      local: { ok: false, http_code: null, error: "mock dashboard not running" },
+      windows: {
+        mode: "windows_local_gateway",
+        name: "Windows Desktop Local Gateway",
+        configured: false,
+        url: "",
+        tokenPreview: null,
+        tokenSet: false,
+        approvedFolders: ["C:/MelverickAgentWorkspace"],
+        health: { ok: false, http_code: null, error: "not configured" },
+        recommendedFolders: ["C:/MelverickAgentWorkspace", "C:/Users/Melverick/Documents"],
+        setup: { localCommand: "hermes dashboard --no-open --tui --host 127.0.0.1 --port 9119", tunnelExamples: ["Tailscale: use http://windows-tailnet:9119"] },
+      },
+      targets: [
+        { id: "vps", label: "Run on VPS", description: "Execute on the Mission Control server.", ready: false, url: "https://example.test/desktop-gateway", executionBoundary: "Server/VPS runtime — not the Windows filesystem.", approvalRequired: false },
+        { id: "windows", label: "Run on Windows Desktop", description: "Execute through a Windows-local Hermes gateway.", ready: false, url: "", executionBoundary: "Windows-local runtime only after a reachable gateway is configured.", approvalRequired: true },
+        { id: "synced", label: "Use synced workspace only", description: "Use shared folders instead of full desktop access.", ready: true, url: "", executionBoundary: "Files already synced to approved workspace folders.", approvalRequired: false },
+      ],
+      desktopSteps: ["Open Hermes Desktop on Windows.", "Choose Remote gateway or configure a Windows-local gateway."],
+      notes: ["VPS mode controls the server, not the Windows filesystem."],
+      readinessSummary: { remoteReady: false, windowsReady: false, configuredTargets: 1, readyTargets: 1, needsAttention: ["Start the remote desktop gateway service", "Configure WINDOWS_HERMES_GATEWAY_URL for Windows-local execution"] },
+    };
+  }
+
+  async saveWindowsGatewayConfig(input: Partial<{ url: string; token: string; keepToken: boolean; approvedFolders: string[] }>): Promise<WindowsGatewayConfigResponse> {
+    await delay(90);
+    const status = await this.getDesktopGateway();
+    return { ok: true, windows: { ...status.windows, configured: Boolean(input.url), url: input.url || "", approvedFolders: input.approvedFolders || status.windows.approvedFolders } };
+  }
+
   async getCosts(): Promise<CostsResponse> {
     await delay(90);
     const period = { sessions: 0, cost: 0, tokens: 0, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, reasoning_tokens: 0, tool_calls: 0, api_calls: 0 };
@@ -329,6 +605,50 @@ export class MockHermesClient implements HermesClient {
   async listProjects(): Promise<ProjectsResponse> {
     await delay(90);
     return { projects: [], summary: { total: 0, active: 0, open_actions: 0, blocked: 0, knowledge: 0, workspaces: 0 }, kinds: [], sources: [] };
+  }
+
+  async getDelegateWorkContext(): Promise<DelegateWorkContextResponse> {
+    await delay(90);
+    return {
+      projects: [],
+      agents: this.agents.map((agent) => ({ id: agent.id, name: agent.name, status: agent.status })),
+      masterInstructions: [],
+      defaultProjectId: null,
+      riskLevels: ["safe", "approval-required", "external-facing", "destructive", "account-sensitive"],
+    };
+  }
+
+  async planDelegateWork(input: { request: string; projectId?: string; agentId?: string; risk?: string }): Promise<DelegateWorkMutationResponse> {
+    await delay(90);
+    const agent = this.agents.find((item) => item.id === input.agentId) || this.agents[0];
+    return {
+      ok: true,
+      plan: {
+        id: `mock-delegate-${uid()}`,
+        title: input.request.slice(0, 80) || "Mock delegated work",
+        userRequest: input.request,
+        projectId: input.projectId || "mock-project",
+        projectName: "Mock Project",
+        agentId: agent?.id || "mock-agent",
+        agentName: agent?.name || "Mock Agent",
+        workItem: { id: "mock-intake", kind: "intake", title: input.request.slice(0, 80) || "Mock delegated work", status: "planned" },
+        risk: (input.risk as any) || "safe",
+        riskLabel: input.risk || "safe",
+        approvalRequired: Boolean(input.risk && input.risk !== "safe"),
+        routingReason: "Mock routing through Project master instructions.",
+        masterInstructions: { projectId: input.projectId || "mock-project", projectName: "Mock Project", objective: "Mock objective", masterInstructions: "Project master instructions\nUse evidence-backed work items.", workspacePath: null, linkedSkills: [], linkedAgents: [], riskDefaults: ["safe"], updatedAt: "now" },
+        promptPreview: `Project master instructions\n\n${input.request}`,
+        taskBody: `Delegated from Mission Control Delegate Work front door.\n\n${input.request}`,
+        nextActions: ["Create delegated task"],
+        evidence: [],
+      },
+    };
+  }
+
+  async createDelegateWork(input: { request: string; projectId?: string; agentId?: string; risk?: string; title?: string }): Promise<DelegateWorkMutationResponse> {
+    await delay(90);
+    const planned = await this.planDelegateWork(input);
+    return { ...planned, task: { id: `mock-task-${uid()}`, title: input.title || planned.plan?.title || "Mock delegated task" } };
   }
 
   async listProjectChats(): Promise<ProjectChatResponse> {
@@ -380,6 +700,26 @@ export class MockHermesClient implements HermesClient {
   async listBoard(): Promise<BoardResponse> {
     await delay(90);
     return { tasks: [], lanes: { queued: [], running: [], blocked: [], done: [], error: [] }, summary: { total: 0, queued: 0, running: 0, blocked: 0, done: 0, error: 0, assignees: [], projects: [] }, statuses: ["queued", "running", "blocked", "done", "error"], projects: [] };
+  }
+
+  async getTaskResult(id: string): Promise<TaskResultResponse> {
+    await delay(90);
+    return { ok: true, mission_result: null, task: undefined, error: `Mock task ${id} has no result yet` };
+  }
+
+  async getOperatorLinkPreview(): Promise<OperatorLinkPreviewResponse> {
+    await delay(30);
+    return {
+      ok: true,
+      examples: [{
+        title: "Mock approval",
+        risk: "medium",
+        agent: "Mock Agent",
+        action: "Review, edit if needed, then Approve or Reject.",
+        open: `${window.location.origin}/app?view=approvals&approval=mock-approval`,
+        text: `Approval needed: Mock approval\nRisk: medium\nAgent: Mock Agent\nAction: Review, edit if needed, then Approve or Reject.\nOpen: ${window.location.origin}/app?view=approvals&approval=mock-approval`,
+      }],
+    };
   }
 
   async createBoardTask(): Promise<BoardTaskMutationResponse> {
