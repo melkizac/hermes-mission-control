@@ -9,7 +9,7 @@ type ToolRecord = ToolCapability & {
   enabledAgents: number;
 };
 
-type ToolTab = "overview" | "agents" | "samples";
+type ToolTab = "overview" | "agents" | "tools";
 type ViewMode = "cards" | "list";
 
 function toolKey(tool: ToolCapability) {
@@ -24,7 +24,7 @@ export function ToolsHub() {
   const { agents, loading } = useStore();
   const [q, setQ] = useState("");
   const [source, setSource] = useState("");
-  const [kind, setKind] = useState("");
+  const [kind, setKind] = useState("tool");
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<ToolTab>("overview");
@@ -63,7 +63,12 @@ export function ToolsHub() {
         item.description,
         item.source,
         item.kind,
+        item.toolName,
+        item.parentToolsetId,
+        item.parentToolsetName,
+        item.assignmentUnit,
         ...(item.sampleTools ?? []),
+        ...(item.toolNames ?? []),
         ...(item.categories ?? []).map((cat) => cat.name),
         ...item.agents.map((agent) => agent.name),
       ].join(" ").toLowerCase();
@@ -72,8 +77,10 @@ export function ToolsHub() {
   }, [records, q, source, kind]);
 
   const selectedTool = useMemo(() => records.find((item) => item.id === selected), [records, selected]);
-  const totalToolCalls = records.reduce((sum, item) => sum + (item.toolCount ?? 0), 0);
-  const enabledRecords = records.filter((item) => item.enabledAgents > 0).length;
+  const individualTools = records.filter((item) => item.kind === "tool");
+  const toolsets = records.filter((item) => item.kind === "toolset");
+  const totalToolCalls = individualTools.length || toolsets.reduce((sum, item) => sum + (item.toolCount ?? 0), 0);
+  const enabledRecords = filtered.filter((item) => item.enabledAgents > 0).length;
   const categoryCount = new Set(records.flatMap((item) => (item.categories ?? []).map((cat) => cat.id))).size;
 
   const openTool = (tool: ToolRecord) => {
@@ -88,7 +95,7 @@ export function ToolsHub() {
           <span className="stub-tag">TOOL REGISTRY</span>
           <h1>Tools</h1>
           <p>
-            System-wide view of executable agent capabilities. This aggregates the real tool capabilities reported by each Hermes profile so setup and governance stay visible outside the Agent drawer.
+            Individual Hermes CLI tools are shown as assignment-ready capabilities, not hidden inside the broad “Full Hermes CLI tools” bundle. Switch Kind to Toolset only when you need to inspect the parent bundles/config source.
           </p>
         </div>
         <div className="task-hero-actions">
@@ -99,9 +106,9 @@ export function ToolsHub() {
       </header>
 
       <section className="skills-metrics">
-        <Metric label="Toolsets" value={records.length} sub="Capability groups" />
-        <Metric label="Enabled" value={enabledRecords} sub="Available to agents" tone="good" />
-        <Metric label="Tools" value={totalToolCalls} sub="Executable functions" />
+        <Metric label="Individual Tools" value={totalToolCalls} sub="Assignment-ready functions" />
+        <Metric label="Enabled" value={enabledRecords} sub="Shown in current filter" tone="good" />
+        <Metric label="Toolsets" value={toolsets.length} sub="Parent bundles" />
         <Metric label="Categories" value={categoryCount} sub="Capability areas" />
       </section>
 
@@ -130,7 +137,7 @@ export function ToolsHub() {
             {sources.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
         </label>
-        <div className="skills-filter-note">Tools are executable capabilities from Hermes toolsets; Skills remain reusable procedures/playbooks. Agent assignment comes from the live /api/agents payload.</div>
+        <div className="skills-filter-note">Default view shows each executable tool separately so agents can be assigned precise powers. Toolsets remain visible as parent bundles for audit/config context.</div>
       </section>
 
       {viewMode === "cards" ? (
@@ -178,13 +185,14 @@ function ToolCard({ tool, active, onSelect }: { tool: ToolRecord; active: boolea
         <div className="skill-title-row"><h2>{tool.name}</h2></div>
         <p>{tool.description || "No description reported for this capability."}</p>
         <div className="skill-chips">
-          <span>{tool.source || "profile config"}</span>
+          <span>{tool.kind === "tool" ? "Individual tool" : (tool.source || "profile config")}</span>
+          {tool.parentToolsetName && <span>{tool.parentToolsetName}</span>}
           <span>{tool.agents.length} agent{tool.agents.length === 1 ? "" : "s"}</span>
           <span>{tool.enabledAgents} enabled</span>
         </div>
         <div className="skill-triplet">
-          <Mini label="Tools" value={tool.toolCount ?? "—"} />
-          <Mini label="Categories" value={tool.categories?.length ?? 0} />
+          <Mini label={tool.kind === "tool" ? "Assign as" : "Tools"} value={tool.assignmentUnit || tool.toolName || tool.toolCount || "—"} />
+          <Mini label="Category" value={tool.categories?.[0]?.name ?? (tool.categories?.length ?? 0)} />
           <Mini label="Agents" value={tool.agents.length} />
         </div>
       </button>
@@ -201,7 +209,7 @@ function ToolListRow({ tool, active, onSelect }: { tool: ToolRecord; active: boo
           <span className={`tag ${tool.enabledAgents > 0 ? "good" : "muted"}`}>{tool.enabledAgents > 0 ? "Enabled" : "Disabled"}</span>
         </div>
         <p>{tool.description || "No description reported."}</p>
-        <small className="mono">{tool.id}</small>
+        <small className="mono">{tool.kind === "tool" ? (tool.toolName || tool.id) : tool.id}</small>
       </div>
       <div className="ops-row-meta">
         <span>{tool.toolCount ?? 0} tools</span>
@@ -222,7 +230,7 @@ function ToolDrawer({ tool, tab, setTab, onClose }: { tool: ToolRecord; tab: Too
   return (
     <SlideOverDrawer title={tool.name} subtitle={`${tool.kind || "toolset"} · ${tool.source || "profile config"}`} onClose={onClose} className="tool-drawer">
       <div className="tabs drawer-tabs">
-        {(["overview", "agents", "samples"] as ToolTab[]).map((item) => (
+        {(["overview", "agents", "tools"] as ToolTab[]).map((item) => (
           <button key={item} className={tab === item ? "tab on" : "tab"} onClick={() => setTab(item)}>{cap(item)}</button>
         ))}
       </div>
@@ -243,6 +251,8 @@ function ToolDrawer({ tool, tab, setTab, onClose }: { tool: ToolRecord; tab: Too
             </div>
           </div>
           <Info label="Capability ID" value={tool.id} mono />
+          {tool.assignmentUnit && <Info label="Assignment key" value={tool.assignmentUnit} mono />}
+          {tool.parentToolsetName && <Info label="Parent toolset" value={tool.parentToolsetName} />}
           <Info label="Kind" value={tool.kind || "toolset"} />
           <Info label="Source" value={tool.source || "profile config"} />
         </div>
@@ -263,9 +273,19 @@ function ToolDrawer({ tool, tab, setTab, onClose }: { tool: ToolRecord; tab: Too
         </div>
       )}
 
-      {tab === "samples" && (
+      {tab === "tools" && (
         <div className="drawer-section-list">
-          {(tool.sampleTools ?? []).length > 0 ? <div className="tool-samples mono large">{(tool.sampleTools ?? []).join(", ")}</div> : <div className="empty big">No sample tool names reported.</div>}
+          {tool.kind === "tool" ? (
+            <div className="tool-samples mono large">{tool.toolName || tool.assignmentUnit || tool.id.replace(/^tool:/, "")}</div>
+          ) : (tool.toolNames ?? tool.sampleTools ?? []).length > 0 ? (
+            <div className="individual-tool-list">
+              {(tool.toolNames ?? tool.sampleTools ?? []).map((name) => (
+                <span className="individual-tool-chip mono" key={name}>{name}</span>
+              ))}
+            </div>
+          ) : (
+            <div className="empty big">No individual tool names reported.</div>
+          )}
         </div>
       )}
     </SlideOverDrawer>

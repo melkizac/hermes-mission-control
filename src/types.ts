@@ -26,7 +26,12 @@ export interface ToolCapability {
   description?: string;
   toolCount?: number | null;
   sampleTools?: string[];
+  toolNames?: string[];
   categories?: ToolCategory[];
+  toolName?: string;
+  parentToolsetId?: string;
+  parentToolsetName?: string;
+  assignmentUnit?: string;
 }
 
 export type ConfigKind = "soul" | "memory" | "agents" | "config" | "other";

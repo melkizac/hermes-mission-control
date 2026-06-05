@@ -1202,6 +1202,9 @@ input, select, textarea { font-family: inherit; }
 .drawer-section-list { display: grid; gap: 10px; }
 .drawer-tool-card { margin-bottom: 0; }
 .tool-samples.large { border: 1px solid #edf1f5; border-radius: 14px; background: #f8fafc; padding: 13px; color: #475569; }
+.individual-tool-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.individual-tool-chip { border: 1px solid #dbeafe; background: #eff6ff; color: #1e3a8a; border-radius: 999px; padding: 7px 10px; font-size: 11px; font-weight: 800; }
+.tool-registry-card .skill-triplet div:first-child b { font-size: 11px; }
 .kv { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px; align-items: center; border: 1px solid #edf1f5; border-radius: 12px; background: #fafbfc; padding: 10px; min-width: 0; }
 .kv span { color: var(--muted); font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .kv b { display: block; font-size: 12px; color: var(--ink2); min-width: 0; overflow-wrap: anywhere; }
