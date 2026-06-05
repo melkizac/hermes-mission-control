@@ -62,7 +62,7 @@ export interface HermesClient {
   createResearchRun(input: ResearchRunCreateRequest): Promise<ResearchRunCreateResponse>;
   saveWindowsGatewayConfig(input: Partial<{ url: string; token: string; keepToken: boolean; approvedFolders: string[] }>): Promise<WindowsGatewayConfigResponse>;
   getCosts(filters?: { days?: number }): Promise<CostsResponse>;
-  listProjects(filters?: { q?: string; kind?: string }): Promise<ProjectsResponse>;
+  listProjects(filters?: { q?: string; area?: string }): Promise<ProjectsResponse>;
   getDelegateWorkContext(): Promise<DelegateWorkContextResponse>;
   listWorkflows(filters?: { q?: string; category?: string }): Promise<WorkflowLibraryResponse>;
   launchWorkflow(id: string, input: Partial<{ projectId: string; agentId: string; title: string; request: string; targetUrl: string; expected: string; runMode: string; schedule: string; project: string }>): Promise<WorkflowLaunchResponse>;

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ProjectOperatingLink, ProjectRecord } from "../types";
+import type { ProjectOperatingLink, ProjectRecord, ProjectRiskItem } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { formatSingaporeTime } from "../utils/time";
+import { Icon } from "../components/Icon";
 
 const client = new HttpHermesClient();
 type Tab = "overview" | "operations" | "knowledge" | "activity" | "sessions";
@@ -10,8 +11,35 @@ function pct(value: number) {
   return `${Math.max(0, Math.min(100, Math.round(value || 0)))}%`;
 }
 
+function count(project: ProjectRecord, key: string, fallback?: unknown[]) {
+  const value = project.operating_counts?.[key];
+  return typeof value === "number" ? value : fallback?.length ?? 0;
+}
+
+function activeActionCount(project: ProjectRecord) {
+  return (project.actions?.open || 0) + (project.actions?.running || 0);
+}
+
+function topRisk(risks: ProjectRiskItem[]) {
+  return risks?.[0]?.label || "No risk signal";
+}
+
+function primaryNextAction(project: ProjectRecord) {
+  return project.next_actions?.[0] || project.human_bottlenecks?.[0]?.title || project.tasks?.find((item) => item.status !== "done")?.title || "Open project detail to inspect context.";
+}
+
+function recency(project: ProjectRecord) {
+  if (project.activity?.[0]?.at) return `Latest: ${formatSingaporeTime(project.activity[0].at)}`;
+  if (project.updated_at) return `Updated: ${formatSingaporeTime(project.updated_at)}`;
+  return "No recent signal";
+}
+
 function Metric({ label, value, sub, tone }: { label: string; value: string | number; sub: string; tone?: "good" | "bad" }) {
   return <div className={`project-metric ${tone || ""}`}><span>{label}</span><b>{value}</b><small>{sub}</small></div>;
+}
+
+function ProjectStat({ label, value }: { label: string; value: string | number }) {
+  return <div><b>{value}</b><span>{label}</span></div>;
 }
 
 function linkLabel(item: ProjectOperatingLink) {
@@ -22,12 +50,71 @@ function LinkList({ title, empty, items, meta }: { title: string; empty: string;
   return <div className="project-operating-block"><div className="project-section-head"><b>{title}</b><span>{items?.length ?? 0}</span></div>{(items || []).map((item) => <div className="project-op-row" key={`${title}-${item.id || linkLabel(item)}`}><b>{linkLabel(item)}</b><small>{meta?.(item) || [item.status, item.source, item.category].filter(Boolean).join(" · ") || "linked"}</small>{item.detail && <p>{item.detail}</p>}</div>)}{!(items || []).length && <p className="muted">{empty}</p>}</div>;
 }
 
+function ProjectCard({ project, onOpen }: { project: ProjectRecord; onOpen: (project: ProjectRecord) => void }) {
+  const actions = activeActionCount(project);
+  const bottlenecks = count(project, "bottlenecks", project.human_bottlenecks);
+  const agents = count(project, "agents", project.agents);
+  const routines = count(project, "automations", project.automations);
+  const contexts = project.source_contexts?.length || 1;
+
+  return (
+    <article className="project-card professional" onClick={() => onOpen(project)}>
+      <div className="project-card-top">
+        <div className="project-title-block">
+          <span className="project-kind">Project</span>
+          <h3>{project.name}</h3>
+          <small>{project.portfolio_group || "Operations"}</small>
+        </div>
+        <span className={`project-status ${project.status}`}>{project.status}</span>
+      </div>
+
+      <p className="project-card-summary">{project.summary || "No summary yet. Add wiki notes, Kanban tasks, or workspace artifacts to enrich this context."}</p>
+
+      <div className="project-scoreboard" aria-label={`${project.name} project health and progress`}>
+        <div>
+          <span>Health</span>
+          <b>{project.health}%</b>
+        </div>
+        <div>
+          <span>Progress</span>
+          <b>{project.progress}%</b>
+        </div>
+      </div>
+      <div className="project-bars"><i style={{ width: pct(project.health) }} /><em style={{ width: pct(project.progress) }} /></div>
+
+      <div className="project-intelligence-grid">
+        <ProjectStat label="Open Work" value={actions} />
+        <ProjectStat label="Agents" value={agents} />
+        <ProjectStat label="Routines" value={routines} />
+        <ProjectStat label="Evidence" value={(project.knowledge?.length || 0) + (project.artifacts?.length || 0)} />
+      </div>
+
+      <div className="project-card-detail-strip">
+        <div>
+          <span>Next best action</span>
+          <b>{primaryNextAction(project)}</b>
+        </div>
+        <div>
+          <span>Needs attention</span>
+          <b className={bottlenecks || project.actions.blocked ? "attention" : ""}>{bottlenecks || project.actions.blocked ? `${bottlenecks + project.actions.blocked} attention item${bottlenecks + project.actions.blocked === 1 ? "" : "s"}` : topRisk(project.risks)}</b>
+        </div>
+      </div>
+
+      <div className="project-card-footer">
+        <span>{contexts} context{contexts === 1 ? "" : "s"}</span>
+        <span>{project.workspace_count || project.workspaces?.length || 0} linked workspace{(project.workspace_count || project.workspaces?.length || 0) === 1 ? "" : "s"}</span>
+        <span>{recency(project)}</span>
+      </div>
+    </article>
+  );
+}
+
 export function Projects() {
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [summary, setSummary] = useState({ total: 0, active: 0, open_actions: 0, blocked: 0, knowledge: 0, workspaces: 0 });
-  const [kinds, setKinds] = useState<string[]>([]);
+  const [projectAreas, setProjectAreas] = useState<string[]>([]);
   const [q, setQ] = useState("");
-  const [kind, setKind] = useState("");
+  const [area, setArea] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
@@ -39,10 +126,10 @@ export function Projects() {
   const load = async () => {
     try {
       setLoading(true);
-      const data = await client.listProjects({ q, kind });
+      const data = await client.listProjects({ q, area });
       setProjects(data.projects);
       setSummary(data.summary);
-      setKinds(data.kinds);
+      setProjectAreas(data.project_areas || []);
       setError(data.error || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load projects");
@@ -54,7 +141,7 @@ export function Projects() {
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 180);
     return () => window.clearTimeout(timer);
-  }, [q, kind]);
+  }, [q, area]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setSelectedId(null); };
@@ -106,101 +193,98 @@ export function Projects() {
 
   return (
     <div className="projects-page scroll">
-      <header className="projects-hero">
+      <header className="projects-hero professional">
         <div>
           <span className="stub-tag">PROJECT HUB</span>
-          <h1>Projects & Workspaces</h1>
-          <p>Context cockpit for initiatives, workspaces, wiki project notes, Kanban actions, recent sessions, and source artifacts.</p>
+          <h1>Projects</h1>
+          <p>Operator view for each initiative: what it is, what needs attention, who is working on it, and what Melkizac should do next.</p>
         </div>
-        <div className="projects-control">
-          <span>Workspace Control</span>
-          <b>{selected?.name || "Select project"}</b>
-          <button className="btn dark" onClick={() => void load()}>Refresh</button>
+        <div className="projects-control projects-control-refresh-only">
+          <button className="task-icon-action dark" aria-label="Refresh projects" title="Refresh projects" onClick={() => void load()}>
+            <Icon name="refresh" size={18} />
+          </button>
         </div>
       </header>
 
       <section className="project-metrics">
-        <Metric label="Portfolio" value={summary.total} sub="detected projects" />
-        <Metric label="Active" value={summary.active} sub="live contexts" tone="good" />
-        <Metric label="Open Actions" value={summary.open_actions} sub="Kanban linked" />
-        <Metric label="Risk Watch" value={summary.blocked} sub="blocked actions" tone={summary.blocked ? "bad" : "good"} />
-        <Metric label="Knowledge" value={summary.knowledge} sub="linked notes" />
-        <Metric label="Workspaces" value={summary.workspaces} sub="filesystem roots" />
+        <Metric label="Projects" value={summary.total} sub="real initiatives" />
+        <Metric label="Active" value={summary.active} sub="live project contexts" tone="good" />
+        <Metric label="Open Work" value={summary.open_actions} sub="actions in motion" />
+        <Metric label="Needs Attention" value={summary.blocked} sub="blocked actions" tone={summary.blocked ? "bad" : "good"} />
+        <Metric label="Evidence / Notes" value={summary.knowledge} sub="linked knowledge" />
+        <Metric label="Linked Workspaces" value={summary.workspaces} sub="workspace roots" />
       </section>
 
       <section className="projects-filters">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search projects, paths, tags, summaries…" />
-        <select value={kind} onChange={(e) => setKind(e.target.value)}>
-          <option value="">All workspace types</option>
-          {kinds.map((item) => <option key={item} value={item}>{item}</option>)}
+        <select value={area} onChange={(e) => setArea(e.target.value)} aria-label="Filter by project area">
+          <option value="">All project areas</option>
+          {projectAreas.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
-        <span>{loading ? "Loading…" : `${projects.length} contexts shown`}</span>
+        <span>{loading ? "Loading…" : `${projects.length} project${projects.length === 1 ? "" : "s"} shown`}</span>
       </section>
       {error && <div className="task-error">{error}</div>}
       {notice && <div className="task-notice">{notice}</div>}
 
-      <section className="projects-grid">
-        {projects.map((project) => (
-          <article className="project-card" key={project.id} onClick={() => openProject(project)}>
-            <div className="project-card-top">
-              <div><span className="project-kind">{project.kind}</span><h3>{project.name}</h3></div>
-              <span className={`project-status ${project.status}`}>{project.status}</span>
-            </div>
-            <p>{project.summary || "No summary yet. Add wiki notes, Kanban tasks, or workspace artifacts to enrich this context."}</p>
-            <div className="project-pulse">
-              <div><span>Health</span><b>{project.health}%</b></div>
-              <div><span>Progress</span><b>{project.progress}%</b></div>
-            </div>
-            <div className="project-bars"><i style={{ width: pct(project.health) }} /><em style={{ width: pct(project.progress) }} /></div>
-            <div className="project-chips">
-              <span>{(project.source_contexts?.length || 1) > 1 ? `${project.source_contexts?.length} contexts` : project.source}</span>
-              <span>{project.actions.open + project.actions.running} open</span>
-              <span>{project.knowledge.length} notes</span>
-              <span>{project.artifacts.length} artifacts</span>
-              <span>{project.operating_counts?.agents ?? project.agents?.length ?? 0} agents</span>
-              <span>{project.operating_counts?.automations ?? project.automations?.length ?? 0} routines</span>
-            </div>
-            <div className="project-path">{project.path || "No workspace path linked"}</div>
-          </article>
-        ))}
+      <section className="projects-grid professional">
+        {projects.map((project) => <ProjectCard key={project.id} project={project} onOpen={openProject} />)}
         {!loading && projects.length === 0 && <div className="project-empty">No projects matched. Try clearing the filters or adding project notes/tasks.</div>}
       </section>
 
       {selected && (
         <div className="drawer-backdrop" onClick={() => setSelectedId(null)}>
-          <aside className="project-detail-drawer" onClick={(e) => e.stopPropagation()}>
+          <aside className="project-detail-drawer professional" onClick={(e) => e.stopPropagation()}>
             <button className="drawer-close" onClick={() => setSelectedId(null)}>×</button>
-            <span className="stub-tag">WORKSPACE DETAIL</span>
-            <h2>{selected.name}</h2>
-            <p>{selected.summary}</p>
+            <div className="project-drawer-hero">
+              <span className="stub-tag">PROJECT DETAIL</span>
+              <h2>{selected.name}</h2>
+              <p>{selected.summary || "No summary yet. Add project notes, activity, or tasks to enrich this cockpit."}</p>
+              <div className="project-drawer-badges">
+                <span className={`project-status ${selected.status}`}>{selected.status}</span>
+                <span>{selected.portfolio_group || "Operations"}</span>
+              </div>
+            </div>
+
             <div className="project-detail-kv">
               <div><span>Status</span><b>{selected.status}</b></div>
-              <div><span>Kind</span><b>{selected.kind}</b></div>
-              <div><span>Source</span><b>{selected.source}</b></div>
+              <div><span>Project Area</span><b>{selected.portfolio_group || "Operations"}</b></div>
+              <div><span>Source type</span><b>{selected.source}</b></div>
               <div><span>Updated</span><b>{formatSingaporeTime(selected.updated_at)}</b></div>
             </div>
-            <div className="project-ops-summary">
-              <div><b>{selected.operating_counts?.agents ?? selected.agents?.length ?? 0}</b><span>Agents</span></div>
-              <div><b>{selected.operating_counts?.automations ?? selected.automations?.length ?? 0}</b><span>Routines</span></div>
-              <div><b>{selected.operating_counts?.goals ?? selected.goals?.length ?? 0}</b><span>Goals</span></div>
-              <div><b>{selected.operating_counts?.skills ?? selected.skills?.length ?? 0}</b><span>Skills</span></div>
-              <div><b>{selected.operating_counts?.bottlenecks ?? selected.human_bottlenecks?.length ?? 0}</b><span>Bottlenecks</span></div>
+
+            <div className="project-ops-summary professional">
+              <ProjectStat label="Agents" value={count(selected, "agents", selected.agents)} />
+              <ProjectStat label="Routines" value={count(selected, "automations", selected.automations)} />
+              <ProjectStat label="Goals" value={count(selected, "goals", selected.goals)} />
+              <ProjectStat label="Skills" value={count(selected, "skills", selected.skills)} />
+              <ProjectStat label="Bottlenecks" value={count(selected, "bottlenecks", selected.human_bottlenecks)} />
             </div>
+
             <div className="project-action-row">
               <button className="btn dark" disabled={busy === `brief:${selected.id}`} onClick={() => void generateBrief(selected)}>{busy === `brief:${selected.id}` ? "Briefing…" : "Generate Brief"}</button>
               <button className="btn primary" disabled={busy === `task:${selected.id}`} onClick={() => void createProjectTask(selected)}>{busy === `task:${selected.id}` ? "Creating…" : "Create Next Task"}</button>
             </div>
+
             <div className="project-tabs">
               {(["overview", "operations", "knowledge", "activity", "sessions"] as Tab[]).map((item) => <button key={item} className={tab === item ? "on" : ""} onClick={() => setTab(item)}>{item}</button>)}
             </div>
 
-            {tab === "overview" && <div className="project-tab-panel">
-              <div className="project-focus-card"><b>Project pulse</b><div className="project-bigbar"><i style={{ width: pct(selected.health) }} /></div><p>Health {selected.health}% · progress {selected.progress}% · {selected.actions.open + selected.actions.running} active actions · {selected.actions.blocked} blocked.</p></div>
-              <div className="quick-access">
-                <div><b>{selected.actions.open}</b><span>Open</span></div><div><b>{selected.actions.running}</b><span>Running</span></div><div><b>{selected.actions.done}</b><span>Done</span></div><div><b>{selected.risks.length}</b><span>Risks</span></div>
+            {tab === "overview" && <div className="project-tab-panel project-overview-panel">
+              <div className="project-focus-card professional"><div className="project-section-head"><b>Project status</b><span>health + progress</span></div><div className="project-bigbar"><i style={{ width: pct(selected.health) }} /></div><p>Health {selected.health}% · progress {selected.progress}% · {activeActionCount(selected)} active work item{activeActionCount(selected) === 1 ? "" : "s"} · {selected.actions.blocked} blocked.</p></div>
+              <div className="quick-access professional">
+                <ProjectStat label="Open" value={selected.actions.open} />
+                <ProjectStat label="Running" value={selected.actions.running} />
+                <ProjectStat label="Done" value={selected.actions.done} />
+                <ProjectStat label="Risks" value={selected.risks.length} />
               </div>
-              <label>Workspace path</label><code>{selected.path || "—"}</code>
-              <label>Linked contexts</label>
+              <div className="project-important-details">
+                <div><span>Next best action</span><b>{primaryNextAction(selected)}</b></div>
+                <div><span>Needs attention</span><b>{topRisk(selected.risks)}</b></div>
+                <div><span>Evidence / notes</span><b>{selected.knowledge.length} notes · {selected.artifacts.length} artifacts</b></div>
+                <div><span>Latest activity</span><b>{recency(selected)}</b></div>
+              </div>
+              <label>Workspace / source</label><code>{selected.path || "—"}</code>
+              <label>Source contexts</label>
               <div className="project-source-contexts">
                 {(selected.source_contexts?.length ? selected.source_contexts : [{ kind: selected.kind, source: selected.source, name: selected.name, path: selected.path }]).map((ctx, index) => <div key={`${ctx.id || ctx.path || ctx.name}-${index}`}><b>{ctx.kind || "context"}</b><span>{ctx.source || "unknown"}</span><small>{ctx.path || ctx.name || "—"}</small></div>)}
               </div>

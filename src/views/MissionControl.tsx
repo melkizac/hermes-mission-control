@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
+import { ChatIntentRoutingPreview } from "../components/ChatIntentRoutingPreview";
 import { useStore } from "../services/store";
-import type { BoardResponse, BoardTask, Message, ProjectRecord, ProjectsResponse } from "../types";
+import { buildChatIntentPreview, routeChatIntent, serializeChatIntentDecision } from "../services/chatIntentRouter";
+import type { ChatIntentDecision, ChatIntentPreview, ChatMissionContext, ChatRoutineContext, ChatWorkflowContext } from "../services/chatIntentRouter";
+import type { AutomationsResponse, BoardResponse, BoardTask, Message, ProjectRecord, ProjectsResponse, WorkflowLibraryResponse } from "../types";
 
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
@@ -44,32 +47,6 @@ function projectLabel(project: ProjectRecord) {
   return project.name || project.id;
 }
 
-function taskMatchesProject(task: BoardTask, project: ProjectRecord) {
-  const haystack = [task.tenant, task.workspace_path, task.title, task.body, task.assignee].filter(Boolean).join(" ").toLowerCase();
-  return [project.id, project.name, project.path].filter(Boolean).some((value) => haystack.includes(String(value).toLowerCase()));
-}
-
-function missionRows(project: ProjectRecord | null, tasks: BoardTask[]) {
-  if (!project) return [];
-  const sourceTasks = tasks.filter((task) => taskMatchesProject(task, project));
-  const projectGoals = project.goals ?? [];
-  return [
-    ...projectGoals.map((goal) => {
-      const title = goal.title || goal.name || goal.id || "Untitled mission";
-      return {
-        id: goal.id || title,
-        title,
-        status: goal.status || goal.readiness || "goal",
-      };
-    }),
-    ...sourceTasks.map((task) => ({
-      id: task.id,
-      title: task.mission_result?.workItem?.title || task.title,
-      status: task.status,
-    })),
-  ].filter((row, index, rows) => rows.findIndex((candidate) => candidate.id === row.id || candidate.title === row.title) === index).slice(0, 8);
-}
-
 function isRenderableChatMessage(message: Message) {
   return (message.role === "user" || message.role === "agent") && Boolean(message.text?.trim() || message.attachments?.length);
 }
@@ -97,45 +74,87 @@ function visibleChatText(message: Message) {
 }
 
 export function MissionControl() {
-  const { agents, sendToAgent } = useStore();
+  const { agents, approvals, sendToAgent } = useStore();
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
-  const [tasks, setTasks] = useState<BoardTask[]>([]);
+  const [recentTasks, setRecentTasks] = useState<BoardTask[]>([]);
+  const [routines, setRoutines] = useState<ChatRoutineContext[]>([]);
+  const [workflows, setWorkflows] = useState<ChatWorkflowContext[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [selectedMissionId, setSelectedMissionId] = useState("");
   const [permissionMode, setPermissionMode] = useState<ChatPermissionMode>("full-policy");
   const [modelMode, setModelMode] = useState<ChatModelMode>("gpt-55-medium");
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [hasStartedMainChat, setHasStartedMainChat] = useState(false);
+  const [routingPreview, setRoutingPreview] = useState<{
+    instruction: string;
+    decision: ChatIntentDecision;
+    preview: ChatIntentPreview;
+  } | null>(null);
   const latestMessageRef = useRef<HTMLDivElement | null>(null);
+  const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  function resizeComposerTextarea() {
+    const textarea = composerTextareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    const styles = window.getComputedStyle(textarea);
+    const lineHeight = Number.parseFloat(styles.lineHeight) || 24;
+    const paddingY = Number.parseFloat(styles.paddingTop || "0") + Number.parseFloat(styles.paddingBottom || "0");
+    const borderY = Number.parseFloat(styles.borderTopWidth || "0") + Number.parseFloat(styles.borderBottomWidth || "0");
+    const maxHeight = lineHeight * 10 + paddingY + borderY;
+    const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight + 1 ? "auto" : "hidden";
+  }
+
+  useLayoutEffect(() => {
+    resizeComposerTextarea();
+  }, [draft, hasStartedMainChat]);
+
+  useEffect(() => {
+    const onResize = () => resizeComposerTextarea();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   useEffect(() => {
     let alive = true;
     async function loadContext() {
-      try {
-        const [projectData, boardData] = await Promise.all([
-          request<ProjectsResponse>("/api/projects"),
-          request<BoardResponse>("/api/task-board"),
-        ]);
-        if (!alive) return;
-        setProjects(projectData.projects ?? []);
-        setTasks(boardData.tasks ?? []);
-      } catch {
-        if (alive) {
-          setProjects([]);
-          setTasks([]);
-        }
-      }
+      const [projectResult, boardResult, automationResult, workflowResult] = await Promise.allSettled([
+        request<ProjectsResponse>("/api/projects"),
+        request<BoardResponse>("/api/tasks"),
+        request<AutomationsResponse>("/api/automations"),
+        request<WorkflowLibraryResponse>("/api/workflows"),
+      ]);
+      if (!alive) return;
+      setProjects(projectResult.status === "fulfilled" ? projectResult.value.projects ?? [] : []);
+      setRecentTasks(boardResult.status === "fulfilled" ? (boardResult.value.tasks ?? []).slice(0, 60) : []);
+      setRoutines(
+        automationResult.status === "fulfilled"
+          ? (automationResult.value.automations ?? []).slice(0, 40).map((routine) => ({ id: routine.id, title: routine.name, status: routine.state || routine.status }))
+          : [],
+      );
+      setWorkflows(
+        workflowResult.status === "fulfilled"
+          ? (workflowResult.value.workflows ?? []).slice(0, 40).map((workflow) => ({ id: workflow.id, title: workflow.name, status: workflow.category }))
+          : [],
+      );
     }
     void loadContext();
     return () => { alive = false; };
   }, []);
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
-  const rows = useMemo(() => missionRows(selectedProject, tasks), [selectedProject, tasks]);
-  const selectedMission = rows.find((mission) => mission.id === selectedMissionId) ?? null;
+  const visibleMissions = useMemo<ChatMissionContext[]>(
+    () => recentTasks
+      .map((task) => task.mission_result?.workItem)
+      .filter((workItem): workItem is NonNullable<BoardTask["mission_result"]>["workItem"] => Boolean(workItem?.id && workItem?.title))
+      .slice(0, 30)
+      .map((workItem) => ({ id: workItem.id, title: workItem.title, status: workItem.status })),
+    [recentTasks],
+  );
   const selectedPermission = permissionModeOptions.find((option) => option.value === permissionMode) ?? permissionModeOptions[0];
   const selectedModel = modelModeOptions.find((option) => option.value === modelMode) ?? modelModeOptions[0];
   const melkizac = agents.find((agent) => agent.id === "default") ?? agents[0];
@@ -166,15 +185,27 @@ export function MissionControl() {
     if (next.length) setAttachments((current) => [...current, ...next]);
   }
 
-  function composeInstructionContext(instruction: string) {
+  function routeInstruction(instruction: string): ChatIntentDecision {
+    return routeChatIntent({
+      instruction,
+      selectedProject,
+      selectedMission: null,
+      visibleMissions,
+      tasks: recentTasks,
+      approvals,
+      routines,
+      workflows,
+    });
+  }
+
+  function composeInstructionContext(instruction: string, intentDecision: ChatIntentDecision) {
     const context = [
       selectedProject ? `Project: ${projectLabel(selectedProject)} (${selectedProject.id})` : "Project: No Project selected",
-      selectedMission ? `Mission: ${selectedMission.title} (${selectedMission.id})` : null,
       `Permission: ${selectedPermission.promptLabel}`,
       `Model: ${selectedModel.promptLabel}`,
       attachments.length ? `Attachments: ${attachments.map((file) => `${file.name} (${formatBytes(file.size)})`).join(", ")}` : null,
     ].filter(Boolean);
-    return `${instruction}\n\n[Mission Control Chat Context]\n${context.join("\n")}`;
+    return `${instruction}\n\n[Mission Control Chat Context]\n${context.join("\n")}\n\n[Mission Control Intent Routing]\n${serializeChatIntentDecision(intentDecision)}`;
   }
 
   async function submit() {
@@ -183,8 +214,17 @@ export function MissionControl() {
     setHasStartedMainChat(true);
     setSending(true);
     setError(null);
+    const intentDecision = routeInstruction(instruction);
+    const preview = buildChatIntentPreview(intentDecision);
+    setRoutingPreview({ instruction, decision: intentDecision, preview });
+    if (!preview.canProceed) {
+      setSending(false);
+      setError(preview.suggestedQuestion ?? "Please clarify the target before I route this.");
+      window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
+      return;
+    }
     try {
-      await sendToAgent("default", composeInstructionContext(instruction));
+      await sendToAgent("default", composeInstructionContext(instruction, intentDecision));
       setDraft("");
       setAttachments([]);
     } catch (err) {
@@ -208,6 +248,7 @@ export function MissionControl() {
 
         <form className="clean-chat-composer" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
           <textarea
+            ref={composerTextareaRef}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={handleComposerKeyDown}
@@ -272,7 +313,7 @@ export function MissionControl() {
           <span>▱</span>
           <select
             value={selectedProjectId}
-            onChange={(event) => { setSelectedProjectId(event.target.value); setSelectedMissionId(""); }}
+            onChange={(event) => setSelectedProjectId(event.target.value)}
             aria-label="Project selector"
           >
             <option value="">No Project selected</option>
@@ -282,27 +323,6 @@ export function MissionControl() {
 
         {error && <div className="clean-chat-error">{error}</div>}
 
-        {selectedProject && (
-          <div className="clean-mission-list" aria-label="Missions created in selected project">
-            {rows.map((mission) => (
-              <button
-                type="button"
-                className={selectedMissionId === mission.id ? "selected" : ""}
-                key={mission.id}
-                onClick={() => setSelectedMissionId(mission.id)}
-              >
-                <span>⌁</span>
-                <em>{mission.title}</em>
-              </button>
-            ))}
-            {rows.length === 0 && (
-              <div className="clean-mission-empty">
-                <span>⌘</span>
-                <em>No missions in this project yet</em>
-              </div>
-            )}
-          </div>
-        )}
       </section>
     </div>
   ) : (
@@ -360,7 +380,16 @@ export function MissionControl() {
         </main>
 
         <form className="main-chat-composer" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+          {routingPreview && (
+            <ChatIntentRoutingPreview
+              preview={routingPreview.preview}
+              decision={routingPreview.decision}
+              sending={sending}
+              onEdit={() => composerTextareaRef.current?.focus()}
+            />
+          )}
           <textarea
+            ref={composerTextareaRef}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={handleComposerKeyDown}
@@ -405,7 +434,7 @@ export function MissionControl() {
                 <span>▱</span>
                 <select
                   value={selectedProjectId}
-                  onChange={(event) => { setSelectedProjectId(event.target.value); setSelectedMissionId(""); }}
+                  onChange={(event) => setSelectedProjectId(event.target.value)}
                   aria-label="Project selector"
                 >
                   <option value="">No Project selected</option>

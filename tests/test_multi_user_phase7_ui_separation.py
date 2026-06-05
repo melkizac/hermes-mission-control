@@ -48,6 +48,7 @@ def test_phase7_nav_hides_admin_setup_for_non_admin_users():
     assert 'label: "Workspace"' in nav
     assert 'label: "My AI Workforce"' in nav
     assert 'label: "Knowledge & Evidence"' in nav
+    assert 'label: "Evidence"' not in nav.split('const simplifiedWorkspaceGroups', 1)[1].split('const adminConsoleGroups', 1)[0]
     assert 'label: "Account"' in nav
     assert 'permissions.canAccessAdmin &&' not in nav
     assert 'permissions.canManageRuntime &&' not in nav

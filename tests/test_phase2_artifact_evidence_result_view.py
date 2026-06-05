@@ -52,7 +52,7 @@ def test_phase2_ui_renders_artifact_evidence_result_view_from_task_drawer():
         'ArtifactCard',
         'EvidenceTimeline',
         'Approval gates',
-        'Proof of work',
+        'Evidence & Proof',
         'Next actions',
         'task.mission_result',
     ]:

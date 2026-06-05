@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { PackagedWorkflow, WorkflowLibraryResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { ArtifactCard, EvidenceTimeline, RiskBadges } from "../components/MissionFoundation";
+import { Icon } from "../components/Icon";
 
 const client = new HttpHermesClient();
 
@@ -57,7 +58,10 @@ export function WorkflowLibrary() {
         : { title: workflow.name, request: workflow.launchPrompt };
       const result = await client.launchWorkflow(workflow.id, input);
       if (!result.ok) throw new Error(result.error || "Workflow launch failed");
-      const taskId = typeof result.task?.id === "string" ? ` Task ${result.task.id} is queued.` : " A Task Board item is queued.";
+      const taskCount = Array.isArray(result.tasks) ? result.tasks.length : 0;
+      const taskId = taskCount > 1
+        ? ` ${taskCount} Task Board block cards are queued.`
+        : typeof result.task?.id === "string" ? ` Task ${result.task.id} is queued.` : " A Task Board item is queued.";
       setLaunchNote(`${workflow.name} launched.${taskId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to launch workflow");
@@ -92,7 +96,9 @@ export function WorkflowLibrary() {
             Launch repeatable SME operating loops with linked skills, built-in evidence requirements, artifacts, and approval gates.
           </p>
         </div>
-        <button className="btn dark" onClick={() => void load()}>Refresh</button>
+        <button className="task-icon-action dark" aria-label="Refresh workflow library" title="Refresh workflow library" onClick={() => void load()}>
+          <Icon name="refresh" size={18} />
+        </button>
       </header>
 
       <section className="workflow-metrics">
@@ -135,6 +141,8 @@ export function WorkflowLibrary() {
                   <span>{workflow.steps.length} steps</span>
                   <span>{workflow.skills.length} skills</span>
                   <span>{workflow.approvalGates.length} Approval gates</span>
+                  {(workflow.routines?.length ?? 0) > 0 && <span>{workflow.routines?.length} routines</span>}
+                  {workflow.taskMaterialization?.enabled && <span>Task Board materialization</span>}
                 </div>
               </button>
               <button className="btn dark workflow-launch" disabled={launching === workflow.id} onClick={() => void launchWorkflow(workflow)}>
@@ -183,6 +191,30 @@ export function WorkflowLibrary() {
                 ))}
               </ol>
             </div>
+            {selected.taskMaterialization?.enabled && (
+              <div className="workflow-detail-section workflow-materialization">
+                <b>Task Board materialization</b>
+                <p>Daily planner output becomes Task Board cards under <span className="mono">{selected.taskMaterialization.taskBoardTenant}</span>.</p>
+                <div className="workflow-chips strong">
+                  <span>Assignee: {selected.taskMaterialization.assignee}</span>
+                  <span>{selected.taskMaterialization.statuses.join(" → ")}</span>
+                  <span>{selected.taskMaterialization.sourceOfTruth}</span>
+                </div>
+              </div>
+            )}
+            {(selected.routines?.length ?? 0) > 0 && (
+              <div className="workflow-detail-section workflow-routines-linked">
+                <b>Linked routines</b>
+                <ol className="workflow-steps">
+                  {selected.routines?.map((routine) => (
+                    <li key={routine.id ?? routine.name}>
+                      <span>{routine.label ?? routine.name}</span>
+                      <small>{routine.schedule ?? "manual"} · {routine.enabled ? "enabled" : "paused"} · latest {routine.last_status ?? routine.status ?? "not-run"}</small>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
             <div className="workflow-detail-section">
               <b>Artifacts</b>
               {selected.artifacts.map((artifact) => <ArtifactCard key={artifact.id} artifact={artifact} />)}

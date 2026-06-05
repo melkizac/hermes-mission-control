@@ -25,12 +25,30 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
     label: "Workspace",
     items: [
       { key: "dashboard", label: "Dashboard", icon: "dashboard" },
-      { key: "work", label: "Work", icon: "board" },
+      { key: "projects", label: "Projects", icon: "projects" },
       { key: "board", label: "Task Board", icon: "board" },
+    ],
+  },
+  {
+    label: "Operations",
+    items: [
+      { key: "automations", label: "Routines", icon: "automations" },
+      { key: "workflow-library", label: "Workflows", icon: "skills" },
+    ],
+  },
+  {
+    label: "Workforce",
+    items: [
       { key: "agents", label: "Agents", icon: "agents" },
       { key: "agent-org", label: "AI Workforce", icon: "agentOrg" },
+      { key: "skills", label: "Skills", icon: "skills" },
+      { key: "tools", label: "Tools", icon: "setup" },
       { key: "approvals", label: "Approvals", icon: "approvals" },
-      { key: "evidence", label: "Evidence", icon: "audit" },
+    ],
+  },
+  {
+    label: "System",
+    items: [
       { key: "settings", label: "Settings", icon: "settings" },
       { action: "logout", label: "Logout", icon: "logout" },
     ],
@@ -51,12 +69,11 @@ const adminConsoleGroups: NavGroup[] = [
     label: "Runtime",
     items: [
       { key: "runtimes", label: "Runtime Connectors", icon: "runtimes" },
+      { key: "automations", label: "Routine Admin", icon: "automations" },
       { key: "desktop-gateway", label: "Desktop Gateway", icon: "settings" },
       { key: "browser-ops", label: "Browser Activity", icon: "runtimes" },
       { key: "research-runs", label: "Research Runs", icon: "audit" },
       { key: "models", label: "Model Router", icon: "modelRouter" },
-      { key: "tools", label: "Tools", icon: "setup" },
-      { key: "skills", label: "Skills", icon: "skills" },
     ],
   },
   {
@@ -71,13 +88,14 @@ const adminConsoleGroups: NavGroup[] = [
 ];
 
 // S1 route preservation note: these legacy workspace routes remain available via
-// Home action cards, Work/Evidence hubs, deep links, Settings/Advanced, and direct
-// URLs even though they are intentionally no longer primary workspace nav items.
+// Home action cards, Project/Task detail surfaces, deep links, Settings/Advanced, and
+// direct URLs even though they are intentionally no longer primary workspace nav items.
 // Previous primary nav fixture kept for regression context only:
 // const visibleGroups = uiMode === "admin" ? adminConsoleGroups : primaryGroups;
 // { key: "approvals", label: "Needs Attention", icon: "approvals" }
 // { key: "delegate-work", label: "Delegate Work", icon: "send" }
 // { key: "workflow-library", label: "Workflow Library", icon: "skills" }
+// { key: "work", label: "Work", icon: "board" }
 // label: "Account"
 // label: "Profile"
 // label: "My AI Workforce"

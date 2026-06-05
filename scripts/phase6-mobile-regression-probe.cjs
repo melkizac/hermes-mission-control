@@ -10,7 +10,7 @@ const views = [
   { name: 'Mission Control', url: '/app?view=mission', selector: 'text=Mission Control' },
   { name: 'Task Board', url: '/app?view=board', selector: 'text=Task Board' },
   { name: 'Approval Gates', url: '/app?view=approvals', selector: 'text=Approval Gates' },
-  { name: 'Delegate Work', url: '/app?view=delegate-work', selector: 'text=Delegate Work' },
+  { name: 'Projects', url: '/app?view=projects', selector: 'text=Projects' },
   { name: 'My Agents', url: '/app?view=agents&agent=melkizac', selector: '[data-deeplink-target="agent-chat"]' },
 ];
 

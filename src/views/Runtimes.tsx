@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRecord, RuntimeRegistryResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
+import { Icon } from "../components/Icon";
 
 const client = new HttpHermesClient();
 
@@ -156,7 +157,9 @@ export function Runtimes() {
           </p>
         </div>
         <div className="task-hero-actions">
-          <button className="btn dark" onClick={() => void load()}>Refresh</button>
+          <button className="task-icon-action dark" aria-label="Refresh runtimes" title="Refresh runtimes" onClick={() => void load()}>
+            <Icon name="refresh" size={18} />
+          </button>
         </div>
       </header>
 

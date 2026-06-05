@@ -314,6 +314,36 @@ export interface RoutineBinding {
   evidenceHistory: FunnelEvidenceHistoryItem[];
 }
 
+export interface PackagedWorkflowRoutine {
+  id?: string | null;
+  name: string;
+  label?: string;
+  workflow_template_id?: string;
+  workflowName?: string;
+  schedule?: string;
+  schedule_kind?: string;
+  enabled?: boolean;
+  status?: string;
+  state?: string;
+  next_run_at?: string;
+  next_run_relative?: string;
+  last_run_at?: string;
+  last_status?: string;
+  prompt_preview?: string;
+  taskBoardTenant?: string;
+  assignee?: string;
+  sourceOfTruth?: string;
+  sequence?: number;
+}
+
+export interface WorkflowTaskMaterialization {
+  enabled: boolean;
+  taskBoardTenant: string;
+  assignee: string;
+  statuses: string[];
+  sourceOfTruth: string;
+}
+
 export interface PackagedWorkflow {
   id: string;
   name: string;
@@ -333,6 +363,8 @@ export interface PackagedWorkflow {
   nextActions: string[];
   launchPrompt: string;
   launchDefaults?: { noSubmit?: boolean; safeTargetRequired?: boolean; runMode?: string; scheduleMode?: string; schedule?: string; targetUrl?: string };
+  routines?: PackagedWorkflowRoutine[];
+  taskMaterialization?: WorkflowTaskMaterialization;
   routineBinding?: RoutineBinding;
   updatedAt: string;
 }
@@ -349,6 +381,7 @@ export interface WorkflowLaunchResponse {
   workflow?: PackagedWorkflow;
   plan?: DelegateWorkPlan;
   task?: Record<string, unknown>;
+  tasks?: Record<string, unknown>[];
   routine?: Record<string, unknown>;
   mission_result?: MissionResult | null;
   error?: string;
@@ -627,6 +660,10 @@ export interface AutomationRoutine {
   recent_outputs: AutomationOutput[];
   run_count: number;
   workflow_template_id?: string;
+  workflowName?: string;
+  taskBoardTenant?: string;
+  assignee?: string;
+  sourceOfTruth?: string;
   targetUrl?: string;
   noSubmit?: boolean;
   safeTargetRequired?: boolean;
@@ -1045,6 +1082,7 @@ export interface ProjectRecord {
   path: string;
   source: string;
   updated_at: string;
+  portfolio_group?: string;
   source_contexts?: Array<{ id?: string; kind?: string; source?: string; name?: string; path?: string }>;
   actions: ProjectActionsSummary;
   risks: ProjectRiskItem[];
@@ -1083,6 +1121,7 @@ export interface ProjectsResponse {
     workspaces: number;
   };
   kinds: string[];
+  project_areas?: string[];
   sources: string[];
   error?: string;
 }
@@ -1488,7 +1527,6 @@ export type ViewKey =
   | "mission"
   | "dashboard"
   | "work"
-  | "evidence"
   | "delegate-work"
   | "workflow-library"
   | "profile"

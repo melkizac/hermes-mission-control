@@ -18,7 +18,7 @@ def test_phase8_mobile_operator_dock_component_exists_with_field_actions():
         'Needs Attention',
         'Running Now',
         'Browser Activity',
-        'Delegate Work',
+        'Projects',
         'Task Board',
         'aria-label="Mobile operator quick actions"',
         'data-testid="mobile-operator-dock"',
@@ -37,7 +37,7 @@ def test_phase8_dashboard_wires_mobile_operator_actions_to_real_views():
         'runningCount={runningTasks + runningBoardTasks.length}',
         'setView("approvals")',
         'setView("browser-ops")',
-        'setView("delegate-work")',
+        'setView("projects")',
         'setView("board")',
         'setView("agents")',
     ]:
@@ -50,7 +50,7 @@ def test_phase8_dashboard_wires_mobile_operator_actions_to_real_views():
         'runningCount={runningTasks + runningBoardTasks.length}',
         'setView("approvals")',
         'setView("browser-ops")',
-        'setView("delegate-work")',
+        'setView("projects")',
         'setView("board")',
     ]:
         assert dashboard_only not in chat
@@ -82,7 +82,7 @@ def test_phase8_mobile_probe_covers_operator_dock_and_quick_action_taps():
         'mobile-operator-dock',
         'mobile-operator-action',
         'Browser Activity',
-        'Delegate Work',
+        'Projects',
         'Needs Attention',
         'horizontalOverflow',
         'dockOverlapsMainAction',

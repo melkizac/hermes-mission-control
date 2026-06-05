@@ -6,12 +6,12 @@ export type MobileOperatorAction = {
   label: string;
   detail: string;
   view: ViewKey;
-  icon: "bell" | "automations" | "setup" | "plus" | "board" | "agents";
+  icon: "bell" | "automations" | "setup" | "plus" | "board" | "agents" | "projects";
   count?: number | string;
   tone?: "attention" | "live" | "neutral";
 };
 
-export const MOBILE_OPERATOR_CORE_LABELS = ["Needs Attention", "Running Now", "Browser Activity", "Delegate Work", "Task Board"];
+export const MOBILE_OPERATOR_CORE_LABELS = ["Needs Attention", "Running Now", "Browser Activity", "Projects", "Task Board"];
 
 export function MobileOperatorDock({
   actions,

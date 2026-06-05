@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatSingaporeShort } from "../utils/time";
+import { Icon } from "../components/Icon";
 
 type Tab = "org" | "agents" | "goals" | "queues" | "flows" | "runs" | "outputs" | "permissions" | "health";
 type DrawerTab = "overview" | "goals" | "queue" | "approvals" | "runs" | "outputs" | "activity" | "skills" | "permissions" | "config";
@@ -368,7 +369,7 @@ export function AgentOrg() {
           <p>Operational control plane for Melverick's digital coworkers: registry-backed agents, queues, runs, outputs, permissions, handoffs, and safe actions.</p>
           {data.registry_path && <small className="muted">Registry: {data.registry_path} · Generated {data.health.generated_at}</small>}
         </div>
-        <div className="org-hero-actions"><button className="btn dark" onClick={() => setGoalAgent(chief || agents[0])}>New goal</button><button className="btn dark" onClick={() => void load()}>Refresh</button></div>
+        <div className="org-hero-actions"><button className="btn dark" onClick={() => setGoalAgent(chief || agents[0])}>New goal</button><button className="task-icon-action dark" aria-label="Refresh agent org" title="Refresh agent org" onClick={() => void load()}><Icon name="refresh" size={18} /></button></div>
       </header>
 
       <section className="org-metrics">

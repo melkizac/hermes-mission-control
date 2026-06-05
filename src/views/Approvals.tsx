@@ -4,6 +4,7 @@ import { HttpHermesClient } from "../services/httpHermesClient";
 import { parseMissionControlDeepLink } from "../services/deepLinks";
 import { formatSingaporeTime } from "../utils/time";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
+import { Icon } from "../components/Icon";
 
 const client = new HttpHermesClient();
 const tabs: Array<{ key: InboxStatus | "all"; label: string; helper: string }> = [
@@ -107,7 +108,9 @@ export function Approvals() {
           <h1>Approval Gates</h1>
           <p>Approve or reject external-facing and irreversible agent actions. Email alerts, blockers, and “needs attention” items belong on the Task Board instead.</p>
         </div>
-        <button className="btn dark" onClick={() => void load()}>Refresh</button>
+        <button className="task-icon-action dark" aria-label="Refresh approvals" title="Refresh approvals" onClick={() => void load()}>
+          <Icon name="refresh" size={18} />
+        </button>
       </header>
 
       <section className="inbox-metrics">

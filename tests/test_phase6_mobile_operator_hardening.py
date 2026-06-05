@@ -91,7 +91,7 @@ def test_phase6_mobile_regression_probe_is_checked_in_and_covers_core_views():
         'Mission Control',
         'Task Board',
         'Approval Gates',
-        'Delegate Work',
+        'Projects',
         'My Agents',
         'horizontalOverflow',
         'bottomNavOverlap',

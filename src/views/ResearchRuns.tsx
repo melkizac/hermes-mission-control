@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CreateResearchRunRequest, ResearchRun, ResearchRunsResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
+import { Icon } from "../components/Icon";
 
 const client = new HttpHermesClient();
 
@@ -112,7 +113,9 @@ export function ResearchRuns() {
           <h1>Research command center</h1>
           <p>Track wide research runs as parallel agent lanes with source coverage, confidence, blockers, synthesis progress, and final recommendation evidence before operators act on findings.</p>
         </div>
-        <button className="btn ghost" onClick={() => void load()}>Refresh research runs</button>
+        <button className="task-icon-action dark" aria-label="Refresh research runs" title="Refresh research runs" onClick={() => void load()}>
+          <Icon name="refresh" size={18} />
+        </button>
       </header>
 
       <section className="skills-metrics research-metrics" aria-label="Research run metrics">

@@ -3,11 +3,13 @@ import type { AutomationRoutine, AutomationsResponse, BrowserConnectorConfig, Br
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { formatSingaporeTime } from "../utils/time";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
+import { Icon } from "../components/Icon";
+import { useStore } from "../services/store";
 
 const client = new HttpHermesClient();
 
 type ActionName = "pause" | "resume" | "run" | "enable_funnel_routine";
-type AutomationTab = "overview" | "execution" | "outputs";
+type AutomationTab = "overview" | "safety" | "execution" | "outputs";
 type ViewMode = "cards" | "list";
 
 function compact(value: number | undefined | null) {
@@ -19,6 +21,7 @@ function money(value: number | undefined | null) {
 }
 
 export function Automations() {
+  const { uiMode, permissions } = useStore();
   const [data, setData] = useState<AutomationsResponse | null>(null);
   const [targetData, setTargetData] = useState<FunnelTargetsResponse | null>(null);
   const [connectorData, setConnectorData] = useState<BrowserConnectorsResponse | null>(null);
@@ -73,6 +76,7 @@ export function Automations() {
 
   const automations = data?.automations ?? [];
   const summary = data?.summary;
+  const showAdminRoutineManagement = uiMode === "admin" && permissions.canAccessAdmin;
   const selectedAutomation = useMemo(
     () => automations.find((item) => item.id === selected),
     [automations, selected],
@@ -233,7 +237,9 @@ export function Automations() {
           </p>
         </div>
         <div className="task-hero-actions">
-          <button className="btn dark" onClick={() => void load()}>Refresh</button>
+          <button className="task-icon-action dark" aria-label="Refresh routines" title="Refresh routines" onClick={() => void load()}>
+            <Icon name="refresh" size={18} />
+          </button>
         </div>
       </header>
 
@@ -268,103 +274,130 @@ export function Automations() {
         <div className="automation-filter-note">Actions call Hermes cron directly. “Run now” may execute real workflows and deliveries.</div>
       </section>
 
-      <section className="automation-connector-gate automation-targets-panel">
+      {showAdminRoutineManagement && (
+        <>
+      <section className="automation-connector-gate automation-targets-panel operator-routine-panel admin-routine-management-panel">
         <div className="automation-panel-head">
-          <span>Production connector configuration gate</span>
-          <small>{connectorData?.summary.total ?? 0} configured · {connectorData?.summary.enabled ?? 0} enabled</small>
+          <span>What browser routines are allowed to do</span>
+          <small>{connectorData?.summary.total ?? 0} browser guardrail · {connectorData?.summary.enabled ?? 0} live</small>
         </div>
-        <p className="automation-filter-note">Configure Browserbase, desktop-browser, or future Windows gateway here first. This is a checkpoint gate only: No real connector is enabled yet, secrets are redacted, and Website Funnel Check stays NO_SUBMIT.</p>
-        <div className="connector-command-center" aria-label="Production connector policy and completion status">
+        <p className="operator-panel-intro">This explains the safety limits before any routine uses a browser. Normal checks can look and collect proof; risky clicks stay blocked.</p>
+        <div className="operator-summary-grid" aria-label="Browser routine safety summary">
           <article className="connector-policy-card">
-            <span className="stub-tag">Production enablement policy</span>
-            <h3>submit/post/send/purchase blocked</h3>
-            <p>{connectorData?.productionPolicy?.summary ?? "Production browser connector actions remain blocked; only safe NO_SUBMIT dry-runs are allowed."}</p>
-            <div className="browser-chip-row">
-              <span className="tag warn">{connectorData?.productionPolicy?.enablementStatus ?? "blocked"}</span>
-              <span className="tag good">NO_SUBMIT locked</span>
-              <span className="tag warn">account-sensitive blocked</span>
-            </div>
+            <span className="stub-tag">Allowed now</span>
+            <h3>Look, check, and collect evidence</h3>
+            <p>Routines can open approved public pages, inspect forms/buttons, and save screenshots or run evidence.</p>
+            <ul className="operator-check-list">
+              <li>Open public URLs</li>
+              <li>Verify forms or CTAs exist</li>
+              <li>Capture screenshots/evidence</li>
+            </ul>
           </article>
           <article className="connector-policy-card completion">
-            <span className="stub-tag">Browser runtime track completion</span>
-            <h3>{connectorData?.browserTrackCompletion?.currentPhase ?? "Phase 25"}</h3>
-            <p>{connectorData?.browserTrackCompletion?.summary ?? "Ready for supervised dry-runs; not ready for account-sensitive autonomy."}</p>
-            <div className="connector-readiness-list">
-              {(connectorData?.browserTrackCompletion?.checklist ?? []).slice(0, 4).map((item) => <span className={`tag ${item.status === 'ready' ? 'good' : 'warn'}`} key={item.label}>{item.label}: {item.status}</span>)}
+            <span className="stub-tag">Blocked unless approved</span>
+            <h3>Real-world actions are off by default</h3>
+            <p>Submitting, sending, posting, purchasing, login, and account-sensitive actions require explicit approval before they can run.</p>
+            <div className="browser-chip-row">
+              <span className="tag warn">Actions blocked</span>
+              <span className="tag good">Evidence-only mode</span>
             </div>
           </article>
         </div>
-        <div className="funnel-target-form">
-          <label><span>Connector label</span><input value={connectorLabel} onChange={(event) => setConnectorLabel(event.target.value)} placeholder="Browserbase production gate" /></label>
-          <label><span>Connector type</span><select value={connectorType} onChange={(event) => setConnectorType(event.target.value)}><option value="browserbase">Browserbase</option><option value="desktop-browser">desktop-browser</option><option value="windows-gateway">future Windows gateway</option></select></label>
-          <label><span>Base URL</span><input value={connectorBaseUrl} onChange={(event) => setConnectorBaseUrl(event.target.value)} placeholder="https://api.browserbase.com" /></label>
-          <label><span>Secret/token</span><input type="password" value={connectorSecret} onChange={(event) => setConnectorSecret(event.target.value)} placeholder="Stored as [REDACTED]" /></label>
-          <button className="btn dark" onClick={() => void createConnector()} disabled={busy === 'browser-connector:create'}>{busy === 'browser-connector:create' ? 'Saving…' : 'Save connector gate'}</button>
-        </div>
-        <div className="funnel-target-list">
-          {(connectorData?.connectors ?? []).map((connector) => (
-            <article className="funnel-target-card" key={connector.id}>
-              <div>
-                <b>{connector.label}</b>
-                <small className="mono">{connector.type} · {connector.baseUrl || 'no base URL'} · credentials {connector.credentials ? '[REDACTED]' : 'not set'}</small>
-                <em>Approval: {connector.approvalStatus} · dry-run: {connector.dryRun?.status ?? 'not-run'} · enabled: {connector.enabled ? 'yes' : 'no'} · No real connector is enabled yet</em>
-                {connector.lastProbe && <em>Last dry-run probe: {connector.lastProbe.status} · NO_SUBMIT probe · {connector.lastProbe.domain ?? 'safe target'} · <a href={connector.lastProbe.browserActivityUrl}>Browser Activity</a></em>}
-                {(connector.probeHistory ?? []).length > 0 && (
-                  <div className="probe-history-panel">
-                    <b>Probe history</b>
-                    {(connector.probeHistory ?? []).slice(0, 3).map((probe, index) => (
-                      <small className="mono" key={probe.id ?? `${connector.id}-probe-${index}`}>{probe.status}{probe.archived ? ' · archived' : ''} · {probe.domain ?? 'safe target'} · {probe.screenshotPath ?? 'no screenshot path'}</small>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="ops-row-actions">
-                <button className="ghost tiny" onClick={() => void runConnectorAction(connector, 'dry_run_probe')} disabled={!!busy}>{busy === `${connector.id}:dry_run_probe` ? 'Checking…' : 'Dry-run connectivity test'}</button>
-                <button className="ghost tiny" onClick={() => void runConnectorProbe(connector)} disabled={!!busy || connector.type !== 'desktop-browser'}>{busy === `${connector.id}:probe` ? 'Running…' : 'Run desktop-browser dry-run probe'}</button>
-                <button className="ghost tiny" onClick={() => void runConnectorAction(connector, 'archive_probe')} disabled={!!busy || !(connector.probeHistory ?? []).length}>{busy === `${connector.id}:archive_probe` ? 'Archiving…' : 'Archive old probe evidence'}</button>
-                <button className="ghost tiny" onClick={() => void runConnectorAction(connector, 'approve')} disabled={!!busy}>{busy === `${connector.id}:approve` ? 'Approving…' : 'Approve connector config'}</button>
-                <button className="ghost tiny" onClick={() => void runConnectorAction(connector, 'enable')} disabled={!!busy}>{busy === `${connector.id}:enable` ? 'Blocked…' : 'Enable connector blocked'}</button>
-              </div>
-              <div className="connector-readiness-list">
-                {connector.readinessChecklist.map((item) => <span className={`tag ${item.status === 'ready' ? 'good' : 'warn'}`} key={item.label}>{item.label}: {item.status}</span>)}
-              </div>
-            </article>
-          ))}
-          {(connectorData?.connectors ?? []).length === 0 && <div className="empty">No production connector gates configured yet.</div>}
-        </div>
+        <details className="automation-advanced-details">
+          <summary>Advanced/admin: browser connector setup</summary>
+          <p className="automation-filter-note">Admin setup for Browserbase, desktop-browser, or future Windows gateway. Secrets are redacted and no real connector is enabled by default.</p>
+          <div className="funnel-target-form">
+            <label><span>Connector label</span><input value={connectorLabel} onChange={(event) => setConnectorLabel(event.target.value)} placeholder="Browserbase production gate" /></label>
+            <label><span>Connector type</span><select value={connectorType} onChange={(event) => setConnectorType(event.target.value)}><option value="browserbase">Browserbase</option><option value="desktop-browser">desktop-browser</option><option value="windows-gateway">future Windows gateway</option></select></label>
+            <label><span>Base URL</span><input value={connectorBaseUrl} onChange={(event) => setConnectorBaseUrl(event.target.value)} placeholder="https://api.browserbase.com" /></label>
+            <label><span>Secret/token</span><input type="password" value={connectorSecret} onChange={(event) => setConnectorSecret(event.target.value)} placeholder="Stored as [REDACTED]" /></label>
+            <button className="btn dark" onClick={() => void createConnector()} disabled={busy === 'browser-connector:create'}>{busy === 'browser-connector:create' ? 'Saving…' : 'Save connector gate'}</button>
+          </div>
+          <div className="funnel-target-list">
+            {(connectorData?.connectors ?? []).map((connector) => (
+              <article className="funnel-target-card" key={connector.id}>
+                <div>
+                  <b>{connector.label}</b>
+                  <small className="mono">{connector.type} · {connector.baseUrl || 'no base URL'} · credentials {connector.credentials ? '[REDACTED]' : 'not set'}</small>
+                  <em>Approval: {connector.approvalStatus} · dry-run: {connector.dryRun?.status ?? 'not-run'} · enabled: {connector.enabled ? 'yes' : 'no'}</em>
+                  {connector.lastProbe && <em>Last dry-run probe: {connector.lastProbe.status} · NO_SUBMIT probe · {connector.lastProbe.domain ?? 'safe target'} · <a href={connector.lastProbe.browserActivityUrl}>Browser Activity</a></em>}
+                  {(connector.probeHistory ?? []).length > 0 && (
+                    <div className="probe-history-panel">
+                      <b>Probe history</b>
+                      {(connector.probeHistory ?? []).slice(0, 3).map((probe, index) => (
+                        <small className="mono" key={probe.id ?? `${connector.id}-probe-${index}`}>{probe.status}{probe.archived ? ' · archived' : ''} · {probe.domain ?? 'safe target'} · {probe.screenshotPath ?? 'no screenshot path'}</small>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="ops-row-actions">
+                  <button className="ghost tiny" onClick={() => void runConnectorAction(connector, 'dry_run_probe')} disabled={!!busy}>{busy === `${connector.id}:dry_run_probe` ? 'Checking…' : 'Dry-run connectivity test'}</button>
+                  <button className="ghost tiny" onClick={() => void runConnectorProbe(connector)} disabled={!!busy || connector.type !== 'desktop-browser'}>{busy === `${connector.id}:probe` ? 'Running…' : 'Run desktop-browser dry-run probe'}</button>
+                  <button className="ghost tiny" onClick={() => void runConnectorAction(connector, 'archive_probe')} disabled={!!busy || !(connector.probeHistory ?? []).length}>{busy === `${connector.id}:archive_probe` ? 'Archiving…' : 'Archive old probe evidence'}</button>
+                  <button className="ghost tiny" onClick={() => void runConnectorAction(connector, 'approve')} disabled={!!busy}>{busy === `${connector.id}:approve` ? 'Approving…' : 'Approve connector config'}</button>
+                  <button className="ghost tiny" onClick={() => void runConnectorAction(connector, 'enable')} disabled={!!busy}>{busy === `${connector.id}:enable` ? 'Blocked…' : 'Enable connector blocked'}</button>
+                </div>
+                <div className="connector-readiness-list">
+                  {connector.readinessChecklist.map((item) => <span className={`tag ${item.status === 'ready' ? 'good' : 'warn'}`} key={item.label}>{item.label}: {item.status}</span>)}
+                </div>
+              </article>
+            ))}
+            {(connectorData?.connectors ?? []).length === 0 && <div className="empty">No production connector gates configured yet.</div>}
+          </div>
+        </details>
       </section>
 
-      <section className="automation-targets-panel">
+      <section className="automation-targets-panel operator-routine-panel admin-routine-management-panel">
         <div className="automation-panel-head">
-          <span>Website Funnel Check targets</span>
-          <small>{targetData?.summary.total ?? 0} configured · {targetData?.summary.enabled ?? 0} enabled</small>
+          <span>Websites being monitored</span>
+          <small>{targetData?.summary.total ?? 0} website target · {targetData?.summary.enabled ?? 0} live</small>
         </div>
-        <div className="funnel-target-form">
-          <label><span>Label</span><input value={targetLabel} onChange={(event) => setTargetLabel(event.target.value)} placeholder="Nexius contact form" /></label>
-          <label><span>Safe public URL</span><input value={targetUrl} onChange={(event) => setTargetUrl(event.target.value)} placeholder="https://example.com/contact" /></label>
-          <label><span>Cron schedule</span><input value={targetSchedule} onChange={(event) => setTargetSchedule(event.target.value)} placeholder="0 9 * * 1" /></label>
-          <button className="btn dark" onClick={() => void createTarget()} disabled={busy === 'funnel-target:create'}>{busy === 'funnel-target:create' ? 'Adding…' : 'Add target'}</button>
-        </div>
-        <p className="automation-filter-note">Target approval is required before enablement. NO_SUBMIT and safeTargetRequired stay mandatory; account-sensitive/private URLs are blocked.</p>
-        <div className="funnel-target-list">
+        <p className="operator-panel-intro">These are the public website pages that routines check on schedule. They verify that funnels/forms still work and keep evidence without submitting anything.</p>
+        <div className="funnel-target-list compact-target-list">
           {(targetData?.targets ?? []).map((target) => (
             <article className="funnel-target-card" key={target.id}>
               <div>
                 <b>{target.label}</b>
-                <small className="mono">{target.url}</small>
-                <em>Target approval: {target.approvalStatus} · latest: {target.latestRunStatus?.status ?? 'not-run'} · evidence history: {target.evidenceHistory?.length ?? 0}</em>
+                <small>{target.latestRunStatus?.status ?? 'No recent run'} · {target.evidenceHistory?.length ?? 0} evidence records · no form submission</small>
               </div>
               <div className="ops-row-actions">
-                <button className="ghost tiny" onClick={() => void openTarget(target)}>Open evidence</button>
-                <button className="ghost tiny" onClick={() => void runTargetAction(target, 'enable')} disabled={!!busy}>{busy === `${target.id}:enable` ? 'Enabling…' : 'Enable target routine'}</button>
-                <button className="ghost tiny" onClick={() => void runTargetAction(target, 'pause')} disabled={!!busy}>{busy === `${target.id}:pause` ? 'Pausing…' : 'Pause target routine'}</button>
-                <button className="ghost tiny" onClick={() => void runTargetAction(target, 'run_now')} disabled={!!busy}>{busy === `${target.id}:run_now` ? 'Queueing…' : 'Run target now'}</button>
+                <button className="ghost tiny" onClick={() => void openTarget(target)}>View evidence</button>
+                <button className="ghost tiny" onClick={() => void runTargetAction(target, 'run_now')} disabled={!!busy}>{busy === `${target.id}:run_now` ? 'Queueing…' : 'Check now'}</button>
               </div>
             </article>
           ))}
-          {(targetData?.targets ?? []).length === 0 && <div className="empty">No Website Funnel Check targets configured yet.</div>}
+          {(targetData?.targets ?? []).length === 0 && <div className="empty">No Website Check targets configured yet.</div>}
         </div>
+        <details className="automation-advanced-details">
+          <summary>Advanced/admin: add or manage website monitors</summary>
+          <div className="funnel-target-form">
+            <label><span>Label</span><input value={targetLabel} onChange={(event) => setTargetLabel(event.target.value)} placeholder="Nexius contact form" /></label>
+            <label><span>Safe public URL</span><input value={targetUrl} onChange={(event) => setTargetUrl(event.target.value)} placeholder="https://example.com/contact" /></label>
+            <label><span>Cron schedule</span><input value={targetSchedule} onChange={(event) => setTargetSchedule(event.target.value)} placeholder="0 9 * * 1" /></label>
+            <button className="btn dark" onClick={() => void createTarget()} disabled={busy === 'funnel-target:create'}>{busy === 'funnel-target:create' ? 'Adding…' : 'Add target'}</button>
+          </div>
+          <p className="automation-filter-note">NO_SUBMIT and safeTargetRequired stay mandatory; account-sensitive/private URLs are blocked.</p>
+          <div className="funnel-target-list">
+            {(targetData?.targets ?? []).map((target) => (
+              <article className="funnel-target-card" key={target.id}>
+                <div>
+                  <b>{target.label}</b>
+                  <small className="mono">{target.url}</small>
+                  <em>Target approval: {target.approvalStatus} · latest: {target.latestRunStatus?.status ?? 'not-run'} · evidence history: {target.evidenceHistory?.length ?? 0}</em>
+                </div>
+                <div className="ops-row-actions">
+                  <button className="ghost tiny" onClick={() => void openTarget(target)}>Open evidence</button>
+                  <button className="ghost tiny" onClick={() => void runTargetAction(target, 'enable')} disabled={!!busy}>{busy === `${target.id}:enable` ? 'Enabling…' : 'Enable target routine'}</button>
+                  <button className="ghost tiny" onClick={() => void runTargetAction(target, 'pause')} disabled={!!busy}>{busy === `${target.id}:pause` ? 'Pausing…' : 'Pause target routine'}</button>
+                  <button className="ghost tiny" onClick={() => void runTargetAction(target, 'run_now')} disabled={!!busy}>{busy === `${target.id}:run_now` ? 'Queueing…' : 'Run target now'}</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </details>
       </section>
+        </>
+      )}
 
       {notice && <div className="automation-notice">{notice}</div>}
       {error && <div className="automation-error">{error}</div>}
@@ -490,6 +523,92 @@ function TargetEvidenceDrawer({ target, busy, onClose, onAction }: {
   );
 }
 
+function usesBrowserAutomation(automation: AutomationRoutine) {
+  const haystack = [
+    automation.workflow_template_id,
+    automation.script,
+    automation.sourceOfTruth,
+    automation.targetUrl,
+    ...automation.enabled_toolsets,
+  ].filter(Boolean).join(" ").toLowerCase();
+  return Boolean(automation.targetUrl || automation.noSubmit || automation.safeTargetRequired || haystack.includes("browser") || haystack.includes("funnel") || haystack.includes("website"));
+}
+
+function isWebsiteMonitor(automation: AutomationRoutine) {
+  return automation.workflow_template_id === "website-funnel-check" || Boolean(automation.targetUrl || automation.safeTargetRequired || automation.noSubmit);
+}
+
+function safetyChipsFor(automation: AutomationRoutine) {
+  if (!usesBrowserAutomation(automation)) return ["No browser use"];
+  const chips = ["Approval required"];
+  if (automation.noSubmit || isWebsiteMonitor(automation)) chips.unshift("No form submission");
+  if (automation.noSubmit || isWebsiteMonitor(automation)) chips.unshift("Evidence only");
+  return Array.from(new Set(chips));
+}
+
+function RoutineSafetyPanel({ automation }: { automation: AutomationRoutine }) {
+  const browser = usesBrowserAutomation(automation);
+  const website = isWebsiteMonitor(automation);
+  const evidenceCount = automation.evidenceHistory?.length ?? 0;
+
+  if (!browser) {
+    return (
+      <section className="automation-section routine-safety-panel">
+        <h3>Safety</h3>
+        <p>This routine does not use browser automation.</p>
+        <div className="automation-chip-cloud safety-chip-cloud">
+          {safetyChipsFor(automation).map((chip) => <span key={chip}>{chip}</span>)}
+        </div>
+        <div className="automation-kv operator-routine-kv">
+          <Info label="Browser access" value="Not configured" />
+          <Info label="Website actions" value="None" />
+          <Info label="Approval for browser actions" value="Not needed" />
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="automation-section routine-safety-panel">
+      <h3>Safety</h3>
+      <p>{website ? "This routine monitors an approved public website page and records evidence without submitting the form." : "This routine can use browser automation, but real-world actions stay approval-gated."}</p>
+      <div className="automation-chip-cloud safety-chip-cloud">
+        {safetyChipsFor(automation).map((chip) => <span key={chip}>{chip}</span>)}
+      </div>
+      <div className="routine-safety-rows">
+        <article className="routine-safety-row allowed">
+          <div className="routine-safety-row-label">
+            <span className="stub-tag">Allowed</span>
+            <h3>{website ? "Check the public page" : "Use browser with guardrails"}</h3>
+          </div>
+          <ul className="operator-check-list">
+            <li>Open approved pages</li>
+            <li>Verify forms, buttons, or page state</li>
+            <li>Capture screenshots and evidence</li>
+          </ul>
+        </article>
+        <article className="routine-safety-row blocked">
+          <div className="routine-safety-row-label">
+            <span className="stub-tag">Not allowed by default</span>
+            <h3>Real-world actions require approval</h3>
+          </div>
+          <ul className="operator-check-list blocked">
+            <li>Submit forms or send messages</li>
+            <li>Log in or change account settings</li>
+            <li>Purchase, post, or perform external-facing actions</li>
+          </ul>
+        </article>
+      </div>
+      <div className="automation-kv operator-routine-kv">
+        <Info label="Mode" value={automation.noSubmit || website ? "Evidence only" : "Approval gated"} />
+        <Info label="Form submission" value={automation.noSubmit || website ? "Blocked" : "Requires approval"} />
+        <Info label="Target" value={automation.targetUrl || "No target URL configured"} />
+        <Info label="Evidence records" value={String(evidenceCount)} />
+      </div>
+    </section>
+  );
+}
+
 function AutomationCard({ automation, active, busy, onSelect, onAction }: {
   automation: AutomationRoutine;
   active: boolean;
@@ -514,7 +633,9 @@ function AutomationCard({ automation, active, busy, onSelect, onAction }: {
           <span>{mode}</span>
           <span>{automation.schedule_kind}</span>
           <span>{automation.schedule}</span>
-          {automation.workflow_template_id === "website-funnel-check" && <span>NO_SUBMIT routine</span>}
+          {automation.workflow_template_id === "linkedin-daily-operating-workflow" && <span>LinkedIn daily workflow</span>}
+          {automation.taskBoardTenant && <span>Task Board: {automation.taskBoardTenant}</span>}
+          {safetyChipsFor(automation).map((chip) => <span className="safety-chip" key={chip}>{chip}</span>)}
         </div>
         {automation.workflow_template_id === "website-funnel-check" && (
           <div className="automation-funnel-meta">
@@ -563,6 +684,9 @@ function AutomationListRow({ automation, active, busy, onSelect, onAction }: {
         </div>
         <p>{automation.prompt_preview || "No prompt configured."}</p>
         <small className="mono">{automation.id}</small>
+        <div className="automation-chips list-safety-chips">
+          {safetyChipsFor(automation).map((chip) => <span className="safety-chip" key={chip}>{chip}</span>)}
+        </div>
       </button>
       <div className="ops-row-meta">
         <span>{automation.schedule_kind}</span>
@@ -608,7 +732,7 @@ function AutomationDrawer({ automation, tab, setTab, busy, onClose, onAction }: 
       onClose={onClose}
       closeLabel="Close routine details"
       ariaLabel="Routine details"
-      tabs={["overview", "execution", "outputs"] as const}
+      tabs={["overview", "safety", "execution", "outputs"] as const}
       activeTab={tab}
       onTabChange={setTab}
       className="automation-detail automation-detail-drawer"
@@ -622,21 +746,39 @@ function AutomationDrawer({ automation, tab, setTab, busy, onClose, onAction }: 
               <button className="ghost tiny" onClick={() => onAction(automation.enabled ? "pause" : "resume")} disabled={!!busy}>{isBusy(automation.enabled ? "pause" : "resume") ? "Working…" : automation.enabled ? "Pause" : "Resume"}</button>
               <button className="ghost tiny" onClick={() => onAction("run")} disabled={!!busy}>{isBusy("run") ? "Queued…" : "Run now"}</button>
             </div>
-            <div className="automation-kv">
+            <div className="automation-kv operator-routine-kv">
               <Info label="Schedule" value={automation.schedule} />
               <Info label="Next run" value={`${formatSingaporeTime(automation.next_run_at)} · ${automation.next_run_relative}`} />
               <Info label="Last run" value={`${formatSingaporeTime(automation.last_run_at)} · ${automation.last_run_relative}`} />
               <Info label="Delivery" value={automation.deliver} />
-              <Info label="Profile" value={automation.profile} />
-              <Info label="Model" value={automation.model || "default"} />
-              <Info label="Script" value={automation.script || (automation.no_agent ? "script-only" : "agent-run")} />
-              <Info label="Created" value={formatSingaporeTime(automation.created_at)} />
+              <Info label="Workflow" value={automation.workflowName || automation.workflow_template_id || "—"} />
+              <Info label="Task Board" value={automation.taskBoardTenant || "—"} />
             </div>
             {automation.last_error && <div className="automation-error compact">{automation.last_error}</div>}
-            <section className="automation-section"><h3>Skills & toolsets</h3><div className="automation-chip-cloud">{(automation.skills.length ? automation.skills : ["No skills attached"]).map((skill) => <span key={skill}>{skill}</span>)}{automation.enabled_toolsets.map((toolset) => <em key={toolset}>{toolset}</em>)}</div></section>
-            <section className="automation-section"><h3>Routine prompt</h3><pre>{automation.prompt_preview || "No prompt preview available."}</pre></section>
+            <section className="automation-section operator-routine-summary">
+              <h3>What this routine does</h3>
+              <p>{automation.workflowName ? `Runs as part of ${automation.workflowName}.` : automation.workflow_template_id ? `Runs as part of ${automation.workflow_template_id}.` : automation.no_agent ? "Runs a script-based background check." : "Runs a scheduled Hermes agent task."}</p>
+              <div className="automation-chip-cloud">
+                <span>{automation.enabled ? "Enabled" : "Paused"}</span>
+                <span>{automation.no_agent ? "Script watchdog" : "Agent routine"}</span>
+                <span>{automation.last_status || "No recent run"}</span>
+              </div>
+            </section>
+            <details className="automation-advanced-details routine-drawer-advanced">
+              <summary>Advanced: prompt, skills, model, and runtime settings</summary>
+              <div className="automation-kv">
+                <Info label="Profile" value={automation.profile} />
+                <Info label="Model" value={automation.model || "default"} />
+                <Info label="Script" value={automation.script || (automation.no_agent ? "script-only" : "agent-run")} />
+                <Info label="Created" value={formatSingaporeTime(automation.created_at)} />
+              </div>
+              <section className="automation-section"><h3>Skills & toolsets</h3><div className="automation-chip-cloud">{(automation.skills.length ? automation.skills : ["No skills attached"]).map((skill) => <span key={skill}>{skill}</span>)}{automation.enabled_toolsets.map((toolset) => <em key={toolset}>{toolset}</em>)}</div></section>
+              <section className="automation-section"><h3>Routine prompt</h3><pre>{automation.prompt_preview || "No prompt preview available."}</pre></section>
+            </details>
           </>
         )}
+
+        {tab === "safety" && <RoutineSafetyPanel automation={automation} />}
 
         {tab === "execution" && (
           <section className="automation-section">

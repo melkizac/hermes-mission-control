@@ -342,10 +342,10 @@ export class HttpHermesClient implements HermesClient {
     return request<CostsResponse>(`/api/costs${suffix}`);
   }
 
-  async listProjects(filters?: { q?: string; kind?: string }): Promise<ProjectsResponse> {
+  async listProjects(filters?: { q?: string; area?: string }): Promise<ProjectsResponse> {
     const params = new URLSearchParams();
     if (filters?.q) params.set("q", filters.q);
-    if (filters?.kind) params.set("kind", filters.kind);
+    if (filters?.area) params.set("area", filters.area);
     const suffix = params.toString() ? `?${params.toString()}` : "";
     return request<ProjectsResponse>(`/api/projects${suffix}`);
   }

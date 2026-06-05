@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { Agent, ToolCapability } from "../types";
 import { useStore } from "../services/store";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
+import { Icon } from "../components/Icon";
 
 type ToolRecord = ToolCapability & {
   agents: Agent[];
@@ -91,7 +92,9 @@ export function ToolsHub() {
           </p>
         </div>
         <div className="task-hero-actions">
-          <button className="btn dark" onClick={() => window.location.reload()}>Refresh</button>
+          <button className="task-icon-action dark" aria-label="Refresh tools hub" title="Refresh tools hub" onClick={() => window.location.reload()}>
+            <Icon name="refresh" size={18} />
+          </button>
         </div>
       </header>
 

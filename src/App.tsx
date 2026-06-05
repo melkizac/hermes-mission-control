@@ -5,8 +5,6 @@ import { NavRail } from "./components/NavRail";
 import { Icon } from "./components/Icon";
 import { MissionControl } from "./views/MissionControl";
 import { Dashboard } from "./views/Dashboard";
-import { WorkHub } from "./views/WorkHub";
-import { EvidenceHub } from "./views/EvidenceHub";
 import { Agents } from "./views/Agents";
 import { AgentOrg } from "./views/AgentOrg";
 import { Runtimes } from "./views/Runtimes";
@@ -83,8 +81,6 @@ function Shell() {
         {!canRenderView && <AdminOnlyNotice onGoHome={() => setView(safeDefaultViewForRole(me?.user.role))} />}
         {canRenderView && view === "mission" && <MissionControl />}
         {canRenderView && view === "dashboard" && <Dashboard />}
-        {canRenderView && view === "work" && <WorkHub />}
-        {canRenderView && view === "evidence" && <EvidenceHub />}
         {canRenderView && view === "delegate-work" && <DelegateWork />}
         {canRenderView && view === "workflow-library" && <WorkflowLibrary />}
         {canRenderView && view === "profile" && <Placeholder title="Profile" blurb="Account identity and operator preferences for Mission Control." />}

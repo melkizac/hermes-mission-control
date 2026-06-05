@@ -75,8 +75,13 @@ const pages: DocPage[] = [
       {
         heading: "Relationship map",
         body:
-          "Intent → Goal → Project / Mission → Tasks → Outputs / Evidence. Recurring work follows Goal → Workflow → Routine → Runs. Melkizac owns the translation from plain user intent into goals, plans, capability checks, tasks, approval gates, blockers, and evidence requirements.",
+          "Use the simple operator map: Project = the folder / operating space, Goal = the desired result, Mission = the campaign or run to achieve the result, Task = the individual action, and Evidence = proof it happened. Melkizac owns the translation from plain user intent into this structure, then adds capability checks, approval gates, blockers, workflows, routines, and audit records where needed.",
         bullets: [
+          "Project = the folder / operating space",
+          "Goal = the desired result",
+          "Mission = the campaign/run to achieve the result",
+          "Task = the individual action",
+          "Evidence = proof it happened",
           "Workflow = reusable process template",
           "Routine = scheduled or recurring execution",
           "Routine is the user-facing term; automation is the technical implementation",
@@ -88,13 +93,14 @@ const pages: DocPage[] = [
       {
         heading: "Core work terms",
         body:
-          "Intent is the raw user request in plain language. Goal is the structured business outcome Hermes is trying to achieve. Project is the persistent container for related goals, missions, tasks, evidence, and routines. Mission is a specific execution effort or run designed to achieve a goal. Task is a concrete unit of work assigned to an agent, human, or system routine.",
+          "Intent is the raw user request in plain language. Project is the folder or operating space where the work belongs. Goal is the desired result. Mission is the campaign or execution run created to achieve that result. Task is the individual action assigned to an agent, human, or system routine. Evidence is the proof that the action or mission actually happened.",
         bullets: [
           "Intent: ‘I want more course signups.’",
-          "Goal: ‘Increase qualified signups for the June AI Productivity course.’",
           "Project: ‘Nexius Academy Course Growth.’",
-          "Mission: ‘June course signup campaign setup.’",
-          "Task: ‘Check the course registration form.’",
+          "Goal: ‘Increase qualified AI course signups.’",
+          "Mission: ‘Run this month’s signup campaign.’",
+          "Tasks: ‘Check funnel, draft posts, monitor leads, prepare follow-up.’",
+          "Evidence: screenshots, drafts, lead records, and approval trail.",
         ],
       },
       {
@@ -142,13 +148,13 @@ const pages: DocPage[] = [
       },
     ],
     cards: [
-      { title: "Goal vs Project", body: "Goal is the outcome; Project is the persistent container." },
-      { title: "Mission vs Task", body: "Mission is the coordinated execution effort; Task is an individual work item." },
+      { title: "Project vs Goal", body: "Project is the folder / operating space; Goal is the desired result." },
+      { title: "Mission vs Task", body: "Mission is the campaign/run to achieve the result; Task is an individual action." },
       { title: "Workflow vs Routine", body: "Workflow is the reusable process; Routine is the scheduled recurring execution." },
       { title: "Output vs Evidence", body: "Output is the deliverable; Evidence proves the deliverable or action happened." },
     ],
     example:
-      "Intent: ‘Get more course signups.’ Melkizac defines a Goal, places it under a Project if persistent, starts a Mission, creates Tasks, uses Skills and Tools through Connectors/Runtimes, pauses at Approval Gates, surfaces Blockers, produces Outputs, attaches Evidence, records the Audit Log, and proposes a Workflow/Routine if the process should repeat.",
+      "Project: Nexius Academy Course Growth. Goal: Increase qualified AI course signups. Mission: Run this month’s signup campaign. Tasks: check funnel, draft posts, monitor leads, prepare follow-up. Evidence: screenshots, drafts, lead records, and approval trail. If this campaign repeats, Melkizac can turn the mission pattern into a Workflow and schedule it as a Routine.",
     operatorNotes: [
       "Use Routine in UI; automation may remain as an internal API/schema term.",
       "Do not mix Approval Gates with human tasks: approvals are approve/reject decisions; human tasks are manual actions.",

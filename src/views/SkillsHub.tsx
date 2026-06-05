@@ -3,6 +3,7 @@ import type { SkillFileResponse, SkillHubRecord, SkillsHubResponse } from "../ty
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { formatSingaporeTime } from "../utils/time";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
+import { Icon } from "../components/Icon";
 import hermesSkillIcon from "../assets/hermes-skill-icon.png";
 import openclawSkillIcon from "../assets/openclaw-skill-icon.png";
 
@@ -75,7 +76,9 @@ export function SkillsHub() {
           </p>
         </div>
         <div className="task-hero-actions">
-          <button className="btn dark" onClick={() => void load()}>Refresh</button>
+          <button className="task-icon-action dark" aria-label="Refresh skills hub" title="Refresh skills hub" onClick={() => void load()}>
+            <Icon name="refresh" size={18} />
+          </button>
         </div>
       </header>
 

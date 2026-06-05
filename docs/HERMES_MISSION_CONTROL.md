@@ -1,6 +1,6 @@
 # Hermes Mission Control Operator Documentation
 
-Last verified: 2026-06-04 18:55 SGT
+Last verified: 2026-06-05 SGT
 Live service: `https://hermes.melverick.com`
 Local service: `http://127.0.0.1:19080`
 Source repo: `/opt/hermes-mission-control/source`
@@ -46,10 +46,20 @@ When the user submits from Chat, Mission Control appends an internal context blo
 
 ## Glossary: Mission Control terminology
 
-Mission Control uses these canonical terms when turning plain user intent into governed AI work. The short relationship is:
+Mission Control uses these canonical terms when turning plain user intent into governed AI work. The simplest operator map is:
 
 ```text
-Intent → Goal → Project / Mission → Tasks → Outputs / Evidence
+Project = the folder / operating space
+Goal = the desired result
+Mission = the campaign/run to achieve the result
+Task = the individual action
+Evidence = proof it happened
+```
+
+For the broader system, the relationship is:
+
+```text
+Intent → Project → Goal → Mission → Tasks → Outputs / Evidence
 
 If repeatable:
 Goal → Workflow → Routine → Runs
@@ -58,9 +68,9 @@ Goal → Workflow → Routine → Runs
 ### Relationship map
 
 - User expresses **Intent**.
-- Melkizac converts Intent into a **Goal** with success criteria, assumptions, missing context, approval boundaries, and evidence expectations.
-- If the Goal is substantial or persistent, it belongs to a **Project**.
-- To pursue the Goal, Melkizac starts a **Mission**.
+- Melkizac identifies the **Project**: the folder / operating space where the work belongs.
+- Melkizac converts Intent into a **Goal**: the desired result with success criteria, assumptions, missing context, approval boundaries, and evidence expectations.
+- To pursue the Goal, Melkizac starts a **Mission**: the campaign/run designed to achieve the result.
 - The Mission is broken into **Tasks**.
 - Tasks are assigned to **Agents**, humans, or system **Routines**.
 - Tasks use **Skills** and **Tools**.
@@ -76,10 +86,10 @@ Goal → Workflow → Routine → Runs
 ### Core definitions
 
 - **Intent**: Raw user request in plain language.
-- **Goal**: Structured business outcome Hermes is trying to achieve.
-- **Project**: Persistent container for related goals, missions, tasks, evidence, and routines.
-- **Mission**: Specific execution effort or run designed to achieve a goal.
-- **Task**: Concrete unit of work assigned to an agent, human, or system routine.
+- **Project**: Folder / operating space where related goals, missions, tasks, evidence, routines, agents, files, and context belong.
+- **Goal**: Desired result / structured business outcome Hermes is trying to achieve.
+- **Mission**: Campaign or execution run designed to achieve a goal.
+- **Task**: Individual action / concrete unit of work assigned to an agent, human, or system routine.
 - **Workflow**: Reusable process template for a type of work.
 - **Routine**: Scheduled or recurring Hermes work.
 - **Automation**: Technical implementation behind a routine, such as cron, webhook, or background worker.
@@ -92,14 +102,14 @@ Goal → Workflow → Routine → Runs
 - **Approval Gate**: Human approve/reject checkpoint before sensitive external, irreversible, costly, policy-sensitive, or authority-bound action.
 - **Blocker**: Missing access, context, permission, capability, or human decision preventing progress.
 - **Output / Artifact**: Deliverable Hermes produced, such as a draft, report, file, checklist, deck, or code change.
-- **Evidence**: Proof that work was done, such as screenshot, final URL, source link, API response, test result, build output, approval record, or run trace.
+- **Evidence**: Proof it happened, such as screenshot, final URL, source link, API response, test result, build output, approval record, lead record, draft, or run trace.
 - **Audit Log**: Detailed operational record of what happened, when, why, by whom, using which tools, with errors/retries/costs where available.
 - **Run**: One execution instance of a mission, task, workflow, or routine.
 
 ### Key distinctions
 
-- **Goal vs Project**: Goal is the outcome; Project is the persistent container.
-- **Mission vs Task**: Mission is the coordinated execution effort; Task is an individual work item.
+- **Project vs Goal**: Project is the folder / operating space; Goal is the desired result.
+- **Mission vs Task**: Mission is the campaign/run to achieve the result; Task is an individual action.
 - **Workflow vs Routine**: Workflow = reusable process template; Routine = scheduled or recurring execution.
 - **Routine vs Automation**: Routine is the user-facing term; automation is the technical implementation.
 - **Skill vs Tool**: Skill = reusable know-how; tool = execution capability.
@@ -113,19 +123,19 @@ Intent:
 “I want more people to sign up for next month’s AI course.”
 
 Goal:
-Increase qualified signups for the June AI Productivity course.
+Increase qualified AI course signups.
 
 Project:
 Nexius Academy Course Growth.
 
 Mission:
-June course signup campaign setup.
+Run this month’s signup campaign.
 
 Tasks:
-- Check the website lead form
-- Draft LinkedIn post angles
-- Prepare approval card
-- Monitor new lead captures
+- Check funnel
+- Draft posts
+- Monitor leads
+- Prepare follow-up
 
 Skills:
 Website funnel check, LinkedIn content architect, lead monitoring.
@@ -143,7 +153,7 @@ Outputs:
 Funnel audit report, LinkedIn draft, follow-up checklist.
 
 Evidence:
-Screenshot, final URL, browser action log, source links, approval decision.
+Screenshots, drafts, lead records, approval trail.
 
 If repeatable:
 Workflow = Course signup growth loop.

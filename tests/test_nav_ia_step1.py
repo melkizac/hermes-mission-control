@@ -14,12 +14,11 @@ def test_step1_user_mode_nav_groups_and_labels_are_canonical():
         'const simplifiedWorkspaceGroups',
         'label: "Workspace"',
         'label: "Chat"',
-        'label: "Work"',
+        'label: "Projects"',
         'label: "Task Board"',
         'label: "Agents"',
         'label: "AI Workforce"',
         'label: "Approvals"',
-        'label: "Evidence"',
         'label: "Settings"',
         'label: "Logout"',
     ]
@@ -45,7 +44,8 @@ def test_step1_user_mode_nav_groups_and_labels_are_canonical():
         assert f'label: "{legacy_label}"' not in workspace_block
 
     assert 'label: "Operate"' not in nav
-    assert 'label: "Projects"' not in workspace_block
+    assert 'label: "Work"' not in workspace_block
+    assert 'label: "Evidence"' not in workspace_block
     assert 'settings-dock' not in nav
 
 
@@ -70,6 +70,8 @@ def test_step2_admin_mode_nav_groups_and_labels_are_canonical():
         'label: "Runtime"',
         'label: "Runtime Connectors"',
         'label: "Desktop Gateway"',
+        'label: "Workflow Library"',
+        'label: "Research Runs"',
         'label: "Model Router"',
         'label: "Tools"',
         'label: "Skills"',

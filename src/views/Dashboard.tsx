@@ -182,14 +182,14 @@ export function Dashboard() {
     { id: "needs-attention", label: "Needs Attention", detail: "Approvals and blockers", view: "approvals", icon: "bell", count: totalAttention, tone: totalAttention ? "attention" : "neutral" },
     { id: "running-now", label: "Running Now", detail: "Track active agents", view: "agents", icon: "automations", count: runningBoardTasks.length + activeAgents.length, tone: "live" },
     { id: "browser-activity", label: "Browser Activity", detail: "Stop or takeover", view: "browser-ops", icon: "setup", tone: "attention" },
-    { id: "delegate-work", label: "Delegate Work", detail: "Create task", view: "delegate-work", icon: "plus" },
+    { id: "projects", label: "Projects", detail: "Operating spaces", view: "projects", icon: "projects" },
     { id: "task-board", label: "Task Board", detail: "Open results", view: "board", icon: "board", count: blockedTasks || undefined },
   ];
 
   function openMobileOperatorView(view: ViewKey) {
     if (view === "approvals") setView("approvals");
     else if (view === "browser-ops") setView("browser-ops");
-    else if (view === "delegate-work") setView("delegate-work");
+    else if (view === "projects") setView("projects");
     else if (view === "board") setView("board");
     else if (view === "agents") setView("agents");
     else setView(view);

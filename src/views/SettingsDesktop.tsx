@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "../services/store";
 import type { ViewKey } from "../types";
+import { Icon } from "../components/Icon";
 
 type Health = { ok: boolean; http_code?: number | null; error?: string | null; status?: Record<string, unknown> };
 type Target = { id: string; label: string; description: string; ready: boolean; url?: string };
@@ -41,6 +42,7 @@ const adminCards: AdminCard[] = [
   { key: "runtimes", eyebrow: "Runtimes", title: "Runtime Connectors", body: "Connect OpenClaw, NanoClaw, NemoClaw, Codex, Claude Code, and custom agent frameworks." },
   { key: "settings", eyebrow: "Gateway", title: "Desktop / Gateway", body: "Configure VPS desktop gateway, Windows local gateway, approved folders, and execution target." },
   { key: "skills", eyebrow: "Skills", title: "Skills Library", body: "Review installed skills and capability packs without crowding the operator sidebar." },
+  { key: "research-runs", eyebrow: "Research", title: "Research Runs", body: "Structured investigations with sources, findings, confidence, recommendations, and evidence." },
   { key: "costs", eyebrow: "Costs", title: "Usage & Costs", body: "Token spend, model usage, and cost trends for governance and budget checks." },
   { key: "agent-org", eyebrow: "Structure", title: "Agent Org", body: "Manage agent organization, goals, and operating model details." },
   { key: "second-brain", eyebrow: "Knowledge", title: "Second Brain", body: "Inspect knowledge-base health, sources, and search status." },
@@ -141,11 +143,11 @@ export function SettingsDesktop() {
           <span className="eyebrow">Admin & Setup</span>
           <h1>Keep technical setup out of the operator cockpit</h1>
           <p>
-            Phase 1 moves lower-frequency configuration screens into one admin hub while keeping every capability reachable. The left rail now focuses on operating the AI workforce: decisions, agents, tasks, projects, routines, and audit.
+            Projects and Task Board now carry the core operating model: projects are operating spaces, goals define desired results, missions/runs move those goals, tasks are individual actions, and evidence proves completion. Workflows and research stay available here as distinct reusable/investigation features instead of a generic Work page.
           </p>
         </div>
-        <button className="btn" onClick={() => void refresh()} disabled={loading}>
-          {loading ? "Checking…" : "Refresh gateway"}
+        <button className="task-icon-action dark" aria-label={loading ? "Checking gateway" : "Refresh gateway"} title={loading ? "Checking gateway" : "Refresh gateway"} onClick={() => void refresh()} disabled={loading}>
+          {loading ? "…" : <Icon name="refresh" size={18} />}
         </button>
       </header>
 

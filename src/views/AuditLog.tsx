@@ -3,6 +3,7 @@ import type { AuditMessage, AuditSession, AuditSessionDetailResponse, AuditSessi
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { formatSingaporeTime } from "../utils/time";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
+import { Icon } from "../components/Icon";
 
 const client = new HttpHermesClient();
 
@@ -122,7 +123,9 @@ export function AuditLog() {
             Full-width session history with slide-over run trace details. Click any session to inspect metadata and timeline without shrinking the list.
           </p>
         </div>
-        <button className="btn dark" onClick={() => window.location.reload()}>Refresh</button>
+        <button className="task-icon-action dark" aria-label="Refresh audit log" title="Refresh audit log" onClick={() => window.location.reload()}>
+          <Icon name="refresh" size={18} />
+        </button>
       </header>
 
       <section className="audit-metrics">

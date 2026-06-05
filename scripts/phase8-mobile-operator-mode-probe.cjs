@@ -41,7 +41,7 @@ async function main() {
       hasNeedsAttention: labels.some((label) => label.includes('Needs Attention')),
       hasRunningNow: labels.some((label) => label.includes('Running Now')),
       hasBrowserActivity: labels.some((label) => label.includes('Browser Activity')),
-      hasDelegateWork: labels.some((label) => label.includes('Delegate Work')),
+      hasProjects: labels.some((label) => label.includes('Projects')),
       horizontalOverflow,
       dockOverlapsMainAction,
     };
@@ -52,18 +52,17 @@ async function main() {
   await page.waitForTimeout(400);
   const afterBrowserClick = await page.evaluate(() => document.body.textContent?.includes('Browser operation visibility') || document.body.textContent?.includes('Browser Activity'));
 
-  const delegateAction = page.locator('[data-testid="mobile-operator-action"]', { hasText: 'Delegate Work' }).first();
   await page.goto(`${baseUrl}/app?view=mission`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(250);
-  const delegateAgain = page.locator('[data-testid="mobile-operator-action"]', { hasText: 'Delegate Work' }).first();
-  if (await delegateAgain.count()) await delegateAgain.click();
+  const projectsAgain = page.locator('[data-testid="mobile-operator-action"]', { hasText: 'Projects' }).first();
+  if (await projectsAgain.count()) await projectsAgain.click();
   await page.waitForTimeout(400);
-  const afterDelegateClick = await page.evaluate(() => document.body.textContent?.includes('Delegate Work'));
+  const afterProjectsClick = await page.evaluate(() => document.body.textContent?.includes('Projects'));
 
   await browser.close();
-  const output = { ...result, afterBrowserClick, afterDelegateClick, consoleErrors: errors };
+  const output = { ...result, afterBrowserClick, afterProjectsClick, consoleErrors: errors };
   console.log(JSON.stringify(output, null, 2));
-  if (!output.dockVisible || output.actionCount < 5 || output.horizontalOverflow || output.dockOverlapsMainAction || !afterBrowserClick || !afterDelegateClick || errors.length) {
+  if (!output.dockVisible || output.actionCount < 5 || output.horizontalOverflow || output.dockOverlapsMainAction || !afterBrowserClick || !afterProjectsClick || errors.length) {
     process.exit(1);
   }
 }

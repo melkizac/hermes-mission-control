@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { SecondBrainItem, SecondBrainResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { formatSingaporeTime } from "../utils/time";
+import { Icon } from "../components/Icon";
 
 const client = new HttpHermesClient();
 type Tab = "overview" | "wiki" | "raw" | "schema" | "index" | "health";
@@ -105,7 +106,9 @@ export function SecondBrain() {
         <div className="brain-path-card">
           <span>Vault root</span>
           <code>{data?.root || "—"}</code>
-          <button className="btn dark" onClick={() => void load()}>Refresh</button>
+          <button className="task-icon-action dark" aria-label="Refresh second brain" title="Refresh second brain" onClick={() => void load()}>
+            <Icon name="refresh" size={18} />
+          </button>
         </div>
       </header>
 

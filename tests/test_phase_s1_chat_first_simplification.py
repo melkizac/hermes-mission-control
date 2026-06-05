@@ -14,7 +14,7 @@ def test_workspace_nav_is_chat_first_five_section_ia_and_preserves_advanced_acce
     deep_links = read('services/deepLinks.ts')
 
     assert 'const simplifiedWorkspaceGroups' in nav
-    for label in ['label: "Chat"', 'label: "Work"', 'label: "Task Board"', 'label: "Agents"', 'label: "AI Workforce"', 'label: "Approvals"', 'label: "Evidence"', 'label: "Settings"']:
+    for label in ['label: "Chat"', 'label: "Dashboard"', 'label: "Projects"', 'label: "Task Board"', 'label: "Agents"', 'label: "AI Workforce"', 'label: "Approvals"', 'label: "Settings"']:
         assert label in nav
 
     # Internal/technical primitives should not be top-level workspace nav labels anymore.
@@ -23,6 +23,8 @@ def test_workspace_nav_is_chat_first_five_section_ia_and_preserves_advanced_acce
     for legacy_label in [
         'Delegate Work',
         'Workflow Library',
+        'Work',
+        'Evidence',
         'My Projects',
         'My Task Board',
         'My Agents',
@@ -35,7 +37,7 @@ def test_workspace_nav_is_chat_first_five_section_ia_and_preserves_advanced_acce
     ]:
         assert f'label: "{legacy_label}"' not in workspace_block
 
-    # Old capabilities remain routable/deep-linkable instead of being deleted.
+    # Advanced capabilities remain routable/deep-linkable when they have a distinct job.
     for view in ['"delegate-work"', '"workflow-library"', '"projects"', '"board"', '"agents"', '"automations"', '"browser-ops"', '"research-runs"', '"audit"']:
         assert view in perms
         assert view in deep_links
@@ -80,26 +82,33 @@ def test_home_is_chat_first_with_suggested_business_prompts_and_action_cards():
     assert 'view === "dashboard"' in app
 
 
-def test_work_and_evidence_hubs_relayer_existing_functionality_without_deleting_routes():
+def test_project_task_model_uses_task_detail_evidence_instead_of_evidence_page():
     types = read('types.ts')
     app = read('App.tsx')
-    work = read('views/WorkHub.tsx')
-    evidence = read('views/EvidenceHub.tsx')
+    nav = read('components/NavRail.tsx')
+    task_board = read('views/TaskBoard.tsx')
+    settings = read('views/SettingsDesktop.tsx')
     css = read('styles/app.css')
 
-    for view in ['"work"', '"evidence"']:
+    assert 'import { WorkHub }' not in app
+    assert 'view === "work"' not in app
+    assert 'import { EvidenceHub }' not in app
+    assert 'view === "evidence"' not in app
+    assert 'label: "Work"' not in nav.split('const simplifiedWorkspaceGroups', 1)[1].split('const adminConsoleGroups', 1)[0]
+    assert 'label: "Evidence"' not in nav.split('const simplifiedWorkspaceGroups', 1)[1].split('const adminConsoleGroups', 1)[0]
+
+    for view in ['"projects"', '"board"', '"workflow-library"', '"research-runs"']:
         assert view in types
         assert view in app
+    assert '"evidence"' not in types
 
-    for label in ['Open Work', 'Running Work', 'Completed Work', 'Playbooks', 'Projects / Context', 'Research / Deep Work']:
-        assert label in work
-    for target in ['delegate-work', 'workflow-library', 'projects', 'board', 'research-runs']:
-        assert f'target: "{target}"' in work
+    for label in ['Workflow Library', 'Research Runs']:
+        assert label in settings
+    for phrase in ['Reusable playbooks', 'Structured investigations', 'instead of a generic Work page']:
+        assert phrase in settings
 
-    for label in ['Recent proof', 'Browser evidence', 'Task results', 'Run traces', 'Screenshots and files']:
-        assert label in evidence
-    for target in ['audit', 'browser-ops', 'board', 'automations']:
-        assert f'target: "{target}"' in evidence
+    for label in ['"overview", "evidence", "activity", "execution"', 'Evidence & Proof', 'Task evidence and proof', 'Proof attached to this task']:
+        assert label in task_board
 
     assert '.simplified-hub' in css
     assert '.ask-mission-control' in css

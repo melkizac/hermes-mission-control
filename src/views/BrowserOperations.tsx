@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { BrowserSession, BrowserSessionsResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
+import { Icon } from "../components/Icon";
 
 const client = new HttpHermesClient();
 
@@ -98,7 +99,9 @@ export function BrowserOperations() {
           <h1>Browser operation visibility</h1>
           <p>Runtime event bridge: observe live browser runtime events, current domain, screenshot evidence, action log, risk labels, and approval gates before agents submit, post, send, purchase, or cross account-sensitive boundaries. Windows-local execution is blocked until gateway details are configured.</p>
         </div>
-        <button className="btn ghost" onClick={() => void load()}>Refresh browser sessions</button>
+        <button className="task-icon-action dark" aria-label="Refresh browser sessions" title="Refresh browser sessions" onClick={() => void load()}>
+          <Icon name="refresh" size={18} />
+        </button>
       </header>
 
       <section className="skills-metrics browser-ops-metrics" aria-label="Browser operation metrics">

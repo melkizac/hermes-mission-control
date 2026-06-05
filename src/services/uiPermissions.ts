@@ -15,8 +15,6 @@ export interface UiPermissions {
 
 export const adminOnlyViews = new Set<ViewKey>([
   "runtimes",
-  "tools",
-  "skills",
   "models",
   "costs",
   "users-workspaces",
@@ -29,13 +27,13 @@ export const adminOnlyViews = new Set<ViewKey>([
 export const workspaceViews = new Set<ViewKey>([
   "mission",
   "dashboard",
-  "work",
-  "evidence",
   "delegate-work",
   "workflow-library",
   "profile",
   "agents",
   "agent-org",
+  "skills",
+  "tools",
   "projects",
   "second-brain",
   "board",

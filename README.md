@@ -42,6 +42,28 @@ docs/HERMES_MISSION_CONTROL.md
 
 It explains each Mission Control function, how to use it, representative API routes, and examples for common operator workflows.
 
+## Canonical work terminology
+
+Use this simple relationship when explaining or designing Mission Control work:
+
+```text
+Project = the folder / operating space
+Goal = the desired result
+Mission = the campaign/run to achieve the result
+Task = the individual action
+Evidence = proof it happened
+```
+
+Example:
+
+```text
+Project: Nexius Academy Course Growth
+Goal: Increase qualified AI course signups
+Mission: Run this month’s signup campaign
+Tasks: Check funnel, draft posts, monitor leads, prepare follow-up
+Evidence: Screenshots, drafts, lead records, approval trail
+```
+
 ## Quick local development
 
 ```bash

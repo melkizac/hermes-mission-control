@@ -19,7 +19,7 @@ const lanes: { key: BoardStatus; label: string; helper: string }[] = [
   { key: "error", label: "Error", helper: "Crashed or failed" },
 ];
 
-type DetailTab = "overview" | "activity" | "execution";
+type DetailTab = "overview" | "evidence" | "activity" | "execution";
 type ViewMode = "cards" | "list";
 type HumanActionKind = "feedback" | "approval" | "manual" | "agent";
 
@@ -389,7 +389,7 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
       ariaLabel="Task details"
       dataDeepLinkTarget="task"
       // rendered attribute: data-deeplink-target="task"
-      tabs={["overview", "activity", "execution"] as const}
+      tabs={["overview", "evidence", "activity", "execution"] as const}
       activeTab={tab}
       onTabChange={setTab}
       className="task-detail task-detail-drawer"
@@ -410,12 +410,13 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
               <button className="ghost tiny danger" onClick={() => void onDelete(task)}>Delete</button>
             </div>
             <label className="task-inline-edit"><span>Assign owner/profile</span><input defaultValue={task.assignee === "unassigned" ? "" : task.assignee} onBlur={(e) => e.target.value !== task.assignee && void onSaveAssignee(task, e.target.value)} /></label>
-            <TaskMissionResultView task={task} />
-            <StructuredResult task={task} />
             <HumanActionPanel task={task} intent={intent} note={humanNote} setNote={setHumanNote} onHumanAction={onHumanAction} agents={agents} agentTarget={agentTarget} setAgentTarget={setAgentTarget} onAssignToAgent={onAssignToAgent} />
             <section className="task-section"><h3>Description</h3><pre>{task.body || "No description yet."}</pre></section>
-            {task.result && <section className="task-section"><h3>Raw result</h3><pre>{task.result}</pre></section>}
           </>
+        )}
+
+        {tab === "evidence" && (
+          <TaskEvidenceProofView task={task} />
         )}
 
         {tab === "activity" && (
@@ -454,22 +455,28 @@ function TaskCard({ task, selected, onSelect, onMove, onDelete }: { task: BoardT
 }
 
 
-function TaskMissionResultView({ task }: { task: BoardTask }) {
+function TaskEvidenceProofView({ task }: { task: BoardTask }) {
   const result = task.mission_result;
   const artifacts = result?.artifacts ?? task.result_details?.artifacts ?? [];
   const evidence = result?.evidence ?? task.result_details?.evidence ?? [];
   const approvalGates = result?.approvalGates ?? task.result_details?.approval_gates ?? [];
   const nextActions = result?.nextActions ?? task.result_details?.next_actions ?? [];
-  if (!result && artifacts.length === 0 && evidence.length === 0 && approvalGates.length === 0 && nextActions.length === 0) return null;
   return (
-    <section className="task-section task-mission-result-view">
-      <div className="task-result-heading"><span className="stub-tag">Proof of work</span><h3>Artifact / evidence result view</h3></div>
+    <>
+    <section className="task-section task-mission-result-view" aria-label="Task evidence and proof">
+      <div className="task-result-heading"><span className="stub-tag">Evidence & Proof</span><h3>Proof attached to this task</h3></div>
+      {!result && artifacts.length === 0 && evidence.length === 0 && approvalGates.length === 0 && nextActions.length === 0 && !task.result && !task.result_details && (
+        <div className="empty">No proof attached yet. Completion evidence should be captured here as screenshots, links, API responses, artifacts, verification output, or approval records.</div>
+      )}
       {result && <ResultSummaryPanel result={result} />}
       {artifacts.length > 0 && <div className="task-result-block"><h4>Artifacts</h4><div className="mc-artifact-grid">{artifacts.map((artifact) => <ArtifactCard key={artifact.id} artifact={artifact} />)}</div></div>}
       {evidence.length > 0 && <div className="task-result-block"><h4>Evidence</h4><EvidenceTimeline evidence={evidence} /></div>}
       {approvalGates.length > 0 && <div className="task-result-block"><h4>Approval gates</h4>{approvalGates.map((gate) => <div className="task-approval-gate" key={gate.id}><b>{gate.title}</b><span>{gate.status} · {gate.risk}</span><p>{gate.reason}</p></div>)}</div>}
       {nextActions.length > 0 && <div className="task-result-block"><h4>Next actions</h4><ul>{nextActions.map((action) => <li key={action}>{action}</li>)}</ul></div>}
     </section>
+    <StructuredResult task={task} />
+    {task.result && <section className="task-section"><h3>Raw result</h3><pre>{task.result}</pre></section>}
+    </>
   );
 }
 

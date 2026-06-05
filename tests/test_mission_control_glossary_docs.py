@@ -34,7 +34,11 @@ def test_live_docs_has_mission_control_glossary_page():
     ]:
         assert term in text
     for relationship in [
-        'Intent → Goal → Project / Mission → Tasks → Outputs / Evidence',
+        'Project = the folder / operating space',
+        'Goal = the desired result',
+        'Mission = the campaign/run to achieve the result',
+        'Task = the individual action',
+        'Evidence = proof it happened',
         'Workflow = reusable process template',
         'Routine = scheduled or recurring execution',
         'Routine is the user-facing term; automation is the technical implementation',
@@ -50,9 +54,9 @@ def test_markdown_documentation_has_glossary_contract():
     assert '### Relationship map' in text
     for phrase in [
         '**Intent**: Raw user request in plain language.',
-        '**Goal**: Structured business outcome Hermes is trying to achieve.',
-        '**Project**: Persistent container for related goals, missions, tasks, evidence, and routines.',
-        '**Mission**: Specific execution effort or run designed to achieve a goal.',
+        '**Goal**: Desired result / structured business outcome Hermes is trying to achieve.',
+        '**Project**: Folder / operating space where related goals, missions, tasks, evidence, routines, agents, files, and context belong.',
+        '**Mission**: Campaign or execution run designed to achieve a goal.',
         '**Routine**: Scheduled or recurring Hermes work.',
         '**Automation**: Technical implementation behind a routine, such as cron, webhook, or background worker.',
     ]:
