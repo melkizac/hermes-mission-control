@@ -127,14 +127,6 @@ export function ToolsHub() {
           </p>
         </div>
         <div className="task-hero-actions">
-          <button
-            className="task-icon-action primary"
-            aria-label="Add tool"
-            title="Add tool"
-            onClick={() => setInstallOpen(true)}
-          >
-            <Icon name="plus" size={18} />
-          </button>
           <button className="task-icon-action dark" aria-label="Refresh tools hub" title="Refresh tools hub" onClick={() => window.location.reload()}>
             <Icon name="refresh" size={18} />
           </button>
