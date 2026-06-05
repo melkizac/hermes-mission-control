@@ -28,6 +28,15 @@ export function ToolsHub() {
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<ToolTab>("overview");
+  const [installOpen, setInstallOpen] = useState(false);
+  const [installKind, setInstallKind] = useState<"mcp" | "cli">("mcp");
+  const [toolName, setToolName] = useState("");
+  const [toolCommand, setToolCommand] = useState("npx");
+  const [toolArgs, setToolArgs] = useState("-y ");
+  const [toolUrl, setToolUrl] = useState("");
+  const [toolDescription, setToolDescription] = useState("");
+  const [installStatus, setInstallStatus] = useState<string | null>(null);
+  const [installing, setInstalling] = useState(false);
 
   const records = useMemo(() => {
     const byId = new Map<string, ToolRecord>();
@@ -88,6 +97,25 @@ export function ToolsHub() {
     setTab("overview");
   };
 
+  const installTool = async () => {
+    setInstalling(true);
+    setInstallStatus(null);
+    try {
+      const body = installKind === "mcp"
+        ? { kind: "mcp", name: toolName, command: toolUrl.trim() ? undefined : toolCommand, args: toolUrl.trim() ? undefined : toolArgs, url: toolUrl.trim() || undefined, description: toolDescription }
+        : { kind: "cli", name: toolName, command: toolCommand, description: toolDescription, installCommand: toolArgs };
+      const res = await fetch("/api/tools/install", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.error || res.statusText);
+      setInstallStatus(payload.restart_required ? "Installed. Restart Hermes to discover MCP tools." : "Installed in Mission Control registry.");
+      window.setTimeout(() => window.location.reload(), 900);
+    } catch (err) {
+      setInstallStatus(err instanceof Error ? err.message : "Unable to install tool");
+    } finally {
+      setInstalling(false);
+    }
+  };
+
   return (
     <div className="skills-page tools-page skills-drawer-first scroll">
       <header className="skills-hero">
@@ -99,6 +127,7 @@ export function ToolsHub() {
           </p>
         </div>
         <div className="task-hero-actions">
+          <button className="btn dark" onClick={() => setInstallOpen(true)}>Install tool</button>
           <button className="task-icon-action dark" aria-label="Refresh tools hub" title="Refresh tools hub" onClick={() => window.location.reload()}>
             <Icon name="refresh" size={18} />
           </button>
@@ -155,6 +184,25 @@ export function ToolsHub() {
           {filtered.map((tool) => <ToolListRow key={tool.id} tool={tool} active={tool.id === selectedTool?.id} onSelect={() => openTool(tool)} />)}
           {!loading && filtered.length === 0 && <div className="empty big">No tools matched this filter.</div>}
         </section>
+      )}
+
+      {installOpen && (
+        <div className="drawer-scrim" onClick={() => setInstallOpen(false)}>
+          <div className="modal install-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="drawer-head"><b>Install MCP / CLI tool</b><button className="iconbtn" onClick={() => setInstallOpen(false)}>×</button></div>
+            <div className="modal-body install-form">
+              <label className="field"><span>Type</span><select value={installKind} onChange={(event) => setInstallKind(event.target.value as "mcp" | "cli")}><option value="mcp">MCP server</option><option value="cli">CLI tool</option></select></label>
+              <label className="field"><span>Name</span><input value={toolName} onChange={(event) => setToolName(event.target.value)} placeholder="time, github, filesystem" /></label>
+              {installKind === "mcp" && <label className="field"><span>HTTP URL (optional)</span><input value={toolUrl} onChange={(event) => setToolUrl(event.target.value)} placeholder="https://example.com/mcp — leave blank for stdio" /></label>}
+              <label className="field"><span>{installKind === "mcp" ? "Command" : "Executable command"}</span><input value={toolCommand} onChange={(event) => setToolCommand(event.target.value)} placeholder={installKind === "mcp" ? "npx or uvx" : "gh, linear, custom-cli"} disabled={installKind === "mcp" && Boolean(toolUrl.trim())} /></label>
+              <label className="field"><span>{installKind === "mcp" ? "Args" : "Install / setup note"}</span><textarea value={toolArgs} onChange={(event) => setToolArgs(event.target.value)} rows={4} placeholder={installKind === "mcp" ? "-y @modelcontextprotocol/server-time" : "npm install -g … / pipx install …"} /></label>
+              <label className="field"><span>Description</span><input value={toolDescription} onChange={(event) => setToolDescription(event.target.value)} placeholder="What this tool enables" /></label>
+              <p className="hint">MCP installs update ~/.hermes/config.yaml under mcp_servers and require a Hermes restart before discovered tools appear. CLI installs are registered for operators without running arbitrary shell commands.</p>
+              {installStatus && <div className="skills-error install-status">{installStatus}</div>}
+            </div>
+            <div className="drawer-foot"><button className="btn" onClick={() => setInstallOpen(false)}>Close</button><button className="btn dark" disabled={installing || !toolName.trim() || (!toolUrl.trim() && !toolCommand.trim())} onClick={() => void installTool()}>{installing ? "Installing…" : "Install"}</button></div>
+          </div>
+        </div>
       )}
 
       {selectedTool && <ToolDrawer tool={selectedTool} tab={tab} setTab={setTab} onClose={() => setSelected(null)} />}

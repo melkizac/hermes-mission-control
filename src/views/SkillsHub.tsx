@@ -26,6 +26,13 @@ export function SkillsHub() {
   const [tab, setTab] = useState<SkillTab>("overview");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [installOpen, setInstallOpen] = useState(false);
+  const [installName, setInstallName] = useState("");
+  const [installCategory, setInstallCategory] = useState("user-installed");
+  const [installDescription, setInstallDescription] = useState("");
+  const [installContent, setInstallContent] = useState("");
+  const [installStatus, setInstallStatus] = useState<string | null>(null);
+  const [installing, setInstalling] = useState(false);
 
   const load = async () => {
     try {
@@ -65,6 +72,35 @@ export function SkillsHub() {
     setTab("overview");
   };
 
+  const installSkill = async () => {
+    setInstalling(true);
+    setInstallStatus(null);
+    try {
+      const res = await fetch("/api/skills/install", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: installName,
+          category: installCategory,
+          description: installDescription,
+          content: installContent,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload.error || res.statusText);
+      setInstallStatus(`Installed ${payload.name || installName || "skill"}.`);
+      setInstallName("");
+      setInstallDescription("");
+      setInstallContent("");
+      await load();
+    } catch (err) {
+      setInstallStatus(err instanceof Error ? err.message : "Unable to install skill");
+    } finally {
+      setInstalling(false);
+    }
+  };
+
   return (
     <div className="skills-page skills-drawer-first scroll">
       <header className="skills-hero">
@@ -76,6 +112,7 @@ export function SkillsHub() {
           </p>
         </div>
         <div className="task-hero-actions">
+          <button className="btn dark" onClick={() => setInstallOpen(true)}>Install skill</button>
           <button className="task-icon-action dark" aria-label="Refresh skills hub" title="Refresh skills hub" onClick={() => void load()}>
             <Icon name="refresh" size={18} />
           </button>
@@ -141,6 +178,23 @@ export function SkillsHub() {
           {skills.map((skill) => <SkillListRow key={skill.id} skill={skill} active={skill.id === selectedSkill?.id} onSelect={() => openSkill(skill)} />)}
           {!loading && skills.length === 0 && <div className="empty big">No skills matched this filter.</div>}
         </section>
+      )}
+
+      {installOpen && (
+        <div className="drawer-scrim" onClick={() => setInstallOpen(false)}>
+          <div className="modal install-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="drawer-head"><b>Install new skill</b><button className="iconbtn" onClick={() => setInstallOpen(false)}>×</button></div>
+            <div className="modal-body install-form">
+              <label className="field"><span>Name</span><input value={installName} onChange={(event) => setInstallName(event.target.value)} placeholder="website-funnel-check" /></label>
+              <label className="field"><span>Category</span><input value={installCategory} onChange={(event) => setInstallCategory(event.target.value)} placeholder="user-installed" /></label>
+              <label className="field"><span>Description</span><input value={installDescription} onChange={(event) => setInstallDescription(event.target.value)} placeholder="What this skill helps users do" /></label>
+              <label className="field"><span>SKILL.md content (optional)</span><textarea value={installContent} onChange={(event) => setInstallContent(event.target.value)} placeholder="Paste full SKILL.md here, or leave blank to create a starter skill." rows={10} /></label>
+              <p className="hint">Writes to the active Hermes profile under ~/.hermes/skills. Existing skills are protected from accidental overwrite.</p>
+              {installStatus && <div className="skills-error install-status">{installStatus}</div>}
+            </div>
+            <div className="drawer-foot"><button className="btn" onClick={() => setInstallOpen(false)}>Close</button><button className="btn dark" disabled={installing || (!installName.trim() && !installContent.trim())} onClick={() => void installSkill()}>{installing ? "Installing…" : "Install"}</button></div>
+          </div>
+        </div>
       )}
 
       {selectedSkill && (

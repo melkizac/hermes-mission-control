@@ -497,9 +497,13 @@ input, select, textarea { font-family: inherit; }
 .drawer-foot { display: flex; align-items: center; justify-content: space-between; padding: 13px 18px; border-top: 1px solid var(--line); }
 .modal-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 600; color: var(--ink2); }
-.field input, .field select { border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; font-size: 13px; color: var(--ink); }
-.field input:focus, .field select:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.field input, .field select, .field textarea { border: 1px solid var(--line); border-radius: 9px; padding: 9px 11px; font-size: 13px; color: var(--ink); }
+.field textarea { min-height: 96px; resize: vertical; line-height: 1.45; }
+.field input:focus, .field select:focus, .field textarea:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .hint { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+.install-modal { width: min(680px, 94vw); }
+.install-form { gap: 12px; }
+.install-status { margin-top: 0; }
 
 /* ---------------- PAGES (approvals / placeholders) ---------------- */
 .page { flex: 1; padding: 32px 40px; min-width: 0; }
