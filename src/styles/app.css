@@ -5480,13 +5480,41 @@ button.voice-activation {
     padding: 0;
     border: 0;
     border-radius: 0;
+    display: block;
+    background: #020807;
+    box-shadow: none;
   }
 
   .mobile-chat-only-main .voice-activation.full-window .voice-jarvis-orb {
-    width: min(90vw, 560px);
-    height: auto;
-    aspect-ratio: 4 / 3;
-    max-height: 46vh;
+    position: absolute;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    aspect-ratio: auto;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    filter: none;
+  }
+
+  .mobile-chat-only-main .voice-activation.full-window .voice-orb-reference-image {
+    object-fit: cover;
+    opacity: 1;
+    transform: scale(calc(1.08 + (.018 * var(--voice-energy))));
+  }
+
+  .mobile-chat-only-main .voice-activation.full-window .voice-activation-panel {
+    display: none !important;
+  }
+
+  .mobile-chat-only-main .voice-return-to-text {
+    top: max(14px, env(safe-area-inset-top));
+    left: max(14px, env(safe-area-inset-left));
+    width: 44px;
+    height: 44px;
+    background: rgba(1, 6, 5, .42);
   }
 
   .mobile-chat-only-main .main-chat-message-stack,

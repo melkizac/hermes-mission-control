@@ -434,7 +434,16 @@ export function MissionControl() {
     setVoiceMessage(userStarted ? "Starting Jarvis-style voice reply…" : "Melkizac replied. Speaking now in a Jarvis-style voice…");
     setVoiceReplyNeedsTap(false);
     startVoiceVisualPulse(utterance.rate, utterance.pitch);
-    window.speechSynthesis.speak(utterance);
+    try {
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      setSpeechPlaying(false);
+      stopVoiceVisualPulse();
+      setVoiceStatus("ready");
+      setVoiceReplyNeedsTap(true);
+      setVoiceMessage("Melkizac replied. Tap the animation to play the voice reply.");
+      return;
+    }
     voiceSpeechStartTimerRef.current = window.setTimeout(() => {
       if (!window.speechSynthesis.speaking) {
         setSpeechPlaying(false);
@@ -623,7 +632,6 @@ export function MissionControl() {
                 ? `Melkizac replied: ${voiceReplyText}. Tap to record another voice message.`
                 : "Voice screen ready. Tap to record another voice message.";
       const voiceTitle = voiceStatus === "listening" ? "Tap to send voice message" : voiceStatus === "speaking" ? "Tap to stop voice reply" : voiceReplyNeedsTap ? "Tap to play voice reply" : "Voice screen";
-      const visibleVoiceText = voiceReplyText || (voiceStatus === "listening" ? voiceTranscript : "");
       return (
         <div
           className={`voice-activation full-window ${voiceStatus} ${speechPlaying ? "voice-speaking" : ""} voice-deactivate-hitarea`}
@@ -651,11 +659,6 @@ export function MissionControl() {
             </svg>
           </button>
           {orb}
-          <span className="voice-activation-panel" aria-hidden="true">
-            <strong>{voiceReplyNeedsTap ? "Tap to hear Melkizac" : voiceStatus === "speaking" ? "Melkizac speaking" : voiceStatus === "sending" ? "Waiting for Melkizac" : voiceStatus === "listening" ? "Listening" : voiceReplyText ? "Melkizac replied" : "Voice ready"}</strong>
-            <span>{voiceMessage}</span>
-            {visibleVoiceText && <em>{visibleVoiceText}</em>}
-          </span>
         </div>
       );
     }
