@@ -18,6 +18,39 @@ type ChatAttachment = {
   type: string;
 };
 
+type VoiceStatus = "idle" | "listening" | "unsupported" | "error";
+
+type BrowserSpeechRecognitionEvent = Event & {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+};
+
+type BrowserSpeechRecognitionErrorEvent = Event & {
+  error?: string;
+  message?: string;
+};
+
+type BrowserSpeechRecognition = EventTarget & {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null;
+  onerror: ((event: BrowserSpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+};
+
+type SpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
+
+declare global {
+  interface Window {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  }
+}
+
 const permissionModeOptions: Array<{ value: ChatPermissionMode; label: string; promptLabel: string }> = [
   { value: "full-policy", label: "Full access", promptLabel: "Full access within policy" },
   { value: "ask-critical", label: "Ask permission", promptLabel: "Ask before critical actions" },
@@ -87,6 +120,11 @@ export function MissionControl() {
   const [modelMode, setModelMode] = useState<ChatModelMode>("gpt-55-medium");
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [hasStartedMainChat, setHasStartedMainChat] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>("idle");
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const [voiceMessage, setVoiceMessage] = useState("Click the mic and speak. I will transcribe your voice into the message box.");
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const voiceShouldListenRef = useRef(false);
   const [routingPreview, setRoutingPreview] = useState<{
     instruction: string;
     decision: ChatIntentDecision;
@@ -170,6 +208,148 @@ export function MissionControl() {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [hasStartedMainChat, mainChatMessages.length, sending]);
+
+  useEffect(() => {
+    return () => {
+      voiceShouldListenRef.current = false;
+      recognitionRef.current?.abort();
+      recognitionRef.current = null;
+    };
+  }, []);
+
+  function createSpeechRecognition() {
+    const SpeechRecognition = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return null;
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-SG";
+    return recognition;
+  }
+
+  function stopVoiceInput() {
+    voiceShouldListenRef.current = false;
+    recognitionRef.current?.stop();
+    setVoiceStatus("idle");
+    setVoiceMessage(voiceTranscript ? "Voice captured. Review or send when ready." : "Voice input stopped.");
+  }
+
+  function startVoiceInput() {
+    setError(null);
+    const recognition = createSpeechRecognition();
+    if (!recognition) {
+      setVoiceStatus("unsupported");
+      setVoiceMessage("Voice input needs a browser with Web Speech support. Try Chrome or Edge, then allow microphone access.");
+      return;
+    }
+
+    recognitionRef.current?.abort();
+    recognitionRef.current = recognition;
+    voiceShouldListenRef.current = true;
+    setVoiceTranscript("");
+    setVoiceStatus("listening");
+    setVoiceMessage("Listening… speak your instruction to Melkizac.");
+
+    recognition.onresult = (event) => {
+      let finalText = "";
+      let interimText = "";
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const transcript = event.results[index][0]?.transcript ?? "";
+        if (event.results[index].isFinal) finalText += transcript;
+        else interimText += transcript;
+      }
+      const combined = `${finalText} ${interimText}`.trim();
+      if (combined) setVoiceTranscript(combined);
+      if (finalText.trim()) {
+        const captured = finalText.trim();
+        setDraft((current) => `${current}${current.trim() ? " " : ""}${captured}`.trimStart());
+        setVoiceMessage("Captured. Keep speaking or tap the mic again to stop.");
+      }
+    };
+
+    recognition.onerror = (event) => {
+      voiceShouldListenRef.current = false;
+      setVoiceStatus("error");
+      const reason = event.error === "not-allowed"
+        ? "Microphone permission was blocked. Allow mic access in the browser and try again."
+        : event.error === "no-speech"
+          ? "I did not detect speech. Tap the mic and try again."
+          : "Voice input could not start. Check browser microphone access and try again.";
+      setVoiceMessage(reason);
+    };
+
+    recognition.onend = () => {
+      if (voiceShouldListenRef.current) {
+        try {
+          recognition.start();
+        } catch {
+          setVoiceStatus("idle");
+        }
+      } else {
+        setVoiceStatus((current) => (current === "listening" ? "idle" : current));
+      }
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      voiceShouldListenRef.current = false;
+      setVoiceStatus("error");
+      setVoiceMessage("Voice input is already active or unavailable in this browser session.");
+    }
+  }
+
+  function toggleVoiceInput() {
+    if (voiceStatus === "listening") stopVoiceInput();
+    else startVoiceInput();
+  }
+
+  function renderVoiceActivation() {
+    if (voiceStatus === "idle") return null;
+    const isListening = voiceStatus === "listening";
+    return (
+      <div className={`voice-activation ${isListening ? "listening" : "notice"}`} role="status" aria-live="polite">
+        <div className="voice-jarvis-orb" aria-hidden="true">
+          <span className="voice-ring ring-one" />
+          <span className="voice-ring ring-two" />
+          <span className="voice-ring ring-three" />
+          <span className="voice-core" />
+          <span className="voice-ray ray-one" />
+          <span className="voice-ray ray-two" />
+          <span className="voice-ray ray-three" />
+          <span className="voice-particle particle-one" />
+          <span className="voice-particle particle-two" />
+          <span className="voice-particle particle-three" />
+        </div>
+        <div className="voice-activation-copy">
+          <strong>{isListening ? "Voice active" : "Voice input"}</strong>
+          <span>{voiceMessage}</span>
+          {voiceTranscript && <em>“{voiceTranscript}”</em>}
+        </div>
+      </div>
+    );
+  }
+
+  function renderMicButton() {
+    const active = voiceStatus === "listening";
+    return (
+      <button
+        className={`clean-chat-mic ${active ? "active" : ""}`}
+        type="button"
+        aria-label={active ? "Stop voice input" : "Start voice input"}
+        aria-pressed={active}
+        title={active ? "Stop voice input" : "Start voice input"}
+        onClick={toggleVoiceInput}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M12 14.5a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5.5a3 3 0 0 0 3 3Z" />
+          <path d="M18 10.75v.75a6 6 0 0 1-12 0v-.75" />
+          <path d="M12 17.5V21" />
+          <path d="M8.5 21h7" />
+        </svg>
+      </button>
+    );
+  }
 
   function handleAttachmentFiles(files: FileList | null) {
     if (!files?.length) return;
@@ -256,6 +436,8 @@ export function MissionControl() {
             rows={2}
           />
 
+          {renderVoiceActivation()}
+
           {attachments.length > 0 && (
             <div className="clean-chat-attachments" aria-label="Attached files">
               {attachments.map((file) => (
@@ -296,14 +478,7 @@ export function MissionControl() {
                   {modelModeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
               </label>
-              <button className="clean-chat-mic" type="button" aria-label="Voice input">
-                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <path d="M12 14.5a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5.5a3 3 0 0 0 3 3Z" />
-                  <path d="M18 10.75v.75a6 6 0 0 1-12 0v-.75" />
-                  <path d="M12 17.5V21" />
-                  <path d="M8.5 21h7" />
-                </svg>
-              </button>
+              {renderMicButton()}
               <button className="clean-chat-send" type="submit" disabled={sending || !draft.trim()} aria-label="Send message">↑</button>
             </div>
           </div>
@@ -397,6 +572,8 @@ export function MissionControl() {
             rows={2}
           />
 
+          {renderVoiceActivation()}
+
           {attachments.length > 0 && (
             <div className="clean-chat-attachments" aria-label="Attached files">
               {attachments.map((file) => (
@@ -449,14 +626,7 @@ export function MissionControl() {
                   {modelModeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
               </label>
-              <button className="clean-chat-mic" type="button" aria-label="Voice input">
-                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <path d="M12 14.5a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5.5a3 3 0 0 0 3 3Z" />
-                  <path d="M18 10.75v.75a6 6 0 0 1-12 0v-.75" />
-                  <path d="M12 17.5V21" />
-                  <path d="M8.5 21h7" />
-                </svg>
-              </button>
+              {renderMicButton()}
               <button className="clean-chat-send" type="submit" disabled={sending || !draft.trim()} aria-label="Send message">↑</button>
             </div>
           </div>
