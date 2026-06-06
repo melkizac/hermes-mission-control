@@ -4,7 +4,7 @@ import { Icon } from "./Icon";
 import type { Agent, ConfigFile } from "../types";
 import { FileEditorDrawer } from "./FileEditorDrawer";
 
-type Tab = "overview" | "identity" | "tools" | "skills" | "output" | "tasks";
+type Tab = "overview" | "profile" | "identity" | "tools" | "skills" | "output" | "tasks";
 
 const taskStatusCls: Record<string, string> = {
   running: "b-work",
@@ -88,7 +88,7 @@ export function ContextPanel({
       </div>
 
       <div className="tabs tabs-wrap">
-        {(["overview", "identity", "tools", "skills", "output", "tasks"] as Tab[]).map((t) => (
+        {(["overview", "profile", "identity", "tools", "skills", "output", "tasks"] as Tab[]).map((t) => (
           <button key={t} className={"tab" + (tab === t ? " on" : "")} onClick={() => setTab(t)}>
             {t === "identity" ? "Identity" : t[0].toUpperCase() + t.slice(1)}
           </button>
@@ -177,6 +177,52 @@ export function ContextPanel({
                 Delete agent…
               </button>
             )}
+          </>
+        )}
+
+        {tab === "profile" && (
+          <>
+            <div className="sec-l">Profile runtime</div>
+            <p className="mini-note">Hermes profile = isolated runtime identity/configuration. Secret values are never shown here.</p>
+            <Info k="Profile" v={<span className="mono">{agent.profile_details?.profile_id || agent.id}</span>} />
+            <Info k="Identity" v={agent.profile_details?.identity?.name || agent.name} />
+            <Info k="Provider" v={agent.profile_details?.model_routing?.provider || "runtime default"} />
+            <Info k="Model" v={<span className="mono">{agent.profile_details?.model_routing?.model || agent.model}</span>} />
+            <Info k="Toolsets" v={String(agent.profile_details?.toolsets?.length ?? agent.tools?.length ?? 0)} />
+            <Info k="Skills" v={String(agent.skills.length)} />
+            <Info k="Memory" v={`${agent.profile_details?.memory?.entries ?? 0} entries`} />
+            <Info k="Sessions" v={String(agent.profile_details?.sessions?.count ?? agent.sessionCount)} />
+            <Info k="Plugins" v={`${agent.profile_details?.plugins?.enabled ?? 0}/${agent.profile_details?.plugins?.total ?? 0} enabled`} />
+            <Info k="Routines" v={String(agent.profile_details?.routines?.count ?? agent.tasks.length)} />
+            <Info k="Gateway channels" v={`${(agent.profile_details?.gateway?.channels ?? []).filter((c) => c.enabled).length}/${agent.profile_details?.gateway?.channels?.length ?? 0} enabled`} />
+            <Info k="Credential scope" v={(agent.profile_details?.environment?.env_files?.length ?? 0) ? `${agent.profile_details?.environment?.env_files?.length} env file(s), values hidden` : "No env file reported"} />
+
+            <div className="sec-l">Gateway / channels</div>
+            <div className="skills detail-skills">
+              {(agent.profile_details?.gateway?.channels ?? []).map((channel) => <span className="skill" key={channel.id}>{channel.id}<em>{channel.enabled ? "enabled" : "disabled"}</em></span>)}
+              {!(agent.profile_details?.gateway?.channels ?? []).length && <span className="skill readonly">No configured platform channels found</span>}
+            </div>
+
+            <div className="sec-l">Plugins</div>
+            <div className="skills detail-skills">
+              {(agent.profile_details?.plugins?.items ?? []).map((plugin) => <span className="skill" key={plugin.id}>{plugin.name}<em>{plugin.status || "enabled"}</em></span>)}
+              {!(agent.profile_details?.plugins?.items ?? []).length && <span className="skill readonly">No enabled plugins reported</span>}
+            </div>
+
+            <div className="sec-l">Memory scope</div>
+            {(agent.profile_details?.memory?.files ?? []).map((file) => <Info key={file.name} k={file.name} v={`${file.entries} entries · ${file.updated_at || "—"}`} />)}
+            {!(agent.profile_details?.memory?.files ?? []).length && <div className="empty">No profile memory files found.</div>}
+
+            <div className="sec-l">Credential / environment readiness</div>
+            {(agent.profile_details?.environment?.env_files ?? []).map((file) => <Info key={file.name} k={file.name} v={`${file.status} · ${file.variable_count} variables · ${file.sensitive_count} sensitive names hidden`} />)}
+            {!(agent.profile_details?.environment?.env_files ?? []).length && <div className="empty">No profile env file reported.</div>}
+            <p className="mini-note">{agent.profile_details?.environment?.policy || "Names and values are hidden; only readiness counts are shown."}</p>
+
+            <div className="sec-l">Config files</div>
+            <div className="skills detail-skills">
+              {(agent.profile_details?.config_files ?? []).map((file) => <span className="skill" key={file.name}>{file.name}<em>{file.kind || "config"}</em></span>)}
+              {!(agent.profile_details?.config_files ?? []).length && <span className="skill readonly">No profile config files reported</span>}
+            </div>
           </>
         )}
 

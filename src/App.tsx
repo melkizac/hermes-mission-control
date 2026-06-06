@@ -151,46 +151,41 @@ function AdminUserModeToggle() {
 
 function NeedsAttentionBell() {
   const { approvals, setView } = useStore();
-  const [attentionCount, setAttentionCount] = useState(0);
+  const [approvalCount, setApprovalCount] = useState(approvals.length);
 
   useEffect(() => {
     let alive = true;
-    async function loadAttentionCount() {
-      const [status, inbox, automations, board] = await Promise.all([
-        safeJson<any>("/api/status", null),
-        safeJson<any>("/api/inbox", null),
-        safeJson<any>("/api/automations", null),
-        safeJson<any>("/api/task-board", null),
-      ]);
-      const apiOk = Boolean(status?.api?.health?.ok);
-      const gatewayOk = Boolean(status?.gateway?.running);
-      const inboxSummary = inbox?.summary;
-      const highRisk = inboxSummary?.high_risk ?? inbox?.items?.filter((item: any) => item.risk === "high" || item.risk === "critical").length ?? 0;
-      const failedRoutines = automations?.summary?.error ?? 0;
-      const blockedTasks = (board?.summary?.blocked ?? 0) + (board?.summary?.error ?? 0);
-      const draftApprovals = inboxSummary?.drafted ?? approvals.length;
-      const nextCount = draftApprovals + highRisk + failedRoutines + blockedTasks + (!apiOk ? 1 : 0) + (!gatewayOk ? 1 : 0);
-      if (alive) setAttentionCount(nextCount);
+    async function loadApprovalCount() {
+      const inbox = await safeJson<any>("/api/inbox", null);
+      const summary = inbox?.summary;
+      const pendingFromSummary = Number(summary?.drafted ?? 0) + Number(summary?.ready ?? 0);
+      const pendingFromItems = Array.isArray(inbox?.items)
+        ? inbox.items.filter((item: any) => item?.status === "drafted" || item?.status === "ready").length
+        : approvals.length;
+      const nextCount = summary ? pendingFromSummary : pendingFromItems;
+      if (alive) setApprovalCount(nextCount);
     }
-    void loadAttentionCount();
-    const timer = window.setInterval(loadAttentionCount, 15000);
+    void loadApprovalCount();
+    const timer = window.setInterval(loadApprovalCount, 15000);
     return () => {
       alive = false;
       window.clearInterval(timer);
     };
   }, [approvals.length]);
 
-  const countLabel = attentionCount === 1 ? "1 item" : `${attentionCount} items`;
+  if (approvalCount <= 0) return null;
+
+  const countLabel = approvalCount === 1 ? "1 pending approval" : `${approvalCount} pending approvals`;
 
   return (
     <button
-      className={"top-attention-bell" + (attentionCount > 0 ? " has-items" : "")}
-      aria-label={`Needs Attention: ${attentionCount} item${attentionCount === 1 ? "" : "s"}`}
+      className="top-attention-bell has-items"
+      aria-label={`Pending approvals: ${approvalCount}`}
       onClick={() => setView("approvals")}
-      title={`Needs Attention: ${countLabel}`}
+      title={countLabel}
     >
       <Icon name="bell" size={18} />
-      <span className="attention-count">{attentionCount > 99 ? "99+" : attentionCount}</span>
+      <span className="attention-count">{approvalCount > 99 ? "99+" : approvalCount}</span>
     </button>
   );
 }

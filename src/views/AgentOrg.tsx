@@ -3,7 +3,7 @@ import { formatSingaporeShort } from "../utils/time";
 import { Icon } from "../components/Icon";
 
 type Tab = "org" | "agents" | "goals" | "queues" | "flows" | "runs" | "outputs" | "permissions" | "health";
-type DrawerTab = "overview" | "goals" | "queue" | "approvals" | "runs" | "outputs" | "activity" | "skills" | "permissions" | "config";
+type DrawerTab = "overview" | "goals" | "queue" | "approvals" | "runs" | "outputs" | "activity" | "skills" | "permissions" | "profile" | "config";
 type AgentStatus = "active" | "idle" | "blocked" | "failed" | "attention";
 
 type Automation = { id: string; name: string; enabled: boolean; status: string; schedule: string; next_run_relative?: string; next_run_at?: string; last_run_at?: string; last_status?: string; prompt_preview?: string; recent_runs?: Run[]; recent_outputs?: Output[] };
@@ -16,6 +16,20 @@ type GoalAction = { id: string; title: string; description?: string; status: str
 type Goal = { id: string; title: string; objective?: string; context?: string; owner?: string; status: string; primary_kpi?: string; created_at?: string; updated_at?: string; goal_brief?: string; collaborators?: string[]; tools_needed?: string[]; access_needed?: string[]; data_needed?: string[]; progress: number; step_counts?: { total: number; done: number; running: number; blocked: number; queued: number }; action_counts?: { total: number; done: number; running: number; blocked: number; queued: number }; steps: GoalStep[]; actions?: GoalAction[] };
 type Activity = { id: string; action: string; title: string; detail?: string; status: "info" | "success" | "error" | string; actor?: string; source?: string; job_id?: string; job_name?: string; created_at?: string; metadata?: Record<string, unknown> };
 type SkillDetail = { name: string; description?: string; category?: string; source?: string };
+type ProfileRuntimeDetails = {
+  profile_id: string;
+  profile_path: string;
+  identity?: { name?: string; source?: string };
+  model_routing?: { provider?: string; model?: string };
+  toolsets?: string[];
+  memory?: { entries: number; files: Array<{ name: string; entries: number; updated_at?: string }>; redacted_or_sensitive_mentions?: number };
+  sessions?: { count: number; recent: Array<Partial<Run> & { source?: string; model?: string; total_tokens?: number; estimated_cost_usd?: number }> };
+  plugins?: { enabled: number; total: number; items: Array<{ id: string; name: string; category?: string; status?: string; source?: string }>; error?: string };
+  gateway?: { channels: Array<{ id: string; enabled: boolean; source?: string }>; webhooks_configured?: number };
+  environment?: { env_files: Array<{ name: string; status: string; variable_count: number; sensitive_count: number }>; policy: string };
+  routines?: { count: number; items: Array<Partial<Automation> & { skill_count?: number; toolsets?: string[]; profile?: string }> };
+  config_files?: Array<{ name: string; kind?: string; updated_at?: string }>;
+};
 type AgentActionResult = { ok?: boolean; error?: string; stdout?: string; stderr?: string; job_id?: string; choices?: Array<{ id: string; name: string; schedule?: string; last_status?: string }> };
 type ActionFeedback = { agentId: string; tone: "busy" | "success" | "error"; title: string; detail?: string } | null;
 
@@ -47,6 +61,7 @@ type OrgAgent = {
   lastActivity?: string | null;
   active_goal?: Goal | null;
   goals?: Goal[];
+  profile_details?: ProfileRuntimeDetails;
 };
 
 type OrgFlow = { id: string; name: string; trigger?: string; gate?: string; status: string; steps: Array<{ label: string; agent?: string; approval?: string; status?: string }> };
@@ -206,9 +221,53 @@ function agentRunLabel(agent: OrgAgent) {
   return agent.automations.length === 1 ? "Run agent" : "Choose run";
 }
 
+function ProfileRuntimePanel({ agent }: { agent: OrgAgent }) {
+  const profile = agent.profile_details;
+  if (!profile) return <section><h3>Profile runtime</h3><p className="muted">No profile runtime details reported yet.</p></section>;
+  const channels = profile.gateway?.channels || [];
+  const envFiles = profile.environment?.env_files || [];
+  return <section>
+    <h3>Profile runtime</h3>
+    <p className="muted">A Hermes profile is the isolated runtime identity/configuration behind this agent. Secret values are never shown here.</p>
+    <div className="org-detail-grid">
+      <div><span>Profile</span><b>{profile.profile_id}</b></div>
+      <div><span>Identity</span><b>{profile.identity?.name || agent.name}</b></div>
+      <div><span>Provider</span><b>{profile.model_routing?.provider || "runtime default"}</b></div>
+      <div><span>Model</span><b>{profile.model_routing?.model || "runtime default"}</b></div>
+      <div><span>Toolsets</span><b>{profile.toolsets?.length || agent.tools.length}</b></div>
+      <div><span>Skills</span><b>{agent.skills_detail.length || agent.skills.length}</b></div>
+      <div><span>Memory</span><b>{profile.memory?.entries || 0} entries</b></div>
+      <div><span>Sessions</span><b>{profile.sessions?.count ?? agent.runs.length}</b></div>
+      <div><span>Plugins</span><b>{profile.plugins?.enabled || 0}/{profile.plugins?.total || 0} enabled</b></div>
+      <div><span>Routines</span><b>{profile.routines?.count ?? agent.automations.length}</b></div>
+      <div><span>Gateway channels</span><b>{channels.filter((c) => c.enabled).length}/{channels.length} enabled</b></div>
+      <div><span>Credential scope</span><b>{envFiles.length ? `${envFiles.length} env file(s)` : "No env file reported"}</b></div>
+    </div>
+
+    <h3>Gateway / channels</h3>
+    <div className="chip-row">{channels.map((channel) => <span key={channel.id}>{channel.id} · {channel.enabled ? "enabled" : "disabled"}</span>)}{!channels.length && <span>No configured platform channels found</span>}<span>Webhooks {profile.gateway?.webhooks_configured || 0}</span></div>
+
+    <h3>Plugins</h3>
+    <div className="chip-row">{(profile.plugins?.items || []).map((plugin) => <span key={plugin.id}>{plugin.name} · {plugin.status || "enabled"}</span>)}{!(profile.plugins?.items || []).length && <span>No enabled plugins reported</span>}</div>
+    {profile.plugins?.error && <p className="muted">Plugin inventory note: {profile.plugins.error}</p>}
+
+    <h3>Memory scope</h3>
+    {(profile.memory?.files || []).map((file) => <MiniRow key={file.name} title={file.name} meta={`${file.entries} entries · ${file.updated_at || "—"}`} />)}
+    {!(profile.memory?.files || []).length && <p className="muted">No profile memory files found.</p>}
+
+    <h3>Credential / environment readiness</h3>
+    {envFiles.map((file) => <MiniRow key={file.name} title={file.name} meta={`${file.status} · ${file.variable_count} variables · ${file.sensitive_count} sensitive names hidden`} />)}
+    {!envFiles.length && <p className="muted">No profile env file reported. Secret names and values are hidden by design.</p>}
+    <p className="muted">{profile.environment?.policy}</p>
+
+    <h3>Config files</h3>
+    <div className="chip-row">{(profile.config_files || []).map((file) => <span key={file.name}>{file.name}</span>)}{!(profile.config_files || []).length && <span>No profile config files reported</span>}</div>
+  </section>;
+}
+
 function DetailDrawer({ agent, agents, onClose, onAction, onCreateGoal, onApproveReview, onGoalAction, approvingId, actionFeedback }: { agent: OrgAgent; agents: OrgAgent[]; onClose: () => void; onAction: (agent: OrgAgent, action: string, payload?: Record<string, unknown>) => void; onCreateGoal: (agent: OrgAgent) => void; onApproveReview: (agent: OrgAgent, review: Review) => void; onGoalAction: (agent: OrgAgent, goal: Goal, action: GoalAction, status: string, execute?: boolean) => void; approvingId?: string | null; actionFeedback?: ActionFeedback }) {
   const [tab, setTab] = useState<DrawerTab>("overview");
-  const tabs: DrawerTab[] = ["overview", "goals", "queue", "approvals", "runs", "outputs", "activity", "skills", "permissions", "config"];
+  const tabs: DrawerTab[] = ["overview", "goals", "queue", "approvals", "runs", "outputs", "activity", "skills", "permissions", "profile", "config"];
   const feedback = actionFeedback?.agentId === agent.id ? actionFeedback : null;
   const approvalForActivity = (item: Activity) => {
     const jobId = item.job_id || (typeof item.metadata?.job_id === "string" ? item.metadata.job_id : "");
@@ -264,6 +323,8 @@ function DetailDrawer({ agent, agents, onClose, onAction, onCreateGoal, onApprov
         {tab === "skills" && <section><h3>Skills</h3><div className="chip-row">{(agent.skills_detail.length ? agent.skills_detail.map((s) => s.name) : agent.skills).map((s) => <span key={s}>{s}</span>)}</div>{!agent.skills.length && !agent.skills_detail.length && <p className="muted">No explicit skills mapped.</p>}</section>}
 
         {tab === "permissions" && <section><h3>Tools / permissions</h3><div className="chip-row">{agent.tools.map((tool) => <span key={tool}>{tool}</span>)}</div>{agent.permissions.map((permission) => <p className="permission" key={permission}>• {permission}</p>)}</section>}
+
+        {tab === "profile" && <ProfileRuntimePanel agent={agent} />}
 
         {tab === "config" && <section><h3>Registry config</h3><div className="org-detail-grid"><div><span>Agent ID</span><b>{agent.id}</b></div><div><span>Profile</span><b>{agent.profile || "default"}</b></div><div><span>Type</span><b>{agent.type || "logical_agent"}</b></div><div><span>Last activity</span><b>{agent.lastActivity ? formatSingaporeShort(agent.lastActivity) : "—"}</b></div></div><p className="muted">Edit the registry file on the server to change durable agent identity, skills, modes, and relationships.</p></section>}
       </aside>
