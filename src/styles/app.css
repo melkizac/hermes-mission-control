@@ -5531,6 +5531,10 @@ button.voice-activation {
     padding: 8px 10px calc(10px + env(safe-area-inset-bottom));
   }
 
+  .mobile-chat-only-main .main-chat-composer .chat-intent-preview {
+    display: none !important;
+  }
+
   .mobile-chat-only-main .mobile-composer-prompt {
     display: block;
     padding: 0 4px 2px;
