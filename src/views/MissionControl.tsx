@@ -309,7 +309,12 @@ export function MissionControl() {
     if (voiceStatus === "idle") return null;
     const isListening = voiceStatus === "listening";
     return (
-      <div className={`voice-activation ${mode === "full" ? "full-window" : "compact"} ${isListening ? "listening" : "notice"}`} role="status" aria-live="polite">
+      <div
+        className={`voice-activation ${mode === "full" ? "full-window" : "compact"} ${isListening ? "listening" : "notice"}`}
+        role="status"
+        aria-live="polite"
+        aria-label={voiceTranscript ? `Voice captured: ${voiceTranscript}` : voiceMessage}
+      >
         <div className="voice-jarvis-orb" aria-hidden="true">
           <span className="voice-ring ring-one" />
           <span className="voice-ring ring-two" />
@@ -321,11 +326,6 @@ export function MissionControl() {
           <span className="voice-particle particle-one" />
           <span className="voice-particle particle-two" />
           <span className="voice-particle particle-three" />
-        </div>
-        <div className="voice-activation-copy">
-          <strong>{isListening ? "Voice active" : "Voice input"}</strong>
-          <span>{voiceMessage}</span>
-          {voiceTranscript && <em>“{voiceTranscript}”</em>}
         </div>
       </div>
     );
