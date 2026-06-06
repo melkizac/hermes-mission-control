@@ -18,7 +18,7 @@ type ChatAttachment = {
   type: string;
 };
 
-type VoiceStatus = "idle" | "listening" | "unsupported" | "error";
+type VoiceStatus = "idle" | "listening" | "sending" | "speaking" | "ready" | "unsupported" | "error";
 
 type BrowserSpeechRecognitionEvent = Event & {
   resultIndex: number;
@@ -126,14 +126,14 @@ export function MissionControl() {
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>("idle");
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [voiceMessage, setVoiceMessage] = useState("Click the mic and speak. I will transcribe your voice into the message box.");
-  const [voiceAutoSend, setVoiceAutoSend] = useState<{ text: string; seconds: number } | null>(null);
   const [voiceReplyMode, setVoiceReplyMode] = useState(false);
   const [voiceReplyBaselineId, setVoiceReplyBaselineId] = useState("");
   const [spokenMessageId, setSpokenMessageId] = useState("");
   const [speechPlaying, setSpeechPlaying] = useState(false);
+  const [voiceVisual, setVoiceVisual] = useState({ energy: 1, pitch: 1, rate: 1 });
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const voiceShouldListenRef = useRef(false);
-  const voiceAutoSendTimerRef = useRef<number | null>(null);
+  const voiceAnimationTimerRef = useRef<number | null>(null);
   const draftRef = useRef("");
   const [routingPreview, setRoutingPreview] = useState<{
     instruction: string;
@@ -237,7 +237,7 @@ export function MissionControl() {
       voiceShouldListenRef.current = false;
       recognitionRef.current?.abort();
       recognitionRef.current = null;
-      if (voiceAutoSendTimerRef.current) window.clearTimeout(voiceAutoSendTimerRef.current);
+      if (voiceAnimationTimerRef.current) window.clearInterval(voiceAnimationTimerRef.current);
       window.speechSynthesis?.cancel();
     };
   }, []);
@@ -252,14 +252,6 @@ export function MissionControl() {
     return recognition;
   }
 
-  function clearVoiceAutoSend() {
-    if (voiceAutoSendTimerRef.current) {
-      window.clearTimeout(voiceAutoSendTimerRef.current);
-      voiceAutoSendTimerRef.current = null;
-    }
-    setVoiceAutoSend(null);
-  }
-
   function updateDraft(next: string | ((current: string) => string)) {
     setDraft((current) => {
       const resolved = typeof next === "function" ? next(current) : next;
@@ -268,37 +260,30 @@ export function MissionControl() {
     });
   }
 
-  function scheduleVoiceAutoSend(text: string) {
-    const instruction = text.trim();
-    if (!instruction) return;
-    if (voiceAutoSendTimerRef.current) window.clearTimeout(voiceAutoSendTimerRef.current);
-    setVoiceReplyMode(true);
-    setVoiceAutoSend({ text: instruction, seconds: 3 });
-    const tick = (seconds: number) => {
-      voiceAutoSendTimerRef.current = window.setTimeout(() => {
-        if (seconds <= 1) {
-          voiceAutoSendTimerRef.current = null;
-          setVoiceAutoSend(null);
-          const latestAgentMessage = [...mainChatMessages].reverse().find((message) => message.role === "agent");
-          setVoiceReplyBaselineId(latestAgentMessage ? String(latestAgentMessage.id) : "");
-          void submitInstruction(instruction, { preserveDraft: false });
-          return;
-        }
-        setVoiceAutoSend({ text: instruction, seconds: seconds - 1 });
-        tick(seconds - 1);
-      }, 1000);
-    };
-    tick(3);
+  function startVoiceVisualPulse(rate = 1, pitch = 1) {
+    if (voiceAnimationTimerRef.current) window.clearInterval(voiceAnimationTimerRef.current);
+    let tick = 0;
+    voiceAnimationTimerRef.current = window.setInterval(() => {
+      tick += 1;
+      const wave = Math.sin(tick * 0.9 * rate) * 0.35 + Math.sin(tick * 1.7 * pitch) * 0.18;
+      setVoiceVisual({
+        energy: Math.max(0.65, Math.min(1.9, 1.15 + wave)),
+        pitch: Math.max(0.75, Math.min(1.45, pitch + wave * 0.18)),
+        rate: Math.max(0.75, Math.min(1.6, rate + wave * 0.12)),
+      });
+    }, 120);
   }
 
-  function cancelVoiceAutoSend() {
-    clearVoiceAutoSend();
-    setVoiceMessage("Voice send cancelled. Edit or send manually.");
-    window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
+  function stopVoiceVisualPulse() {
+    if (voiceAnimationTimerRef.current) {
+      window.clearInterval(voiceAnimationTimerRef.current);
+      voiceAnimationTimerRef.current = null;
+    }
+    setVoiceVisual({ energy: 1, pitch: 1, rate: 1 });
   }
 
-  function editVoiceAutoSend() {
-    cancelVoiceAutoSend();
+  function capturedVoiceInstruction() {
+    return (draftRef.current.trim() || voiceTranscript.trim()).trim();
   }
 
   function speakAgentReply(message: Message) {
@@ -308,9 +293,32 @@ export function MissionControl() {
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "en-SG";
     utterance.rate = 1;
-    utterance.onstart = () => setSpeechPlaying(true);
-    utterance.onend = () => setSpeechPlaying(false);
-    utterance.onerror = () => setSpeechPlaying(false);
+    utterance.pitch = 1;
+    utterance.onstart = () => {
+      setSpeechPlaying(true);
+      setVoiceStatus("speaking");
+      startVoiceVisualPulse(utterance.rate, utterance.pitch);
+    };
+    utterance.onboundary = (event) => {
+      const charLength = "charLength" in event ? Number(event.charLength) || 1 : 1;
+      const wordBoost = Math.min(0.75, charLength / 14);
+      setVoiceVisual({
+        energy: 1.15 + wordBoost,
+        pitch: utterance.pitch + wordBoost * 0.18,
+        rate: utterance.rate + wordBoost * 0.12,
+      });
+    };
+    utterance.onend = () => {
+      setSpeechPlaying(false);
+      stopVoiceVisualPulse();
+      setVoiceStatus("ready");
+      setVoiceMessage("Reply finished. Tap the mic to send another voice message.");
+    };
+    utterance.onerror = () => {
+      setSpeechPlaying(false);
+      stopVoiceVisualPulse();
+      setVoiceStatus("ready");
+    };
     setSpokenMessageId(String(message.id));
     window.speechSynthesis.speak(utterance);
   }
@@ -318,21 +326,39 @@ export function MissionControl() {
   function stopVoiceReply() {
     window.speechSynthesis?.cancel();
     setSpeechPlaying(false);
+    stopVoiceVisualPulse();
     setVoiceReplyMode(false);
+    setVoiceStatus("ready");
+  }
+
+  function sendVoiceMessageFromAnimation() {
+    const instruction = capturedVoiceInstruction();
+    voiceShouldListenRef.current = false;
+    recognitionRef.current?.stop();
+    if (!instruction) {
+      setVoiceStatus("idle");
+      setVoiceMessage("Voice input stopped. No transcript was captured.");
+      return;
+    }
+    updateDraft(instruction);
+    setVoiceReplyMode(true);
+    const latestAgentMessage = [...mainChatMessages].reverse().find((message) => message.role === "agent");
+    setVoiceReplyBaselineId(latestAgentMessage ? String(latestAgentMessage.id) : "");
+    setVoiceStatus("sending");
+    setVoiceMessage("Sent to Melkizac. Keeping voice screen open for the reply.");
+    void submitInstruction(instruction, { preserveDraft: false, keepVoiceScreen: true });
   }
 
   function stopVoiceInput() {
     voiceShouldListenRef.current = false;
     recognitionRef.current?.stop();
     setVoiceStatus("idle");
-    const captured = draftRef.current.trim();
-    setVoiceMessage(captured ? "Voice captured. Auto-sending with a short review window." : "Voice input stopped.");
-    if (captured) scheduleVoiceAutoSend(captured);
+    setVoiceMessage("Voice input stopped.");
   }
 
   function startVoiceInput() {
     setError(null);
-    clearVoiceAutoSend();
+    stopVoiceVisualPulse();
     const recognition = createSpeechRecognition();
     if (!recognition) {
       setVoiceStatus("unsupported");
@@ -405,6 +431,16 @@ export function MissionControl() {
   function renderVoiceActivation(mode: "compact" | "full" = "compact") {
     if (voiceStatus === "idle") return null;
     const isListening = voiceStatus === "listening";
+    const voiceStyle = {
+      "--voice-energy": String(voiceVisual.energy),
+      "--voice-pitch": String(voiceVisual.pitch),
+      "--voice-rate": String(voiceVisual.rate),
+      "--voice-spin-slow": `${Math.max(2.8, 6 / voiceVisual.rate).toFixed(2)}s`,
+      "--voice-spin-mid": `${Math.max(2, 4 / voiceVisual.rate).toFixed(2)}s`,
+      "--voice-spin-fast": `${Math.max(1.4, 2.8 / voiceVisual.rate).toFixed(2)}s`,
+      "--voice-ray-duration": `${Math.max(0.65, 1.2 / voiceVisual.rate).toFixed(2)}s`,
+      "--voice-particle-duration": `${Math.max(1, 1.8 / voiceVisual.rate).toFixed(2)}s`,
+    } as React.CSSProperties;
     const orb = (
       <div className="voice-jarvis-orb" aria-hidden="true">
         <span className="voice-ring ring-one" />
@@ -419,14 +455,27 @@ export function MissionControl() {
         <span className="voice-particle particle-three" />
       </div>
     );
-    if (mode === "full" && isListening) {
+    if (mode === "full") {
+      const handleVoiceScreenTap = () => {
+        if (voiceStatus === "listening") sendVoiceMessageFromAnimation();
+        else if (voiceStatus === "speaking") stopVoiceReply();
+        else if (voiceStatus === "ready") startVoiceInput();
+      };
+      const label = voiceStatus === "listening"
+        ? (voiceTranscript ? `Voice captured: ${voiceTranscript}. Tap to send this voice message to Melkizac.` : "Listening. Tap when finished to send this voice message to Melkizac.")
+        : voiceStatus === "sending"
+          ? "Voice message sent. Waiting for Melkizac reply."
+          : voiceStatus === "speaking"
+            ? "Melkizac is speaking. The animation is responding to reply tone, pitch, and speed. Tap to stop voice reply."
+            : "Voice screen ready. Tap to record another voice message.";
       return (
         <button
-          className="voice-activation full-window listening voice-deactivate-hitarea"
+          className={`voice-activation full-window ${voiceStatus} ${speechPlaying ? "voice-speaking" : ""} voice-deactivate-hitarea`}
           type="button"
-          onClick={stopVoiceInput}
-          aria-label={voiceTranscript ? `Voice captured: ${voiceTranscript}. Tap to stop voice input and return to the message box.` : "Listening. Tap to stop voice input and return to the message box."}
-          title="Tap to stop voice input"
+          onClick={handleVoiceScreenTap}
+          aria-label={label}
+          title={voiceStatus === "listening" ? "Tap to send voice message" : voiceStatus === "speaking" ? "Tap to stop voice reply" : "Voice screen"}
+          style={voiceStyle}
         >
           {orb}
         </button>
@@ -434,10 +483,11 @@ export function MissionControl() {
     }
     return (
       <div
-        className={`voice-activation ${mode === "full" ? "full-window" : "compact"} ${isListening ? "listening" : "notice"}`}
+        className={`voice-activation compact ${isListening ? "listening" : "notice"}`}
         role="status"
         aria-live="polite"
         aria-label={voiceTranscript ? `Voice captured: ${voiceTranscript}` : voiceMessage}
+        style={voiceStyle}
       >
         {orb}
       </div>
@@ -462,30 +512,6 @@ export function MissionControl() {
           <path d="M8.5 21h7" />
         </svg>
       </button>
-    );
-  }
-
-  function renderVoiceAutoSendPreview() {
-    if (!voiceAutoSend) return null;
-    return (
-      <div className="voice-auto-send-preview" role="status" aria-live="polite">
-        <div className="voice-auto-send-main">
-          <strong>Sending in {voiceAutoSend.seconds}s</strong>
-          <span>{voiceAutoSend.text}</span>
-        </div>
-        <div className="voice-auto-send-actions">
-          <button type="button" onClick={editVoiceAutoSend}>Edit</button>
-          <button type="button" onClick={cancelVoiceAutoSend}>Cancel</button>
-          <button
-            type="button"
-            className={voiceReplyMode ? "active" : ""}
-            aria-pressed={voiceReplyMode}
-            onClick={() => setVoiceReplyMode((current) => !current)}
-          >
-            Voice reply {voiceReplyMode ? "on" : "off"}
-          </button>
-        </div>
-      </div>
     );
   }
 
@@ -541,10 +567,9 @@ export function MissionControl() {
     return `${instruction}\n\n[Mission Control Chat Context]\n${context.join("\n")}\n\n[Mission Control Intent Routing]\n${serializeChatIntentDecision(intentDecision)}`;
   }
 
-  async function submitInstruction(instructionText: string, options: { preserveDraft?: boolean } = {}) {
+  async function submitInstruction(instructionText: string, options: { preserveDraft?: boolean; keepVoiceScreen?: boolean } = {}) {
     const instruction = instructionText.trim();
     if (!instruction || sending) return;
-    clearVoiceAutoSend();
     setHasStartedMainChat(true);
     setSending(true);
     setError(null);
@@ -554,6 +579,7 @@ export function MissionControl() {
     if (!preview.canProceed) {
       setSending(false);
       setError(preview.suggestedQuestion ?? "Please clarify the target before I route this.");
+      if (options.keepVoiceScreen) setVoiceStatus("ready");
       window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
       return;
     }
@@ -561,8 +587,12 @@ export function MissionControl() {
       await sendToAgent("default", composeInstructionContext(instruction, intentDecision));
       if (options.preserveDraft !== true) updateDraft("");
       setAttachments([]);
+      if (options.keepVoiceScreen) {
+        setVoiceStatus((current) => (current === "sending" ? "ready" : current));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Mission Control could not send this instruction.");
+      if (options.keepVoiceScreen) setVoiceStatus("ready");
     } finally {
       setSending(false);
     }
@@ -585,8 +615,6 @@ export function MissionControl() {
         <h1>{selectedProject ? `What should we work on in ${projectLabel(selectedProject)}?` : "What should Melkizac work on?"}</h1>
 
         <form className="clean-chat-composer" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
-          {renderVoiceAutoSendPreview()}
-
           <textarea
             ref={composerTextareaRef}
             value={draft}
@@ -729,8 +757,6 @@ export function MissionControl() {
               onEdit={() => composerTextareaRef.current?.focus()}
             />
           )}
-          {renderVoiceAutoSendPreview()}
-
           <textarea
             ref={composerTextareaRef}
             value={draft}

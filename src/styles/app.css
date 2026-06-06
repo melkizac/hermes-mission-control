@@ -4501,6 +4501,14 @@ input, select, textarea { font-family: inherit; }
   overflow: hidden;
   position: relative;
   box-shadow: inset 0 0 34px rgba(245,158,11,.18), 0 18px 42px rgba(92, 45, 0, .18);
+  --voice-energy: 1;
+  --voice-pitch: 1;
+  --voice-rate: 1;
+  --voice-spin-slow: 6s;
+  --voice-spin-mid: 4s;
+  --voice-spin-fast: 2.8s;
+  --voice-ray-duration: 1.2s;
+  --voice-particle-duration: 1.8s;
 }
 
 button.voice-activation {
@@ -4532,6 +4540,61 @@ button.voice-activation {
     radial-gradient(circle at 82% 78%, rgba(245, 158, 11, .12), transparent 26%),
     linear-gradient(145deg, #050403 0%, #130b04 46%, #050403 100%);
   box-shadow: inset 0 0 90px rgba(245,158,11,.18), inset 0 0 220px rgba(0,0,0,.55);
+}
+
+.voice-activation.full-window.sending {
+  cursor: progress;
+}
+
+.voice-activation.full-window.speaking,
+.voice-activation.full-window.voice-speaking {
+  background:
+    radial-gradient(circle at 50% 45%, rgba(94, 234, 212, .24), transparent 18%),
+    radial-gradient(circle at 50% 45%, rgba(251, 146, 60, .20), transparent 35%),
+    radial-gradient(circle at 18% 16%, rgba(45, 212, 191, .16), transparent 28%),
+    radial-gradient(circle at 82% 78%, rgba(251, 146, 60, .14), transparent 26%),
+    linear-gradient(145deg, #050403 0%, #071a17 46%, #050403 100%);
+}
+
+.voice-activation.full-window.voice-speaking .voice-jarvis-orb {
+  transform: scale(var(--voice-energy));
+  transition: transform 110ms linear;
+  filter: drop-shadow(0 0 56px rgba(45,212,191,.86));
+}
+
+.voice-activation.full-window.voice-speaking .voice-ring.ring-one {
+  animation-duration: var(--voice-spin-slow);
+  transform: scale(var(--voice-energy));
+}
+
+.voice-activation.full-window.voice-speaking .voice-ring.ring-two {
+  animation-duration: var(--voice-spin-mid);
+  transform: scale(var(--voice-pitch));
+}
+
+.voice-activation.full-window.voice-speaking .voice-ring.ring-three {
+  animation-duration: var(--voice-spin-fast);
+  transform: scale(var(--voice-energy));
+}
+
+.voice-activation.full-window.voice-speaking .voice-core {
+  transform: scale(var(--voice-energy));
+  transition: transform 110ms linear, box-shadow 110ms linear;
+  box-shadow: 0 0 72px rgba(94,234,212,.95), 0 0 140px rgba(251,146,60,.52);
+}
+
+.voice-activation.full-window.voice-speaking .voice-ray {
+  opacity: .86;
+  animation: voiceRaySpeak var(--voice-ray-duration) ease-in-out infinite;
+}
+
+.voice-activation.full-window.voice-speaking .voice-particle {
+  transform: scale(var(--voice-pitch));
+  animation-duration: var(--voice-particle-duration);
+}
+
+.voice-activation.full-window.ready .voice-jarvis-orb {
+  opacity: .86;
 }
 
 .voice-activation::before,
@@ -4812,6 +4875,11 @@ button.voice-activation {
 @keyframes voiceParticleFloat {
   0%, 100% { transform: translate3d(0, 0, 0); opacity: .55; }
   50% { transform: translate3d(10px, -8px, 0); opacity: 1; }
+}
+
+@keyframes voiceRaySpeak {
+  0%, 100% { transform: rotate(0deg) scaleY(.82); }
+  50% { transform: rotate(18deg) scaleY(var(--voice-energy)); }
 }
 
 @keyframes voiceGridSweep {
