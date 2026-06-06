@@ -122,8 +122,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [setView]);
 
   useLayoutEffect(() => {
-    applyDeepLinkTarget(parseMissionControlDeepLink(window.location));
-  }, [applyDeepLinkTarget]);
+    const target = parseMissionControlDeepLink(window.location);
+    if (target.agentId) setSelectedId(target.agentId);
+    // The initial view is already seeded from initialDeepLinkTarget() above.
+    // Do not re-apply target.view here before /api/me has loaded; doing so
+    // evaluates admin-only URLs without the account role and falls back to Chat.
+    // Popstate navigation is still handled by Shell.
+  }, []);
 
   const uploadAttachment = useCallback(
     async (file: File) => {
