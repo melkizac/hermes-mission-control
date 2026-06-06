@@ -139,6 +139,7 @@ export function MissionControl() {
   const voiceAnimationTimerRef = useRef<number | null>(null);
   const voiceSpeechStartTimerRef = useRef<number | null>(null);
   const pendingVoiceReplyRef = useRef<Message | null>(null);
+  const speechPrimedRef = useRef(false);
   const draftRef = useRef("");
   const [routingPreview, setRoutingPreview] = useState<{
     instruction: string;
@@ -238,6 +239,15 @@ export function MissionControl() {
   }, [mainChatMessages, spokenMessageId, voiceReplyBaselineId, voiceReplyMode]);
 
   useEffect(() => {
+    if (!("speechSynthesis" in window)) return;
+    window.speechSynthesis.getVoices();
+    window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+    return () => {
+      if ("speechSynthesis" in window) window.speechSynthesis.onvoiceschanged = null;
+    };
+  }, []);
+
+  useEffect(() => {
     return () => {
       voiceShouldListenRef.current = false;
       recognitionRef.current?.abort();
@@ -292,6 +302,73 @@ export function MissionControl() {
     return (draftRef.current.trim() || voiceTranscript.trim()).trim();
   }
 
+  function selectJarvisLikeVoice() {
+    if (!("speechSynthesis" in window)) return null;
+    const voices = window.speechSynthesis.getVoices();
+    if (!voices.length) return null;
+    const preferredMatchers = [
+      /google uk english male/i,
+      /microsoft (ryan|george|thomas|mark|guy|david)/i,
+      /daniel/i,
+      /arthur/i,
+      /alex/i,
+      /male/i,
+      /english.*(united kingdom|uk|gb)/i,
+      /en-GB/i,
+      /en-US/i,
+    ];
+    return preferredMatchers
+      .map((matcher) => voices.find((voice) => matcher.test(`${voice.name} ${voice.lang}`)))
+      .find(Boolean) ?? voices.find((voice) => voice.lang?.toLowerCase().startsWith("en")) ?? voices[0] ?? null;
+  }
+
+  function configureJarvisUtterance(utterance: SpeechSynthesisUtterance) {
+    const voice = selectJarvisLikeVoice();
+    if (voice) {
+      utterance.voice = voice;
+      utterance.lang = voice.lang || "en-GB";
+    } else {
+      utterance.lang = "en-GB";
+    }
+    utterance.rate = 0.92;
+    utterance.pitch = 0.78;
+    utterance.volume = 1;
+  }
+
+  function primeSpeechForImmediateReplies() {
+    if (speechPrimedRef.current || !("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) return;
+    speechPrimedRef.current = true;
+    try {
+      window.speechSynthesis.resume();
+      const primer = new SpeechSynthesisUtterance(" ");
+      configureJarvisUtterance(primer);
+      primer.volume = 0;
+      window.speechSynthesis.speak(primer);
+      window.setTimeout(() => {
+        if (!speechPlaying) window.speechSynthesis.cancel();
+      }, 80);
+    } catch {
+      speechPrimedRef.current = false;
+    }
+  }
+
+  function returnToTextChat() {
+    voiceShouldListenRef.current = false;
+    recognitionRef.current?.stop();
+    if (voiceSpeechStartTimerRef.current) {
+      window.clearTimeout(voiceSpeechStartTimerRef.current);
+      voiceSpeechStartTimerRef.current = null;
+    }
+    window.speechSynthesis?.cancel();
+    setSpeechPlaying(false);
+    setVoiceReplyNeedsTap(false);
+    setVoiceReplyMode(false);
+    stopVoiceVisualPulse();
+    setVoiceStatus("idle");
+    setVoiceMessage("Voice screen closed. Text chat is ready.");
+    window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
+  }
+
   function speakAgentReply(message: Message, userStarted = false) {
     const text = visibleChatText(message);
     setVoiceReplyText(text);
@@ -308,9 +385,7 @@ export function MissionControl() {
     window.speechSynthesis.cancel();
     window.speechSynthesis.resume();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "en-SG";
-    utterance.rate = 1;
-    utterance.pitch = 1;
+    configureJarvisUtterance(utterance);
     utterance.onstart = () => {
       if (voiceSpeechStartTimerRef.current) {
         window.clearTimeout(voiceSpeechStartTimerRef.current);
@@ -319,7 +394,7 @@ export function MissionControl() {
       setVoiceReplyNeedsTap(false);
       setSpeechPlaying(true);
       setVoiceStatus("speaking");
-      setVoiceMessage("Melkizac is speaking. Tap the animation to stop.");
+      setVoiceMessage("Melkizac is speaking in a Jarvis-style voice. Tap the animation to stop.");
       startVoiceVisualPulse(utterance.rate, utterance.pitch);
     };
     utterance.onboundary = (event) => {
@@ -354,9 +429,11 @@ export function MissionControl() {
       setVoiceMessage("Melkizac replied. Tap the animation to play the voice reply.");
     };
     setSpokenMessageId(String(message.id));
-    setVoiceStatus(userStarted ? "speaking" : "ready");
-    setVoiceMessage(userStarted ? "Starting voice reply…" : "Melkizac replied. Playing voice reply…");
+    setSpeechPlaying(true);
+    setVoiceStatus("speaking");
+    setVoiceMessage(userStarted ? "Starting Jarvis-style voice reply…" : "Melkizac replied. Speaking now in a Jarvis-style voice…");
     setVoiceReplyNeedsTap(false);
+    startVoiceVisualPulse(utterance.rate, utterance.pitch);
     window.speechSynthesis.speak(utterance);
     voiceSpeechStartTimerRef.current = window.setTimeout(() => {
       if (!window.speechSynthesis.speaking) {
@@ -366,7 +443,7 @@ export function MissionControl() {
         setVoiceReplyNeedsTap(true);
         setVoiceMessage("Melkizac replied. Tap the animation to play the voice reply.");
       }
-    }, 900);
+    }, 3000);
   }
 
   function playPendingVoiceReply() {
@@ -388,6 +465,7 @@ export function MissionControl() {
   }
 
   function sendVoiceMessageFromAnimation() {
+    primeSpeechForImmediateReplies();
     const instruction = capturedVoiceInstruction();
     voiceShouldListenRef.current = false;
     recognitionRef.current?.stop();
@@ -416,6 +494,7 @@ export function MissionControl() {
   }
 
   function startVoiceInput() {
+    primeSpeechForImmediateReplies();
     setError(null);
     stopVoiceVisualPulse();
     const recognition = createSpeechRecognition();
@@ -526,6 +605,12 @@ export function MissionControl() {
         else if (voiceReplyNeedsTap) playPendingVoiceReply();
         else if (voiceStatus === "ready") startVoiceInput();
       };
+      const handleVoiceScreenKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          handleVoiceScreenTap();
+        }
+      };
       const label = voiceStatus === "listening"
         ? (voiceTranscript ? `Voice captured: ${voiceTranscript}. Tap to send this voice message to Melkizac.` : "Listening. Tap when finished to send this voice message to Melkizac.")
         : voiceStatus === "sending"
@@ -540,21 +625,38 @@ export function MissionControl() {
       const voiceTitle = voiceStatus === "listening" ? "Tap to send voice message" : voiceStatus === "speaking" ? "Tap to stop voice reply" : voiceReplyNeedsTap ? "Tap to play voice reply" : "Voice screen";
       const visibleVoiceText = voiceReplyText || (voiceStatus === "listening" ? voiceTranscript : "");
       return (
-        <button
+        <div
           className={`voice-activation full-window ${voiceStatus} ${speechPlaying ? "voice-speaking" : ""} voice-deactivate-hitarea`}
-          type="button"
+          role="button"
+          tabIndex={0}
           onClick={handleVoiceScreenTap}
+          onKeyDown={handleVoiceScreenKeyDown}
           aria-label={label}
           title={voiceTitle}
           style={voiceStyle}
         >
+          <button
+            className="voice-return-to-text"
+            type="button"
+            aria-label="Return to text message UI"
+            title="Back to text chat"
+            onClick={(event) => {
+              event.stopPropagation();
+              returnToTextChat();
+            }}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M15 6l-6 6 6 6" />
+              <path d="M20 12H9" />
+            </svg>
+          </button>
           {orb}
           <span className="voice-activation-panel" aria-hidden="true">
             <strong>{voiceReplyNeedsTap ? "Tap to hear Melkizac" : voiceStatus === "speaking" ? "Melkizac speaking" : voiceStatus === "sending" ? "Waiting for Melkizac" : voiceStatus === "listening" ? "Listening" : voiceReplyText ? "Melkizac replied" : "Voice ready"}</strong>
             <span>{voiceMessage}</span>
             {visibleVoiceText && <em>{visibleVoiceText}</em>}
           </span>
-        </button>
+        </div>
       );
     }
     return (
@@ -660,7 +762,11 @@ export function MissionControl() {
       return;
     }
     try {
-      await sendToAgent("default", composeInstructionContext(instruction, intentDecision));
+      const newMessages = await sendToAgent("default", composeInstructionContext(instruction, intentDecision));
+      const directReply = options.keepVoiceScreen
+        ? [...newMessages].reverse().find((message) => message.role === "agent" && visibleChatText(message).trim())
+        : undefined;
+      if (directReply) speakAgentReply(directReply);
       if (options.preserveDraft !== true) updateDraft("");
       setAttachments([]);
       if (options.keepVoiceScreen) {

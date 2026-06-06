@@ -44,8 +44,8 @@ interface StoreValue {
   setUiMode: (mode: UiMode) => void;
   select: (id: string) => void;
   uploadAttachment: (file: File) => Promise<Attachment>;
-  send: (text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection }) => Promise<void>;
-  sendToAgent: (agentId: string, text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection }) => Promise<void>;
+  send: (text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection }) => Promise<Message[]>;
+  sendToAgent: (agentId: string, text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection }) => Promise<Message[]>;
   getModelRouter: () => Promise<RouterConfig>;
   stopProcessing: (requestId?: string) => Promise<void>;
   refreshSelected: () => Promise<void>;
@@ -130,7 +130,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const sendToAgent = useCallback(
     async (agentId: string, text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection } = {}) => {
-      if (!agentId || (!text.trim() && attachments.length === 0)) return;
+      if (!agentId || (!text.trim() && attachments.length === 0)) return [];
       const requestId = options.requestId ?? `ui-${agentId}-${Date.now()}`;
       const optimisticUserMessage: Message = {
         id: `pending-${requestId}`,
@@ -190,6 +190,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               : agent,
           ),
         );
+        return newMessages;
       } catch (err) {
         setAgents((cur) =>
           cur.map((agent) =>
@@ -213,7 +214,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const send = useCallback(
     async (text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection } = {}) => {
-      if (!selectedId) return;
+      if (!selectedId) return [];
       return sendToAgent(selectedId, text, attachments, options);
     },
     [selectedId, sendToAgent],
