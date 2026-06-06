@@ -141,12 +141,14 @@ export function MissionControl() {
   const pendingVoiceReplyRef = useRef<Message | null>(null);
   const speechPrimedRef = useRef(false);
   const draftRef = useRef("");
+  const previousVoiceStatusRef = useRef<VoiceStatus>("idle");
   const [routingPreview, setRoutingPreview] = useState<{
     instruction: string;
     decision: ChatIntentDecision;
     preview: ChatIntentPreview;
   } | null>(null);
   const latestMessageRef = useRef<HTMLDivElement | null>(null);
+  const mainChatHistoryRef = useRef<HTMLElement | null>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   function resizeComposerTextarea() {
@@ -221,13 +223,29 @@ export function MissionControl() {
     [melkizac?.messages],
   );
 
+  function scrollToLatestMainChatMessage() {
+    window.requestAnimationFrame(() => {
+      latestMessageRef.current?.scrollIntoView({ block: "end", behavior: "auto" });
+      const history = mainChatHistoryRef.current;
+      if (history) history.scrollTop = history.scrollHeight;
+    });
+  }
+
   useEffect(() => {
     if (!hasStartedMainChat) return;
+    scrollToLatestMainChatMessage();
+  }, [hasStartedMainChat, mainChatMessages.length, sending]);
+
+  useEffect(() => {
+    const wasInVoiceMode = previousVoiceStatusRef.current !== "idle";
+    const isNowTextMode = voiceStatus === "idle";
+    previousVoiceStatusRef.current = voiceStatus;
+    if (!hasStartedMainChat || !wasInVoiceMode || !isNowTextMode) return;
     const frame = window.requestAnimationFrame(() => {
-      latestMessageRef.current?.scrollIntoView({ block: "end", behavior: "auto" });
+      scrollToLatestMainChatMessage();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [hasStartedMainChat, mainChatMessages.length, sending]);
+  }, [hasStartedMainChat, voiceStatus]);
 
   useEffect(() => {
     if (!voiceReplyMode) return;
@@ -889,7 +907,7 @@ export function MissionControl() {
           <button className="main-chat-details" type="button" aria-label="Open Melkizac details">Details</button>
         </header>
 
-        <main className={`main-chat-history ${voiceStatus !== "idle" ? "voice-mode" : ""}`} aria-label={voiceStatus !== "idle" ? "Voice input activation" : "Melkizac conversation history"}>
+        <main ref={mainChatHistoryRef} className={`main-chat-history ${voiceStatus !== "idle" ? "voice-mode" : ""}`} aria-label={voiceStatus !== "idle" ? "Voice input activation" : "Melkizac conversation history"}>
           {voiceStatus !== "idle" ? (
             renderVoiceActivation("full")
           ) : mainChatMessages.length === 0 ? (
