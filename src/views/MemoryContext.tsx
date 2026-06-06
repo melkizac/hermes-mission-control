@@ -7,7 +7,7 @@ import type { MemoryContextEntry, MemoryContextResponse, SecondBrainGraphRespons
 const client = new HttpHermesClient();
 
 type ScopeFilter = "" | "user" | "memory";
-type PageTab = "memory" | "knowledge" | "sources" | "workflows" | "graph" | "health";
+type PageTab = "memory" | "knowledge" | "sources";
 type DrawerKind = { kind: "memory"; id: string } | { kind: "note"; path: string } | null;
 type DrawerTab = "summary" | "source" | "links" | "governance";
 
@@ -159,20 +159,16 @@ export function MemoryContext() {
           ["memory", "Agent Memory"],
           ["knowledge", "Second Brain"],
           ["sources", "Sources & Evidence"],
-          ["workflows", "Workflow Knowledge"],
-          ["graph", "Context Graph"],
-          ["health", "Knowledge Health"],
         ].map(([key, label]) => <button key={key} className={pageTab === key ? "on" : ""} onClick={() => setPageTab(key as PageTab)}>{label}</button>)}
       </nav>
+
+      <KnowledgeReadiness kb={kb} graph={graph} health={health} />
 
       {error && <div className="skills-error">{error}</div>}
 
       {pageTab === "memory" && <MemoryPanel entries={entries} loading={loading} selectedId={selectedMemory?.id ?? null} openEntry={openMemory} />}
       {pageTab === "knowledge" && <KnowledgePanel notes={notes} loading={loading} openNote={openNote} />}
       {pageTab === "sources" && <SourcesPanel sources={sources} loading={loading} openNote={openNote} />}
-      {pageTab === "workflows" && <WorkflowPanel kb={kb} health={health} />}
-      {pageTab === "graph" && <GraphPanel graph={graph} />}
-      {pageTab === "health" && <HealthPanel health={health} kb={kb} />}
 
       {selectedMemory && (
         <SlideOverDrawer<DrawerTab>
@@ -235,16 +231,23 @@ function SourcesPanel({ sources, loading, openNote }: { sources: SecondBrainItem
   return <section className="ops-list memory-list knowledge-list"><div className="ops-list-head"><span>Sources & evidence</span><small>{loading ? "Loading…" : `${sources.length} files`}</small></div>{sources.map((item) => <KnowledgeRow key={notePath(item)} item={item} onSelect={() => void openNote(item)} />)}{!loading && sources.length === 0 && <div className="empty big">No source evidence matched this filter.</div>}</section>;
 }
 
-function WorkflowPanel({ kb, health }: { kb: SecondBrainIndexResponse | null; health: SecondBrainHealthResponse | null }) {
-  return <section className="memory-enhancement-grid"><InfoCard title="Workflow schema" body="/schema/WORKFLOW.md is indexed as the operational contract for second-brain ingestion, source promotion, and reusable procedures." meta={`${kb?.summary.chunks ?? 0} chunks prepared`} /><InfoCard title="Context injection" body="Attach-to-chat and attach-to-mission are exposed as planned actions in note drawers; execution remains read-only until audit logging lands." meta="Phase 3 scaffold" /><InfoCard title="Write workflows" body={(health?.write_workflows.actions ?? ["add note", "append evidence", "create source page", "promote source facts"]).join(" · ")} meta={health?.write_workflows.status ?? "planned-read-only"} /></section>;
-}
+function KnowledgeReadiness({ kb, graph, health }: { kb: SecondBrainIndexResponse | null; graph: SecondBrainGraphResponse | null; health: SecondBrainHealthResponse | null }) {
+  const workflowStatus = health?.write_workflows.status ?? (kb?.sections?.includes("schema") ? "Indexed" : "Not indexed");
+  const healthStatus = health?.health.status ?? "Unknown";
+  const relatedCount = graph?.summary.edges ?? kb?.summary.links ?? 0;
+  const chunks = kb?.summary.chunks ?? health?.semantic_search.chunks ?? 0;
 
-function GraphPanel({ graph }: { graph: SecondBrainGraphResponse | null }) {
-  return <section className="memory-graph-panel"><div className="ops-list-head"><span>Context graph</span><small>{graph?.summary.nodes ?? 0} nodes · {graph?.summary.edges ?? 0} edges</small></div><div className="memory-graph-grid"><div className="ops-list"><div className="ops-list-head"><span>Nodes</span></div>{(graph?.nodes ?? []).slice(0, 80).map((node) => <div className="memory-graph-node" key={node.id}><b>{node.title}</b><span>{node.relative_path}</span><small>{categoryLabel(node.section)} · {node.link_count} links</small></div>)}</div><div className="ops-list"><div className="ops-list-head"><span>Edges</span></div>{(graph?.edges ?? []).slice(0, 120).map((edge, index) => <div className="memory-graph-edge" key={`${edge.source}-${edge.target}-${index}`}><b>{edge.label}</b><span>{edge.source} → {edge.target}</span></div>)}</div></div></section>;
-}
-
-function HealthPanel({ health, kb }: { health: SecondBrainHealthResponse | null; kb: SecondBrainIndexResponse | null }) {
-  return <section className="memory-enhancement-grid"><InfoCard title="Semantic search" body={`${kb?.summary.chunks ?? health?.semantic_search.chunks ?? 0} chunks prepared. Embeddings can be added as the next retrieval layer without changing the visible contract.`} meta={kb?.summary.semantic_status ?? health?.semantic_search.status ?? "not indexed"} /><InfoCard title="Knowledge health" body={`Orphans: ${health?.knowledge_health.orphan_review ?? "unknown"}. Stale notes/conflicts are scaffolded for later scoring.`} meta={health?.health.status ?? "unknown"} /><InfoCard title="Read-only governance" body="Path traversal is rejected server-side; likely secrets are redacted; writes require future confirmation and audit logging." meta={kb?.policy.mode ?? "read-only"} />{(health?.health.checks ?? []).map((check) => <InfoCard key={check.label} title={check.label} body={check.detail} meta={check.ok ? "OK" : "Needs attention"} />)}</section>;
+  return (
+    <section className="memory-readiness-strip" aria-label="Knowledge readiness">
+      <div className="ops-list-head"><span>Knowledge readiness</span><small>System context, compressed</small></div>
+      <div className="memory-readiness-grid">
+        <InfoCard title="Workflow rules" body="Reusable workflow/schema knowledge is available as background context, not a separate user workspace." meta={workflowStatus} />
+        <InfoCard title="Related knowledge" body="Connected notes are surfaced inside note details as links, backlinks, and supporting evidence." meta={`${relatedCount} connections`} />
+        <InfoCard title="Knowledge status" body="Indexing and governance checks stay visible as a trust signal without taking over the main Memory tabs." meta={healthStatus} />
+        <InfoCard title="Search readiness" body="Prepared chunks support later retrieval and context attachment across memory, notes, and evidence." meta={`${chunks} chunks`} />
+      </div>
+    </section>
+  );
 }
 
 function Metric({ label, value, sub, tone }: { label: string; value: number | string; sub: string; tone?: "good" | "bad" }) {
