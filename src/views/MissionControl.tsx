@@ -126,8 +126,15 @@ export function MissionControl() {
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>("idle");
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [voiceMessage, setVoiceMessage] = useState("Click the mic and speak. I will transcribe your voice into the message box.");
+  const [voiceAutoSend, setVoiceAutoSend] = useState<{ text: string; seconds: number } | null>(null);
+  const [voiceReplyMode, setVoiceReplyMode] = useState(false);
+  const [voiceReplyBaselineId, setVoiceReplyBaselineId] = useState("");
+  const [spokenMessageId, setSpokenMessageId] = useState("");
+  const [speechPlaying, setSpeechPlaying] = useState(false);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const voiceShouldListenRef = useRef(false);
+  const voiceAutoSendTimerRef = useRef<number | null>(null);
+  const draftRef = useRef("");
   const [routingPreview, setRoutingPreview] = useState<{
     instruction: string;
     decision: ChatIntentDecision;
@@ -153,6 +160,10 @@ export function MissionControl() {
   useLayoutEffect(() => {
     resizeComposerTextarea();
   }, [draft, hasStartedMainChat]);
+
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
 
   useEffect(() => {
     const onResize = () => resizeComposerTextarea();
@@ -213,10 +224,21 @@ export function MissionControl() {
   }, [hasStartedMainChat, mainChatMessages.length, sending]);
 
   useEffect(() => {
+    if (!voiceReplyMode) return;
+    const latestAgentMessage = [...mainChatMessages].reverse().find((message) => message.role === "agent");
+    if (!latestAgentMessage) return;
+    const messageId = String(latestAgentMessage.id);
+    if (messageId === voiceReplyBaselineId || messageId === spokenMessageId) return;
+    speakAgentReply(latestAgentMessage);
+  }, [mainChatMessages, spokenMessageId, voiceReplyBaselineId, voiceReplyMode]);
+
+  useEffect(() => {
     return () => {
       voiceShouldListenRef.current = false;
       recognitionRef.current?.abort();
       recognitionRef.current = null;
+      if (voiceAutoSendTimerRef.current) window.clearTimeout(voiceAutoSendTimerRef.current);
+      window.speechSynthesis?.cancel();
     };
   }, []);
 
@@ -230,15 +252,87 @@ export function MissionControl() {
     return recognition;
   }
 
+  function clearVoiceAutoSend() {
+    if (voiceAutoSendTimerRef.current) {
+      window.clearTimeout(voiceAutoSendTimerRef.current);
+      voiceAutoSendTimerRef.current = null;
+    }
+    setVoiceAutoSend(null);
+  }
+
+  function updateDraft(next: string | ((current: string) => string)) {
+    setDraft((current) => {
+      const resolved = typeof next === "function" ? next(current) : next;
+      draftRef.current = resolved;
+      return resolved;
+    });
+  }
+
+  function scheduleVoiceAutoSend(text: string) {
+    const instruction = text.trim();
+    if (!instruction) return;
+    if (voiceAutoSendTimerRef.current) window.clearTimeout(voiceAutoSendTimerRef.current);
+    setVoiceReplyMode(true);
+    setVoiceAutoSend({ text: instruction, seconds: 3 });
+    const tick = (seconds: number) => {
+      voiceAutoSendTimerRef.current = window.setTimeout(() => {
+        if (seconds <= 1) {
+          voiceAutoSendTimerRef.current = null;
+          setVoiceAutoSend(null);
+          const latestAgentMessage = [...mainChatMessages].reverse().find((message) => message.role === "agent");
+          setVoiceReplyBaselineId(latestAgentMessage ? String(latestAgentMessage.id) : "");
+          void submitInstruction(instruction, { preserveDraft: false });
+          return;
+        }
+        setVoiceAutoSend({ text: instruction, seconds: seconds - 1 });
+        tick(seconds - 1);
+      }, 1000);
+    };
+    tick(3);
+  }
+
+  function cancelVoiceAutoSend() {
+    clearVoiceAutoSend();
+    setVoiceMessage("Voice send cancelled. Edit or send manually.");
+    window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
+  }
+
+  function editVoiceAutoSend() {
+    cancelVoiceAutoSend();
+  }
+
+  function speakAgentReply(message: Message) {
+    const text = visibleChatText(message);
+    if (!text.trim() || !("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "en-SG";
+    utterance.rate = 1;
+    utterance.onstart = () => setSpeechPlaying(true);
+    utterance.onend = () => setSpeechPlaying(false);
+    utterance.onerror = () => setSpeechPlaying(false);
+    setSpokenMessageId(String(message.id));
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function stopVoiceReply() {
+    window.speechSynthesis?.cancel();
+    setSpeechPlaying(false);
+    setVoiceReplyMode(false);
+  }
+
   function stopVoiceInput() {
     voiceShouldListenRef.current = false;
     recognitionRef.current?.stop();
     setVoiceStatus("idle");
-    setVoiceMessage(voiceTranscript ? "Voice captured. Review or send when ready." : "Voice input stopped.");
+    const captured = draftRef.current.trim();
+    setVoiceMessage(captured ? "Voice captured. Auto-sending with a short review window." : "Voice input stopped.");
+    if (captured) scheduleVoiceAutoSend(captured);
   }
 
   function startVoiceInput() {
     setError(null);
+    clearVoiceAutoSend();
     const recognition = createSpeechRecognition();
     if (!recognition) {
       setVoiceStatus("unsupported");
@@ -266,7 +360,7 @@ export function MissionControl() {
       if (combined) setVoiceTranscript(combined);
       if (finalText.trim()) {
         const captured = finalText.trim();
-        setDraft((current) => `${current}${current.trim() ? " " : ""}${captured}`.trimStart());
+        updateDraft((current) => `${current}${current.trim() ? " " : ""}${captured}`.trimStart());
         setVoiceMessage("Captured. Keep speaking or tap the mic again to stop.");
       }
     };
@@ -371,6 +465,45 @@ export function MissionControl() {
     );
   }
 
+  function renderVoiceAutoSendPreview() {
+    if (!voiceAutoSend) return null;
+    return (
+      <div className="voice-auto-send-preview" role="status" aria-live="polite">
+        <div className="voice-auto-send-main">
+          <strong>Sending in {voiceAutoSend.seconds}s</strong>
+          <span>{voiceAutoSend.text}</span>
+        </div>
+        <div className="voice-auto-send-actions">
+          <button type="button" onClick={editVoiceAutoSend}>Edit</button>
+          <button type="button" onClick={cancelVoiceAutoSend}>Cancel</button>
+          <button
+            type="button"
+            className={voiceReplyMode ? "active" : ""}
+            aria-pressed={voiceReplyMode}
+            onClick={() => setVoiceReplyMode((current) => !current)}
+          >
+            Voice reply {voiceReplyMode ? "on" : "off"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  function renderVoiceReplyControl() {
+    if (!voiceReplyMode && !speechPlaying) return null;
+    return (
+      <button
+        className={`voice-reply-control ${speechPlaying ? "speaking" : ""}`}
+        type="button"
+        onClick={stopVoiceReply}
+        aria-label={speechPlaying ? "Stop spoken agent reply" : "Turn off spoken agent reply"}
+        title={speechPlaying ? "Stop spoken reply" : "Voice reply is on"}
+      >
+        {speechPlaying ? "Stop voice" : "Voice reply on"}
+      </button>
+    );
+  }
+
   function handleAttachmentFiles(files: FileList | null) {
     if (!files?.length) return;
     setError(null);
@@ -408,9 +541,10 @@ export function MissionControl() {
     return `${instruction}\n\n[Mission Control Chat Context]\n${context.join("\n")}\n\n[Mission Control Intent Routing]\n${serializeChatIntentDecision(intentDecision)}`;
   }
 
-  async function submit() {
-    const instruction = draft.trim();
+  async function submitInstruction(instructionText: string, options: { preserveDraft?: boolean } = {}) {
+    const instruction = instructionText.trim();
     if (!instruction || sending) return;
+    clearVoiceAutoSend();
     setHasStartedMainChat(true);
     setSending(true);
     setError(null);
@@ -425,13 +559,17 @@ export function MissionControl() {
     }
     try {
       await sendToAgent("default", composeInstructionContext(instruction, intentDecision));
-      setDraft("");
+      if (options.preserveDraft !== true) updateDraft("");
       setAttachments([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Mission Control could not send this instruction.");
     } finally {
       setSending(false);
     }
+  }
+
+  async function submit() {
+    await submitInstruction(draft);
   }
 
   function handleComposerKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -447,10 +585,12 @@ export function MissionControl() {
         <h1>{selectedProject ? `What should we work on in ${projectLabel(selectedProject)}?` : "What should Melkizac work on?"}</h1>
 
         <form className="clean-chat-composer" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+          {renderVoiceAutoSendPreview()}
+
           <textarea
             ref={composerTextareaRef}
             value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => updateDraft(event.target.value)}
             onKeyDown={handleComposerKeyDown}
             placeholder="Do anything"
             rows={2}
@@ -498,6 +638,7 @@ export function MissionControl() {
                   {modelModeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
               </label>
+              {renderVoiceReplyControl()}
               {renderMicButton()}
               <button className="clean-chat-send" type="submit" disabled={sending || !draft.trim()} aria-label="Send message">↑</button>
             </div>
@@ -588,10 +729,12 @@ export function MissionControl() {
               onEdit={() => composerTextareaRef.current?.focus()}
             />
           )}
+          {renderVoiceAutoSendPreview()}
+
           <textarea
             ref={composerTextareaRef}
             value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => updateDraft(event.target.value)}
             onKeyDown={handleComposerKeyDown}
             placeholder="Send a task or message to Melkizac..."
             rows={2}
@@ -649,6 +792,7 @@ export function MissionControl() {
                   {modelModeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
               </label>
+              {renderVoiceReplyControl()}
               {renderMicButton()}
               <button className="clean-chat-send" type="submit" disabled={sending || !draft.trim()} aria-label="Send message">↑</button>
             </div>
