@@ -33,6 +33,7 @@ export const workspaceViews = new Set<ViewKey>([
   "agents",
   "agent-org",
   "skills",
+  "memory",
   "tools",
   "plugins",
   "projects",

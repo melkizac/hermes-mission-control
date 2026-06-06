@@ -1,4 +1,4 @@
-import type { Agent, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, MissionControlMe, ModelRoutingSelection, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, CreateResearchRunRequest, CreateResearchRunResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainResponse, Skill, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
+import type { Agent, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, CreateResearchRunRequest, CreateResearchRunResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
 import { seedAgents, seedApprovals } from "../data/mockData";
 
@@ -711,6 +711,42 @@ export class MockHermesClient implements HermesClient {
       command_center: null,
       health: { status: "healthy", checks: [] },
     };
+  }
+
+  async getSecondBrainIndex(): Promise<SecondBrainIndexResponse> {
+    await delay(60);
+    const item = { id: "mock-sgqr", title: "SGQR PayNow Web Integration", summary: "Mock topic with source evidence.", path: "mock://wiki/topics/sgqr.md", relative_path: "topics/sgqr.md", section: "topics", layer: "wiki", updated_at: "now", size: 1200, links: ["Mock Source"], preview: "# SGQR PayNow Web Integration", immutable: false };
+    return { root: "mock://second-brain", summary: { wiki_pages: 1, raw_sources: 1, sections: 1, links: 1, chunks: 1, last_indexed: "now", semantic_status: "chunked-not-embedded" }, sections: ["topics"], wiki: [item], raw_sources: [], graph: { nodes: 1, edges: 1 }, chunks: [{ id: "mock-chunk", note_id: "wiki/topics/sgqr.md", text: "Mock semantic chunk", embedding_status: "not-indexed", section: "topics" }], policy: { mode: "read-only", path_safety: "mock", redaction: "mock" } };
+  }
+
+  async searchSecondBrain(): Promise<SecondBrainSearchResponse> {
+    await delay(40);
+    return { query: "", results: [], summary: { total: 0, returned: 0 }, policy: { mode: "read-only" } };
+  }
+
+  async getSecondBrainNote(path: string): Promise<SecondBrainNoteResponse> {
+    await delay(40);
+    const item = { id: "mock-sgqr", title: "SGQR PayNow Web Integration", summary: "Mock topic with source evidence.", path: "mock://wiki/topics/sgqr.md", relative_path: path, section: "topics", layer: "wiki", updated_at: "now", size: 1200, links: ["Mock Source"], preview: "# SGQR", immutable: false };
+    return { note: { ...item, content: "# SGQR\n\nMock rendered markdown source.", backlinks: [], evidence: [], health: { redacted: false, backlinks: 0, outbound_links: 1 } }, context_actions: [{ id: "attach-to-chat", label: "Attach to chat context", status: "planned" }], policy: { mode: "read-only" } };
+  }
+
+  async getSecondBrainGraph(): Promise<SecondBrainGraphResponse> {
+    await delay(40);
+    return { nodes: [], edges: [], summary: { nodes: 0, edges: 0 }, policy: { mode: "read-only" } };
+  }
+
+  async getSecondBrainHealth(): Promise<SecondBrainHealthResponse> {
+    await delay(40);
+    return { health: { status: "healthy", checks: [] }, knowledge_health: { orphan_review: "0 candidates", stale_notes: "mock", conflicts: "mock" }, write_workflows: { status: "planned-read-only", actions: [] }, semantic_search: { status: "mock", chunks: 0 } };
+  }
+
+  async getMemoryContext(): Promise<MemoryContextResponse> {
+    await delay(60);
+    const entries = [
+      { id: "mock-user-voice", scope: "user" as const, scope_label: "User profile", category: "identity-preferences", title: "User communication preference", text: "User prefers practical, direct, operator-led responses with clear evidence and blockers.", raw: "User prefers practical, direct, operator-led responses with clear evidence and blockers.", source_path: "mock://memory/USER.md", source_label: "User profile · USER.md", line_start: 1, updated_at: "now", redacted: false, tags: ["Hermes"] },
+      { id: "mock-operational", scope: "memory" as const, scope_label: "Operational memory", category: "projects-environment", title: "Mission Control source", text: "Mission Control source and deployment locations are tracked as operational context.", raw: "Mission Control source and deployment locations are tracked as operational context.", source_path: "mock://memory/MEMORY.md", source_label: "Operational memory · MEMORY.md", line_start: 3, updated_at: "now", redacted: false, tags: ["Mission Control"] },
+    ];
+    return { entries, summary: { total: entries.length, user: 1, memory: 1, redacted: 0, categories: 2 }, categories: ["identity-preferences", "projects-environment"], category_counts: [{ category: "identity-preferences", count: 1 }, { category: "projects-environment", count: 1 }], sources: ["User profile · USER.md", "Operational memory · MEMORY.md"], policy: { summary: "Mock memory is read-only and redacted before display.", recommended_controls: ["Request correction", "Request deletion", "View source evidence", "Audit future edits"] } };
   }
 
   async listBoard(): Promise<BoardResponse> {

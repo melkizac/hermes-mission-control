@@ -10,6 +10,7 @@ type Name =
   | "projects"
   | "board"
   | "skills"
+  | "memory"
   | "approvals"
   | "bell"
   | "automations"
@@ -50,6 +51,7 @@ const paths: Record<Name, string> = {
   projects: "M3 7h7l2 2h9v10a2 2 0 01-2 2H5a2 2 0 01-2-2zM3 7V5a2 2 0 012-2h4l2 2h8a2 2 0 012 2v2",
   board: "M4 5h16M6 9h4v5H6zM14 9h4v9h-4zM6 18h4",
   skills: "M12 3l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.2 6.8 19l1-5.8L3.6 9.1l5.8-.8z",
+  memory: "M8 4a3 3 0 00-3 3v1.2A3.8 3.8 0 003 12a3.8 3.8 0 002 3.4V17a3 3 0 003 3h1M16 4a3 3 0 013 3v1.2a3.8 3.8 0 012 3.8 3.8 3.8 0 01-2 3.4V17a3 3 0 01-3 3h-1M12 5v14M8 10h3M13 14h3",
   approvals: "M9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
   bell: "M18 8a6 6 0 10-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4",
   automations: "M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2M15 12a3 3 0 11-6 0 3 3 0 016 0z",

@@ -1,4 +1,4 @@
-import type { Agent, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionPayload, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, MissionControlMe, ModelRoutingSelection, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, ResearchRunCreateRequest, ResearchRunCreateResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainResponse, Skill, SkillFileResponse, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
+import type { Agent, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionPayload, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, ResearchRunCreateRequest, ResearchRunCreateResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillFileResponse, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -417,6 +417,45 @@ export class HttpHermesClient implements HermesClient {
     if (filters?.section) params.set("section", filters.section);
     const suffix = params.toString() ? `?${params.toString()}` : "";
     return request<SecondBrainResponse>(`/api/second-brain${suffix}`);
+  }
+
+  async getSecondBrainIndex(filters?: { q?: string; section?: string }): Promise<SecondBrainIndexResponse> {
+    const params = new URLSearchParams();
+    if (filters?.q) params.set("q", filters.q);
+    if (filters?.section) params.set("section", filters.section);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request<SecondBrainIndexResponse>(`/api/second-brain/index${suffix}`);
+  }
+
+  async searchSecondBrain(filters?: { q?: string; section?: string; limit?: number }): Promise<SecondBrainSearchResponse> {
+    const params = new URLSearchParams();
+    if (filters?.q) params.set("q", filters.q);
+    if (filters?.section) params.set("section", filters.section);
+    if (filters?.limit) params.set("limit", String(filters.limit));
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request<SecondBrainSearchResponse>(`/api/second-brain/search${suffix}`);
+  }
+
+  async getSecondBrainNote(path: string): Promise<SecondBrainNoteResponse> {
+    const params = new URLSearchParams({ path });
+    return request<SecondBrainNoteResponse>(`/api/second-brain/note?${params.toString()}`);
+  }
+
+  async getSecondBrainGraph(): Promise<SecondBrainGraphResponse> {
+    return request<SecondBrainGraphResponse>("/api/second-brain/graph");
+  }
+
+  async getSecondBrainHealth(): Promise<SecondBrainHealthResponse> {
+    return request<SecondBrainHealthResponse>("/api/second-brain/health");
+  }
+
+  async getMemoryContext(filters?: { q?: string; scope?: string; category?: string }): Promise<MemoryContextResponse> {
+    const params = new URLSearchParams();
+    if (filters?.q) params.set("q", filters.q);
+    if (filters?.scope) params.set("scope", filters.scope);
+    if (filters?.category) params.set("category", filters.category);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request<MemoryContextResponse>(`/api/memory${suffix}`);
   }
 
   async listBoard(filters?: { q?: string; status?: BoardStatus | ""; assignee?: string; project?: string }): Promise<BoardResponse> {

@@ -17,6 +17,7 @@ import { AuditLog } from "./views/AuditLog";
 import { Automations } from "./views/Automations";
 import { TaskBoard } from "./views/TaskBoard";
 import { SkillsHub } from "./views/SkillsHub";
+import { MemoryContext } from "./views/MemoryContext";
 import { ToolsHub } from "./views/ToolsHub";
 import { PluginsHub } from "./views/PluginsHub";
 import { CostDashboard } from "./views/CostDashboard";
@@ -93,6 +94,7 @@ function Shell() {
         {canRenderView && view === "approvals" && <Approvals />}
         {canRenderView && view === "board" && <TaskBoard />}
         {canRenderView && view === "skills" && <SkillsHub />}
+        {canRenderView && view === "memory" && <MemoryContext />}
         {canRenderView && view === "tools" && <ToolsHub />}
         {canRenderView && view === "plugins" && <PluginsHub />}
         {canRenderView && view === "automations" && <Automations />}

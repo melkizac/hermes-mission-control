@@ -493,6 +493,21 @@ export interface Task {
   updatedAt: string;
 }
 
+export interface ProfileRuntimeDetails {
+  profile_id: string;
+  profile_path: string;
+  identity?: { name?: string; source?: string };
+  model_routing?: { provider?: string; model?: string };
+  toolsets?: string[];
+  memory?: { entries: number; files: Array<{ name: string; entries: number; updated_at?: string }>; redacted_or_sensitive_mentions?: number };
+  sessions?: { count: number; recent?: Array<Record<string, unknown>> };
+  plugins?: { enabled: number; total: number; items: Array<{ id: string; name: string; category?: string; status?: string; source?: string }>; error?: string };
+  gateway?: { channels: Array<{ id: string; enabled: boolean; source?: string }>; webhooks_configured?: number };
+  environment?: { env_files: Array<{ name: string; status: string; variable_count: number; sensitive_count: number }>; policy: string };
+  routines?: { count: number; items?: Array<Record<string, unknown>> };
+  config_files?: Array<{ name: string; kind?: string; updated_at?: string }>;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -521,6 +536,7 @@ export interface Agent {
   tasks: Task[];
   insightSummary?: string;
   insightStatus?: string;
+  profile_details?: ProfileRuntimeDetails;
 }
 
 export interface Approval {
@@ -941,6 +957,41 @@ export interface SkillsHubResponse {
   error?: string;
 }
 
+export interface MemoryContextEntry {
+  id: string;
+  scope: "user" | "memory";
+  scope_label: string;
+  category: string;
+  title: string;
+  text: string;
+  raw: string;
+  source_path: string;
+  source_label: string;
+  line_start: number;
+  updated_at: string;
+  redacted: boolean;
+  tags: string[];
+}
+
+export interface MemoryContextResponse {
+  entries: MemoryContextEntry[];
+  summary: {
+    total: number;
+    user: number;
+    memory: number;
+    redacted: number;
+    categories: number;
+  };
+  categories: string[];
+  category_counts: { category: string; count: number }[];
+  sources: string[];
+  policy: {
+    summary: string;
+    recommended_controls: string[];
+  };
+  error?: string;
+}
+
 export interface PluginHubRecord {
   id: string;
   name: string;
@@ -1244,6 +1295,62 @@ export interface SecondBrainResponse {
   log: { path: string; updated_at: string; preview: string; entries: Array<{ title: string; summary: string }> };
   command_center?: SecondBrainItem | null;
   health: { status: string; checks: Array<{ label: string; ok: boolean; detail: string }> };
+}
+
+export interface SecondBrainIndexResponse {
+  root: string;
+  summary: { wiki_pages: number; raw_sources: number; sections: number; links: number; chunks: number; last_indexed: string; semantic_status: string };
+  sections: string[];
+  wiki: SecondBrainItem[];
+  raw_sources: SecondBrainItem[];
+  graph: { nodes: number; edges: number };
+  chunks: Array<{ id: string; note_id: string; text: string; embedding_status: string; section: string }>;
+  policy: { mode: string; path_safety?: string; redaction?: string };
+}
+
+export interface SecondBrainSearchResult {
+  id: string;
+  title: string;
+  relative_path: string;
+  section: string;
+  layer: string;
+  updated_at: string;
+  snippet: string;
+  score: number;
+}
+
+export interface SecondBrainSearchResponse {
+  query: string;
+  results: SecondBrainSearchResult[];
+  summary: { total: number; returned?: number };
+  policy: { mode: string };
+}
+
+export interface SecondBrainGraphResponse {
+  nodes: Array<{ id: string; title: string; section: string; layer: string; summary: string; path: string; relative_path: string; updated_at: string; link_count: number }>;
+  edges: Array<{ source: string; target: string; label: string; kind: string }>;
+  summary: { nodes: number; edges: number };
+  policy?: { mode: string };
+}
+
+export interface SecondBrainNoteResponse {
+  note: SecondBrainItem & {
+    content: string;
+    content_truncated?: boolean;
+    backlinks: Array<{ title: string; relative_path: string; label: string }>;
+    evidence: SecondBrainItem[];
+    health: { redacted: boolean; backlinks: number; outbound_links: number };
+  };
+  context_actions: Array<{ id: string; label: string; status: string }>;
+  policy: { mode: string; write_workflows?: string };
+  error?: string;
+}
+
+export interface SecondBrainHealthResponse {
+  health: { status: string; checks: Array<{ label: string; ok: boolean; detail: string }> };
+  knowledge_health: { orphan_review: string; stale_notes: string; conflicts: string };
+  write_workflows: { status: string; actions: string[] };
+  semantic_search: { status: string; chunks: number };
 }
 
 export interface RuntimeRecord {
@@ -1571,6 +1678,7 @@ export type ViewKey =
   | "second-brain"
   | "board"
   | "skills"
+  | "memory"
   | "approvals"
   | "automations"
   | "audit"
