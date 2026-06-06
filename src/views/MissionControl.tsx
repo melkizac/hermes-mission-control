@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import { ChatIntentRoutingPreview } from "../components/ChatIntentRoutingPreview";
+import voiceHudReference from "../assets/voice-hud-reference.jpg";
 import { useStore } from "../services/store";
 import { buildChatIntentPreview, routeChatIntent, serializeChatIntentDecision } from "../services/chatIntentRouter";
 import type { ChatIntentDecision, ChatIntentPreview, ChatMissionContext, ChatRoutineContext, ChatWorkflowContext } from "../services/chatIntentRouter";
@@ -504,6 +505,8 @@ export function MissionControl() {
     } as React.CSSProperties;
     const orb = (
       <div className="voice-jarvis-orb" aria-hidden="true">
+        <img className="voice-orb-reference-image" src={voiceHudReference} alt="" />
+        <span className="voice-reference-glow" />
         <span className="voice-ring ring-one" />
         <span className="voice-ring ring-two" />
         <span className="voice-ring ring-three" />
