@@ -246,6 +246,7 @@ export function MissionControl() {
     recognitionRef.current?.abort();
     recognitionRef.current = recognition;
     voiceShouldListenRef.current = true;
+    setHasStartedMainChat(true);
     setVoiceTranscript("");
     setVoiceStatus("listening");
     setVoiceMessage("Listening… speak your instruction to Melkizac.");
@@ -304,11 +305,11 @@ export function MissionControl() {
     else startVoiceInput();
   }
 
-  function renderVoiceActivation() {
+  function renderVoiceActivation(mode: "compact" | "full" = "compact") {
     if (voiceStatus === "idle") return null;
     const isListening = voiceStatus === "listening";
     return (
-      <div className={`voice-activation ${isListening ? "listening" : "notice"}`} role="status" aria-live="polite">
+      <div className={`voice-activation ${mode === "full" ? "full-window" : "compact"} ${isListening ? "listening" : "notice"}`} role="status" aria-live="polite">
         <div className="voice-jarvis-orb" aria-hidden="true">
           <span className="voice-ring ring-one" />
           <span className="voice-ring ring-two" />
@@ -515,8 +516,10 @@ export function MissionControl() {
           <button className="main-chat-details" type="button" aria-label="Open Melkizac details">Details</button>
         </header>
 
-        <main className="main-chat-history" aria-label="Melkizac conversation history">
-          {mainChatMessages.length === 0 ? (
+        <main className={`main-chat-history ${voiceStatus !== "idle" ? "voice-mode" : ""}`} aria-label={voiceStatus !== "idle" ? "Voice input activation" : "Melkizac conversation history"}>
+          {voiceStatus !== "idle" ? (
+            renderVoiceActivation("full")
+          ) : mainChatMessages.length === 0 ? (
             <div className="main-chat-empty-state">
               <span className="main-chat-avatar">ME</span>
               <strong>Starting the Melkizac conversation…</strong>
@@ -571,8 +574,6 @@ export function MissionControl() {
             placeholder="Send a task or message to Melkizac..."
             rows={2}
           />
-
-          {renderVoiceActivation()}
 
           {attachments.length > 0 && (
             <div className="clean-chat-attachments" aria-label="Attached files">

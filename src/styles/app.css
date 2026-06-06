@@ -4064,6 +4064,12 @@ input, select, textarea { font-family: inherit; }
   background: #fff;
 }
 
+.main-chat-history.voice-mode {
+  overflow: hidden;
+  padding: 0;
+  background: #080604;
+}
+
 .main-chat-empty-state {
   margin: auto;
   display: grid;
@@ -4492,6 +4498,28 @@ input, select, textarea { font-family: inherit; }
   box-shadow: inset 0 0 34px rgba(245,158,11,.18), 0 18px 42px rgba(92, 45, 0, .18);
 }
 
+.voice-activation.full-window {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  grid-template-columns: 1fr;
+  justify-items: center;
+  align-content: center;
+  gap: clamp(14px, 2.2vh, 24px);
+  padding: clamp(18px, 4vw, 46px);
+  text-align: center;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(251, 191, 36, .34), transparent 18%),
+    radial-gradient(circle at 50% 45%, rgba(245, 158, 11, .20), transparent 34%),
+    radial-gradient(circle at 18% 16%, rgba(251, 191, 36, .14), transparent 28%),
+    radial-gradient(circle at 82% 78%, rgba(245, 158, 11, .12), transparent 26%),
+    linear-gradient(145deg, #050403 0%, #130b04 46%, #050403 100%);
+  box-shadow: inset 0 0 90px rgba(245,158,11,.18), inset 0 0 220px rgba(0,0,0,.55);
+}
+
 .voice-activation::before,
 .voice-activation::after {
   content: "";
@@ -4525,6 +4553,12 @@ input, select, textarea { font-family: inherit; }
   place-items: center;
   isolation: isolate;
   filter: drop-shadow(0 0 24px rgba(245,158,11,.72));
+}
+
+.voice-activation.full-window .voice-jarvis-orb {
+  width: clamp(140px, 20vw, 205px);
+  height: clamp(140px, 20vw, 205px);
+  filter: drop-shadow(0 0 42px rgba(245,158,11,.85));
 }
 
 .voice-ring,
@@ -4575,6 +4609,26 @@ input, select, textarea { font-family: inherit; }
   opacity: .85;
 }
 
+.voice-activation.full-window .voice-ring {
+  border-width: 2px;
+  box-shadow: 0 0 32px rgba(245,158,11,.62), inset 0 0 28px rgba(245,158,11,.28);
+}
+
+.voice-activation.full-window .voice-core {
+  width: clamp(34px, 5vw, 58px);
+  height: clamp(34px, 5vw, 58px);
+  box-shadow: 0 0 52px rgba(251,191,36,.98), 0 0 120px rgba(245,158,11,.48);
+}
+
+.voice-activation.full-window .voice-ray {
+  width: 3px;
+  height: 42%;
+  top: 8%;
+  left: calc(50% - 1.5px);
+  transform-origin: 1.5px 100%;
+  opacity: .72;
+}
+
 .voice-ray.ray-two { transform: rotate(64deg); }
 .voice-ray.ray-three { transform: rotate(132deg); }
 
@@ -4591,12 +4645,27 @@ input, select, textarea { font-family: inherit; }
 .voice-particle.particle-two { bottom: 21px; left: 17px; animation-delay: .45s; }
 .voice-particle.particle-three { bottom: 35px; right: 15px; animation-delay: .8s; }
 
+.voice-activation.full-window .voice-particle {
+  width: 8px;
+  height: 8px;
+}
+
+.voice-activation.full-window .voice-particle.particle-one { top: 16%; right: 20%; }
+.voice-activation.full-window .voice-particle.particle-two { bottom: 20%; left: 17%; }
+.voice-activation.full-window .voice-particle.particle-three { bottom: 32%; right: 12%; }
+
 .voice-activation-copy {
   position: relative;
   z-index: 1;
   min-width: 0;
   display: grid;
   gap: 5px;
+}
+
+.voice-activation.full-window .voice-activation-copy {
+  width: min(620px, 92%);
+  justify-items: center;
+  gap: 10px;
 }
 
 .voice-activation-copy strong {
@@ -4607,11 +4676,22 @@ input, select, textarea { font-family: inherit; }
   text-transform: uppercase;
 }
 
+.voice-activation.full-window .voice-activation-copy strong {
+  font-size: clamp(18px, 2.2vw, 30px);
+  letter-spacing: .16em;
+}
+
 .voice-activation-copy span {
   color: #fed7aa;
   font-size: 13px;
   line-height: 1.4;
   font-weight: 750;
+}
+
+.voice-activation.full-window .voice-activation-copy span {
+  max-width: 520px;
+  font-size: clamp(14px, 1.4vw, 18px);
+  line-height: 1.55;
 }
 
 .voice-activation-copy em {
@@ -4622,6 +4702,13 @@ input, select, textarea { font-family: inherit; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.voice-activation.full-window .voice-activation-copy em {
+  max-width: min(720px, 100%);
+  white-space: normal;
+  font-size: clamp(14px, 1.25vw, 17px);
+  color: #fffbeb;
 }
 
 @keyframes voiceOrbSpin {
