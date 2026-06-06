@@ -24,6 +24,16 @@ function isReadableMessage(m: Message) {
   return (m.role === "user" || m.role === "agent") && Boolean(m.text?.trim() || m.attachments?.length || m.artifact || m.insight);
 }
 
+function visibleChatText(text?: string) {
+  const raw = text || "";
+  const markers = ["[Mission Control Chat Context]", "[Mission Control Intent Routing]"];
+  const firstInternalMarker = markers
+    .map((marker) => raw.indexOf(marker))
+    .filter((index) => index >= 0)
+    .sort((a, b) => a - b)[0];
+  return (firstInternalMarker === undefined ? raw : raw.slice(0, firstInternalMarker)).trim();
+}
+
 function messageTimestampLabel(m: Message) {
   if (!m.ts) return m.at;
   const ageSeconds = Date.now() / 1000 - m.ts;
@@ -49,7 +59,8 @@ function messageAuthor(m: Message, agent: Agent) {
 }
 
 function messageTextForReply(m: Message) {
-  if (m.text?.trim()) return m.text.trim();
+  const visibleText = visibleChatText(m.text);
+  if (visibleText) return visibleText;
   if (m.insight?.trim()) return m.insight.trim();
   if (m.artifact) return [m.artifact.filename, m.artifact.path, m.artifact.preview].filter(Boolean).join("\n");
   if (m.attachments?.length) return m.attachments.map((a) => `${a.filename} (${a.mime || "file"})`).join("\n");
@@ -799,6 +810,7 @@ function MessageView({ m, agent, onReply }: { m: Message; agent: Agent; onReply?
   }
 
   const isUser = m.role === "user";
+  const visibleText = visibleChatText(m.text);
   return (
     <div className={"msg" + (isUser ? " me" : "")}>
       <span className="av" style={{ background: isUser ? "#1e2633" : agent.color }}>
@@ -811,11 +823,11 @@ function MessageView({ m, agent, onReply }: { m: Message; agent: Agent; onReply?
           </span>
           <span className="message-actions">
             <ReplyMessageButton message={m} onReply={onReply} />
-            <CopyMessageButton text={m.text} label={isUser ? "your message" : "agent message"} />
+            <CopyMessageButton text={visibleText} label={isUser ? "your message" : "agent message"} />
           </span>
         </div>
         <ReplyQuote reply={m.replyTo} />
-        {m.text && <div className="bubble">{m.text}</div>}
+        {visibleText && <div className="bubble">{visibleText}</div>}
         <AttachmentList attachments={m.attachments} />
       </div>
     </div>

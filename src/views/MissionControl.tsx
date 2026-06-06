@@ -101,9 +101,12 @@ function chatSessionLabel(message: Message) {
 
 function visibleChatText(message: Message) {
   const raw = message.text || "";
-  const marker = "[Mission Control Chat Context]";
-  const index = raw.indexOf(marker);
-  return (index >= 0 ? raw.slice(0, index) : raw).trim();
+  const markers = ["[Mission Control Chat Context]", "[Mission Control Intent Routing]"];
+  const firstInternalMarker = markers
+    .map((marker) => raw.indexOf(marker))
+    .filter((index) => index >= 0)
+    .sort((a, b) => a - b)[0];
+  return (firstInternalMarker === undefined ? raw : raw.slice(0, firstInternalMarker)).trim();
 }
 
 export function MissionControl() {
