@@ -5300,15 +5300,20 @@ button.voice-activation {
     height: 100vh;
     height: 100dvh;
     min-height: 0;
-    padding: 16px 12px calc(16px + env(safe-area-inset-bottom));
+    padding: max(18px, env(safe-area-inset-top)) 20px calc(18px + env(safe-area-inset-bottom));
     overflow: hidden;
-    display: grid;
-    align-items: center;
+    display: block;
+    background: #fff;
   }
 
   .mobile-chat-only-main .clean-chat-shell {
     max-width: none;
     width: 100%;
+    height: 100%;
+    display: grid;
+    grid-template-rows: minmax(0, 70%) auto minmax(0, 1fr);
+    gap: 0;
+    align-items: start;
   }
 
   .mobile-chat-only-main .clean-project-strip,
@@ -5319,20 +5324,78 @@ button.voice-activation {
   }
 
   .mobile-chat-only-main .clean-chat-shell h1 {
-    display: block;
-    margin: 0 0 10px;
-    padding: 0 4px;
-    color: #4b5563;
-    font-size: 13px;
-    line-height: 1.25;
-    font-weight: 750;
-    letter-spacing: -0.01em;
+    display: flex;
+    align-items: flex-end;
+    align-self: stretch;
+    margin: 0;
+    padding: 0 4px 14px;
+    color: #374151;
+    font-size: 18px;
+    line-height: 1.15;
+    font-weight: 800;
+    letter-spacing: -0.035em;
     text-align: left;
   }
 
   .mobile-chat-only-main .clean-chat-composer {
-    min-height: 128px;
-    border-radius: 26px;
+    min-height: 140px;
+    border: 1px solid rgba(229, 231, 235, .96);
+    border-radius: 31px;
+    box-shadow: 0 26px 44px rgba(17, 24, 39, .14), 0 2px 8px rgba(17, 24, 39, .06);
+  }
+
+  .mobile-chat-only-main .clean-chat-composer textarea {
+    min-height: 72px;
+    padding: 22px 28px 4px;
+    color: #374151;
+    font-size: 23px;
+    line-height: 1.35;
+    font-weight: 400;
+  }
+
+  .mobile-chat-only-main .clean-chat-composer textarea::placeholder {
+    color: #c7c9cc;
+  }
+
+  .mobile-chat-only-main .clean-chat-plus span {
+    color: #767b82;
+    font-size: 40px;
+    font-weight: 260;
+  }
+
+  .mobile-chat-only-main .clean-chat-mic {
+    width: 35px;
+    height: 35px;
+    color: #9ca3af;
+  }
+
+  .mobile-chat-only-main .clean-chat-mic svg {
+    width: 21px;
+    height: 21px;
+    stroke-width: 2;
+  }
+
+  .mobile-chat-only-main .clean-chat-send {
+    width: 64px;
+    height: 64px;
+    border-radius: 999px;
+    display: inline-grid;
+    place-items: center;
+    background: #c9c9cc;
+    color: #fff;
+    font-size: 37px;
+    line-height: 1;
+    font-weight: 520;
+  }
+
+  .mobile-chat-only-main .clean-chat-send:not(:disabled) {
+    background: #111827;
+    color: #fff;
+  }
+
+  .mobile-chat-only-main .clean-chat-send:disabled {
+    opacity: 1;
+    cursor: default;
   }
 
   .mobile-chat-only-main .clean-chat-toolbar {
@@ -5475,9 +5538,7 @@ button.voice-activation {
   }
 
   .mobile-chat-only-main .voice-reply-control {
-    max-width: 92px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    display: none;
   }
 
   .mobile-chat-only-main .main-chat-composer textarea {
