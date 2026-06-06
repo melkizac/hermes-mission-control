@@ -152,7 +152,6 @@ export function MemoryContext() {
             {(kb?.sections ?? []).map((item) => <option key={item} value={item}>{categoryLabel(item)}</option>)}
           </select>
         </label>
-        <div className="skills-filter-note">Read-only by design: write workflows, note promotion, and context attachment are visible as planned actions until explicit confirmation and audit logging are added.</div>
       </section>
 
       <nav className="memory-tabs" aria-label="Memory and knowledge tabs">
@@ -168,7 +167,7 @@ export function MemoryContext() {
 
       {error && <div className="skills-error">{error}</div>}
 
-      {pageTab === "memory" && <MemoryPanel data={memory} entries={entries} loading={loading} category={category} setCategory={setCategory} selectedId={selectedMemory?.id ?? null} openEntry={openMemory} />}
+      {pageTab === "memory" && <MemoryPanel entries={entries} loading={loading} selectedId={selectedMemory?.id ?? null} openEntry={openMemory} />}
       {pageTab === "knowledge" && <KnowledgePanel notes={notes} loading={loading} openNote={openNote} />}
       {pageTab === "sources" && <SourcesPanel sources={sources} loading={loading} openNote={openNote} />}
       {pageTab === "workflows" && <WorkflowPanel kb={kb} health={health} />}
@@ -218,25 +217,12 @@ export function MemoryContext() {
   );
 }
 
-function MemoryPanel({ data, entries, loading, category, setCategory, selectedId, openEntry }: { data: MemoryContextResponse | null; entries: MemoryContextEntry[]; loading: boolean; category: string; setCategory: (value: string) => void; selectedId: string | null; openEntry: (entry: MemoryContextEntry) => void }) {
+function MemoryPanel({ entries, loading, selectedId, openEntry }: { entries: MemoryContextEntry[]; loading: boolean; selectedId: string | null; openEntry: (entry: MemoryContextEntry) => void }) {
   return (
-    <section className="memory-layout">
-      <aside className="memory-side-panel">
-        <div className="ops-list-head"><span>Category map</span><small>{data?.categories.length ?? 0} groups</small></div>
-        <div className="memory-category-list">
-          {(data?.category_counts ?? []).map((item) => (
-            <button key={item.category} className={category === item.category ? "on" : ""} onClick={() => setCategory(category === item.category ? "" : item.category)}>
-              <span>{categoryLabel(item.category)}</span><b>{item.count}</b>
-            </button>
-          ))}
-        </div>
-        <div className="memory-governance-note"><b>Safe display policy</b><p>{data?.policy?.summary ?? "Secrets are redacted before display. Memory is shown as evidence, not edited here."}</p></div>
-      </aside>
-      <section className="ops-list memory-list">
-        <div className="ops-list-head"><span>Memory entries</span><small>{loading ? "Loading…" : `${entries.length} shown`}</small></div>
-        {entries.map((entry) => <MemoryRow key={entry.id} entry={entry} active={entry.id === selectedId} onSelect={() => openEntry(entry)} />)}
-        {!loading && entries.length === 0 && <div className="empty big">No memories matched this filter.</div>}
-      </section>
+    <section className="ops-list memory-list memory-list-full">
+      <div className="ops-list-head"><span>Memory entries</span><small>{loading ? "Loading…" : `${entries.length} shown`}</small></div>
+      {entries.map((entry) => <MemoryRow key={entry.id} entry={entry} active={entry.id === selectedId} onSelect={() => openEntry(entry)} />)}
+      {!loading && entries.length === 0 && <div className="empty big">No memories matched this filter.</div>}
     </section>
   );
 }
