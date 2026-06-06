@@ -4731,7 +4731,8 @@ button.voice-activation {
 .voice-activation.full-window .voice-particle.particle-two { bottom: 20%; left: 17%; }
 .voice-activation.full-window .voice-particle.particle-three { bottom: 32%; right: 12%; }
 
-.voice-activation-copy {
+.voice-activation-copy,
+.voice-activation-panel {
   position: relative;
   z-index: 1;
   min-width: 0;
@@ -4739,13 +4740,15 @@ button.voice-activation {
   gap: 5px;
 }
 
-.voice-activation.full-window .voice-activation-copy {
+.voice-activation.full-window .voice-activation-copy,
+.voice-activation-panel {
   width: min(620px, 92%);
   justify-items: center;
   gap: 10px;
 }
 
-.voice-activation-copy strong {
+.voice-activation-copy strong,
+.voice-activation-panel strong {
   color: #fffbeb;
   font-size: 13px;
   font-weight: 950;
@@ -4753,25 +4756,29 @@ button.voice-activation {
   text-transform: uppercase;
 }
 
-.voice-activation.full-window .voice-activation-copy strong {
+.voice-activation.full-window .voice-activation-copy strong,
+.voice-activation-panel strong {
   font-size: clamp(18px, 2.2vw, 30px);
   letter-spacing: .16em;
 }
 
-.voice-activation-copy span {
+.voice-activation-copy span,
+.voice-activation-panel span {
   color: #fed7aa;
   font-size: 13px;
   line-height: 1.4;
   font-weight: 750;
 }
 
-.voice-activation.full-window .voice-activation-copy span {
+.voice-activation.full-window .voice-activation-copy span,
+.voice-activation-panel span {
   max-width: 520px;
   font-size: clamp(14px, 1.4vw, 18px);
   line-height: 1.55;
 }
 
-.voice-activation-copy em {
+.voice-activation-copy em,
+.voice-activation-panel em {
   max-width: 100%;
   color: #fff7ed;
   font-size: 13px;
@@ -4781,7 +4788,8 @@ button.voice-activation {
   text-overflow: ellipsis;
 }
 
-.voice-activation.full-window .voice-activation-copy em {
+.voice-activation.full-window .voice-activation-copy em,
+.voice-activation-panel em {
   max-width: min(720px, 100%);
   white-space: normal;
   font-size: clamp(14px, 1.25vw, 17px);

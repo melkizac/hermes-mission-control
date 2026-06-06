@@ -130,10 +130,14 @@ export function MissionControl() {
   const [voiceReplyBaselineId, setVoiceReplyBaselineId] = useState("");
   const [spokenMessageId, setSpokenMessageId] = useState("");
   const [speechPlaying, setSpeechPlaying] = useState(false);
+  const [voiceReplyText, setVoiceReplyText] = useState("");
+  const [voiceReplyNeedsTap, setVoiceReplyNeedsTap] = useState(false);
   const [voiceVisual, setVoiceVisual] = useState({ energy: 1, pitch: 1, rate: 1 });
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const voiceShouldListenRef = useRef(false);
   const voiceAnimationTimerRef = useRef<number | null>(null);
+  const voiceSpeechStartTimerRef = useRef<number | null>(null);
+  const pendingVoiceReplyRef = useRef<Message | null>(null);
   const draftRef = useRef("");
   const [routingPreview, setRoutingPreview] = useState<{
     instruction: string;
@@ -238,6 +242,7 @@ export function MissionControl() {
       recognitionRef.current?.abort();
       recognitionRef.current = null;
       if (voiceAnimationTimerRef.current) window.clearInterval(voiceAnimationTimerRef.current);
+      if (voiceSpeechStartTimerRef.current) window.clearTimeout(voiceSpeechStartTimerRef.current);
       window.speechSynthesis?.cancel();
     };
   }, []);
@@ -286,17 +291,34 @@ export function MissionControl() {
     return (draftRef.current.trim() || voiceTranscript.trim()).trim();
   }
 
-  function speakAgentReply(message: Message) {
+  function speakAgentReply(message: Message, userStarted = false) {
     const text = visibleChatText(message);
-    if (!text.trim() || !("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) return;
+    setVoiceReplyText(text);
+    pendingVoiceReplyRef.current = message;
+    if (!text.trim()) return;
+    if (!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) {
+      setVoiceReplyNeedsTap(false);
+      setVoiceStatus("ready");
+      setVoiceMessage("Melkizac replied. This browser cannot play spoken replies, so the text is shown below.");
+      setSpokenMessageId(String(message.id));
+      return;
+    }
+    if (voiceSpeechStartTimerRef.current) window.clearTimeout(voiceSpeechStartTimerRef.current);
     window.speechSynthesis.cancel();
+    window.speechSynthesis.resume();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "en-SG";
     utterance.rate = 1;
     utterance.pitch = 1;
     utterance.onstart = () => {
+      if (voiceSpeechStartTimerRef.current) {
+        window.clearTimeout(voiceSpeechStartTimerRef.current);
+        voiceSpeechStartTimerRef.current = null;
+      }
+      setVoiceReplyNeedsTap(false);
       setSpeechPlaying(true);
       setVoiceStatus("speaking");
+      setVoiceMessage("Melkizac is speaking. Tap the animation to stop.");
       startVoiceVisualPulse(utterance.rate, utterance.pitch);
     };
     utterance.onboundary = (event) => {
@@ -309,23 +331,56 @@ export function MissionControl() {
       });
     };
     utterance.onend = () => {
+      if (voiceSpeechStartTimerRef.current) {
+        window.clearTimeout(voiceSpeechStartTimerRef.current);
+        voiceSpeechStartTimerRef.current = null;
+      }
       setSpeechPlaying(false);
+      setVoiceReplyNeedsTap(false);
       stopVoiceVisualPulse();
       setVoiceStatus("ready");
-      setVoiceMessage("Reply finished. Tap the mic to send another voice message.");
+      setVoiceMessage("Reply finished. Tap the animation to record another voice message.");
     };
     utterance.onerror = () => {
+      if (voiceSpeechStartTimerRef.current) {
+        window.clearTimeout(voiceSpeechStartTimerRef.current);
+        voiceSpeechStartTimerRef.current = null;
+      }
       setSpeechPlaying(false);
       stopVoiceVisualPulse();
       setVoiceStatus("ready");
+      setVoiceReplyNeedsTap(true);
+      setVoiceMessage("Melkizac replied. Tap the animation to play the voice reply.");
     };
     setSpokenMessageId(String(message.id));
+    setVoiceStatus(userStarted ? "speaking" : "ready");
+    setVoiceMessage(userStarted ? "Starting voice reply…" : "Melkizac replied. Playing voice reply…");
+    setVoiceReplyNeedsTap(false);
     window.speechSynthesis.speak(utterance);
+    voiceSpeechStartTimerRef.current = window.setTimeout(() => {
+      if (!window.speechSynthesis.speaking) {
+        setSpeechPlaying(false);
+        stopVoiceVisualPulse();
+        setVoiceStatus("ready");
+        setVoiceReplyNeedsTap(true);
+        setVoiceMessage("Melkizac replied. Tap the animation to play the voice reply.");
+      }
+    }, 900);
+  }
+
+  function playPendingVoiceReply() {
+    const pending = pendingVoiceReplyRef.current;
+    if (pending) speakAgentReply(pending, true);
   }
 
   function stopVoiceReply() {
+    if (voiceSpeechStartTimerRef.current) {
+      window.clearTimeout(voiceSpeechStartTimerRef.current);
+      voiceSpeechStartTimerRef.current = null;
+    }
     window.speechSynthesis?.cancel();
     setSpeechPlaying(false);
+    setVoiceReplyNeedsTap(false);
     stopVoiceVisualPulse();
     setVoiceReplyMode(false);
     setVoiceStatus("ready");
@@ -342,6 +397,9 @@ export function MissionControl() {
     }
     updateDraft(instruction);
     setVoiceReplyMode(true);
+    setVoiceReplyText("");
+    setVoiceReplyNeedsTap(false);
+    pendingVoiceReplyRef.current = null;
     const latestAgentMessage = [...mainChatMessages].reverse().find((message) => message.role === "agent");
     setVoiceReplyBaselineId(latestAgentMessage ? String(latestAgentMessage.id) : "");
     setVoiceStatus("sending");
@@ -371,6 +429,9 @@ export function MissionControl() {
     voiceShouldListenRef.current = true;
     setHasStartedMainChat(true);
     setVoiceTranscript("");
+    setVoiceReplyText("");
+    setVoiceReplyNeedsTap(false);
+    pendingVoiceReplyRef.current = null;
     setVoiceStatus("listening");
     setVoiceMessage("Listening… speak your instruction to Melkizac.");
 
@@ -459,6 +520,7 @@ export function MissionControl() {
       const handleVoiceScreenTap = () => {
         if (voiceStatus === "listening") sendVoiceMessageFromAnimation();
         else if (voiceStatus === "speaking") stopVoiceReply();
+        else if (voiceReplyNeedsTap) playPendingVoiceReply();
         else if (voiceStatus === "ready") startVoiceInput();
       };
       const label = voiceStatus === "listening"
@@ -466,18 +528,29 @@ export function MissionControl() {
         : voiceStatus === "sending"
           ? "Voice message sent. Waiting for Melkizac reply."
           : voiceStatus === "speaking"
-            ? "Melkizac is speaking. The animation is responding to reply tone, pitch, and speed. Tap to stop voice reply."
-            : "Voice screen ready. Tap to record another voice message.";
+            ? `Melkizac is speaking: ${voiceReplyText}. The animation is responding to reply tone, pitch, and speed. Tap to stop voice reply.`
+            : voiceReplyNeedsTap
+              ? `Melkizac replied: ${voiceReplyText}. Tap to play the voice reply.`
+              : voiceReplyText
+                ? `Melkizac replied: ${voiceReplyText}. Tap to record another voice message.`
+                : "Voice screen ready. Tap to record another voice message.";
+      const voiceTitle = voiceStatus === "listening" ? "Tap to send voice message" : voiceStatus === "speaking" ? "Tap to stop voice reply" : voiceReplyNeedsTap ? "Tap to play voice reply" : "Voice screen";
+      const visibleVoiceText = voiceReplyText || (voiceStatus === "listening" ? voiceTranscript : "");
       return (
         <button
           className={`voice-activation full-window ${voiceStatus} ${speechPlaying ? "voice-speaking" : ""} voice-deactivate-hitarea`}
           type="button"
           onClick={handleVoiceScreenTap}
           aria-label={label}
-          title={voiceStatus === "listening" ? "Tap to send voice message" : voiceStatus === "speaking" ? "Tap to stop voice reply" : "Voice screen"}
+          title={voiceTitle}
           style={voiceStyle}
         >
           {orb}
+          <span className="voice-activation-panel" aria-hidden="true">
+            <strong>{voiceReplyNeedsTap ? "Tap to hear Melkizac" : voiceStatus === "speaking" ? "Melkizac speaking" : voiceStatus === "sending" ? "Waiting for Melkizac" : voiceStatus === "listening" ? "Listening" : voiceReplyText ? "Melkizac replied" : "Voice ready"}</strong>
+            <span>{voiceMessage}</span>
+            {visibleVoiceText && <em>{visibleVoiceText}</em>}
+          </span>
         </button>
       );
     }
