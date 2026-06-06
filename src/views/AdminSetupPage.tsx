@@ -21,9 +21,20 @@ type AccessUser = {
   activity?: { projects: number; tasks: number; inbox: number };
 };
 
+type AccessWorkspace = {
+  id: string;
+  name: string;
+  slug: string;
+  owner_user_id: string;
+  owner?: { id: string; email: string; name: string; role: string; status: string } | null;
+  created_at: string;
+  activity?: { projects: number; tasks: number; inbox: number };
+};
+
 type AccessResponse = {
   ok: boolean;
   users: AccessUser[];
+  workspaces: AccessWorkspace[];
   summary: { total_users: number; active: number; admins: number; workspaces: number };
   roles: AccessRole[];
   statuses: AccessStatus[];
@@ -32,6 +43,7 @@ type AccessResponse = {
 
 type UserFormState = { email: string; name: string; workspaceName: string; role: AccessRole; password: string };
 type EditUserFormState = { name: string; workspaceName: string; role: AccessRole; status: AccessStatus; password: string };
+type WorkspaceFormState = { name: string; slug: string; ownerUserId: string };
 
 async function adminRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${window.location.protocol}//${window.location.host}${path}`, {
@@ -221,12 +233,19 @@ function UsersAccessPanel() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [workspaceQuery, setWorkspaceQuery] = useState("");
   const [addDrawerOpen, setAddDrawerOpen] = useState(false);
+  const [addWorkspaceDrawerOpen, setAddWorkspaceDrawerOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [creatingWorkspace, setCreatingWorkspace] = useState(false);
   const [editingUser, setEditingUser] = useState<AccessUser | null>(null);
+  const [editingWorkspace, setEditingWorkspace] = useState<AccessWorkspace | null>(null);
   const [editForm, setEditForm] = useState<EditUserFormState>({ name: "", workspaceName: "", role: "user", status: "active", password: "" });
+  const [editWorkspaceForm, setEditWorkspaceForm] = useState<WorkspaceFormState>({ name: "", slug: "", ownerUserId: "" });
   const [savingEdit, setSavingEdit] = useState(false);
+  const [savingWorkspace, setSavingWorkspace] = useState(false);
   const [form, setForm] = useState<UserFormState>({ email: "", name: "", workspaceName: "", role: "user", password: "" });
+  const [workspaceForm, setWorkspaceForm] = useState<WorkspaceFormState>({ name: "", slug: "", ownerUserId: "" });
 
   async function loadAccess() {
     try {
@@ -248,6 +267,13 @@ function UsersAccessPanel() {
     const q = query.trim().toLowerCase();
     if (!q) return true;
     return [user.email, user.name, user.role, user.status, user.workspace?.name, user.workspace?.slug].some((value) => String(value ?? "").toLowerCase().includes(q));
+  });
+
+  const activeUsers = (access?.users ?? []).filter((user) => user.status === "active");
+  const filteredWorkspaces = (access?.workspaces ?? []).filter((workspace) => {
+    const q = workspaceQuery.trim().toLowerCase();
+    if (!q) return true;
+    return [workspace.name, workspace.slug, workspace.owner?.email, workspace.owner?.name].some((value) => String(value ?? "").toLowerCase().includes(q));
   });
 
   async function createUser() {
@@ -330,6 +356,58 @@ function UsersAccessPanel() {
     }
   }
 
+  async function createWorkspace() {
+    if (!workspaceForm.name.trim()) {
+      setError("Workspace name is required.");
+      return;
+    }
+    try {
+      setError(null);
+      setNotice(null);
+      setCreatingWorkspace(true);
+      const result = await adminRequest<{ ok: boolean; workspace: AccessWorkspace }>("/api/admin/workspaces", {
+        method: "POST",
+        body: JSON.stringify(workspaceForm),
+      });
+      setWorkspaceForm({ name: "", slug: "", ownerUserId: "" });
+      setAddWorkspaceDrawerOpen(false);
+      setNotice(`Created workspace ${result.workspace.name}.`);
+      await loadAccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create workspace");
+    } finally {
+      setCreatingWorkspace(false);
+    }
+  }
+
+  function openWorkspaceDrawer(workspace: AccessWorkspace) {
+    setError(null);
+    setNotice(null);
+    setEditingWorkspace(workspace);
+    setEditWorkspaceForm({ name: workspace.name, slug: workspace.slug, ownerUserId: workspace.owner_user_id });
+  }
+
+  async function saveWorkspace() {
+    if (!editingWorkspace) return;
+    try {
+      setError(null);
+      setNotice(null);
+      setSavingWorkspace(true);
+      const result = await adminRequest<{ ok: boolean; workspace: AccessWorkspace }>(`/api/admin/workspaces/${encodeURIComponent(editingWorkspace.id)}/action`, {
+        method: "POST",
+        body: JSON.stringify(editWorkspaceForm),
+      });
+      setEditingWorkspace(null);
+      setEditWorkspaceForm({ name: "", slug: "", ownerUserId: "" });
+      setNotice(`Updated workspace ${result.workspace.name}.`);
+      await loadAccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update workspace");
+    } finally {
+      setSavingWorkspace(false);
+    }
+  }
+
   return (
     <section className="users-access-panel" aria-label="Users and access management">
       <div className="access-toolbar router-panel">
@@ -338,6 +416,7 @@ function UsersAccessPanel() {
           <p>Manage sign-in accounts, workspace ownership, and role boundaries. Deletes are intentionally disabled; disable access instead so the audit trail remains intact.</p>
         </div>
         <div className="access-toolbar-actions">
+          <button className="btn ghost small access-inline-add" onClick={() => setAddWorkspaceDrawerOpen(true)}><Icon name="projects" size={15} /> Workspace</button>
           <button className="task-icon-action primary" aria-label="Add user" title="Add user" onClick={() => setAddDrawerOpen(true)}><Icon name="plus" size={18} /></button>
           <button className="task-icon-action dark" aria-label="Refresh users and access" title="Refresh users and access" onClick={() => void loadAccess()}><Icon name="refresh" size={18} /></button>
         </div>
@@ -383,6 +462,36 @@ function UsersAccessPanel() {
             {!loading && filteredUsers.length === 0 && <div className="mc-empty inline"><h3>No matching users</h3><p>Try another search or create a new account.</p></div>}
           </div>
         </article>
+
+        <article className="router-panel access-workspaces-card">
+          <div className="section-head compact access-users-head">
+            <div>
+              <h2>Workspaces</h2>
+              <p>{loading ? "Loading workspaces…" : `${filteredWorkspaces.length} shown · ${access?.summary.workspaces ?? 0} total workspaces`}</p>
+            </div>
+            <input className="access-search" value={workspaceQuery} onChange={(event) => setWorkspaceQuery(event.target.value)} placeholder="Search workspace or owner…" />
+          </div>
+          <div className="access-workspace-list">
+            {filteredWorkspaces.map((workspace) => (
+              <div className="access-workspace-row" key={workspace.id} role="button" tabIndex={0} aria-label={`Edit workspace ${workspace.name}`} onClick={() => openWorkspaceDrawer(workspace)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openWorkspaceDrawer(workspace); } }}>
+                <div className="access-user-main">
+                  <strong>{workspace.name}</strong>
+                  <span>{workspace.slug}</span>
+                  <small>Owner: {workspace.owner?.name || workspace.owner?.email || "Unassigned"}</small>
+                </div>
+                <div className="access-user-activity">
+                  <span>{workspace.activity?.projects ?? 0} projects</span>
+                  <span>{workspace.activity?.tasks ?? 0} tasks</span>
+                  <span>{workspace.activity?.inbox ?? 0} approvals</span>
+                </div>
+                <div className="access-user-actions" onClick={(event) => event.stopPropagation()}>
+                  <button className="btn ghost small" onClick={() => openWorkspaceDrawer(workspace)}><Icon name="edit" size={14} /> Edit</button>
+                </div>
+              </div>
+            ))}
+            {!loading && filteredWorkspaces.length === 0 && <div className="mc-empty inline"><h3>No matching workspaces</h3><p>Create a workspace or adjust the search.</p></div>}
+          </div>
+        </article>
       </div>
 
       <article className="router-panel access-policy-card">
@@ -423,6 +532,33 @@ function UsersAccessPanel() {
         </div>
       )}
 
+      {addWorkspaceDrawerOpen && (
+        <div className="mc-drawer-layer access-add-drawer-layer" role="presentation">
+          <button className="mc-drawer-scrim" aria-label="Close add workspace drawer" onClick={() => setAddWorkspaceDrawerOpen(false)} />
+          <aside className="mc-drawer mc-drawer-narrow access-add-drawer" aria-label="Add workspace drawer" role="dialog" aria-modal="true">
+            <div className="mc-drawer-head">
+              <div className="mc-drawer-title">
+                <span className="stub-tag">WORKSPACE ADMIN</span>
+                <h2>Add workspace</h2>
+                <p>Create a workspace boundary and assign an owner. Users remain managed separately; deletion is intentionally unavailable.</p>
+              </div>
+              <button className="mc-drawer-close" aria-label="Close add workspace drawer" onClick={() => setAddWorkspaceDrawerOpen(false)}>×</button>
+            </div>
+            <div className="mc-drawer-body">
+              <form className="access-create-card access-create-form" onSubmit={(event) => { event.preventDefault(); void createWorkspace(); }}>
+                <label><span>Workspace name</span><input value={workspaceForm.name} onChange={(event) => setWorkspaceForm({ ...workspaceForm, name: event.target.value })} placeholder="Nexius Labs" autoFocus /></label>
+                <label><span>Slug</span><input value={workspaceForm.slug} onChange={(event) => setWorkspaceForm({ ...workspaceForm, slug: event.target.value })} placeholder="Blank = generated from name" /></label>
+                <label><span>Owner</span><select value={workspaceForm.ownerUserId} onChange={(event) => setWorkspaceForm({ ...workspaceForm, ownerUserId: event.target.value })}><option value="">Current admin</option>{activeUsers.map((user) => <option value={user.id} key={user.id}>{user.name || user.email} · {user.email}</option>)}</select></label>
+                <div className="access-drawer-actions">
+                  <button className="btn ghost" type="button" onClick={() => setAddWorkspaceDrawerOpen(false)}>Cancel</button>
+                  <button className="btn dark" type="submit" disabled={creatingWorkspace}>{creatingWorkspace ? "Creating…" : "Create workspace"}</button>
+                </div>
+              </form>
+            </div>
+          </aside>
+        </div>
+      )}
+
       {editingUser && (
         <div className="mc-drawer-layer access-edit-drawer-layer" role="presentation">
           <button className="mc-drawer-scrim" aria-label="Close edit user drawer" onClick={() => setEditingUser(null)} />
@@ -446,6 +582,33 @@ function UsersAccessPanel() {
                 <div className="access-drawer-actions">
                   <button className="btn ghost" type="button" onClick={() => setEditingUser(null)}>Cancel</button>
                   <button className="btn dark" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+                </div>
+              </form>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {editingWorkspace && (
+        <div className="mc-drawer-layer access-edit-drawer-layer" role="presentation">
+          <button className="mc-drawer-scrim" aria-label="Close edit workspace drawer" onClick={() => setEditingWorkspace(null)} />
+          <aside className="mc-drawer mc-drawer-narrow access-edit-drawer" aria-label="Edit workspace drawer" role="dialog" aria-modal="true">
+            <div className="mc-drawer-head">
+              <div className="mc-drawer-title">
+                <span className="stub-tag">WORKSPACE ADMIN</span>
+                <h2>Edit workspace</h2>
+                <p>{editingWorkspace.id}</p>
+              </div>
+              <button className="mc-drawer-close" aria-label="Close edit workspace drawer" onClick={() => setEditingWorkspace(null)}>×</button>
+            </div>
+            <div className="mc-drawer-body">
+              <form className="access-create-card access-create-form" onSubmit={(event) => { event.preventDefault(); void saveWorkspace(); }}>
+                <label><span>Workspace name</span><input value={editWorkspaceForm.name} onChange={(event) => setEditWorkspaceForm({ ...editWorkspaceForm, name: event.target.value })} placeholder="Workspace name" autoFocus /></label>
+                <label><span>Slug</span><input value={editWorkspaceForm.slug} onChange={(event) => setEditWorkspaceForm({ ...editWorkspaceForm, slug: event.target.value })} placeholder="workspace-slug" /></label>
+                <label><span>Owner</span><select value={editWorkspaceForm.ownerUserId} onChange={(event) => setEditWorkspaceForm({ ...editWorkspaceForm, ownerUserId: event.target.value })}>{activeUsers.map((user) => <option value={user.id} key={user.id}>{user.name || user.email} · {user.email}</option>)}</select></label>
+                <div className="access-drawer-actions">
+                  <button className="btn ghost" type="button" onClick={() => setEditingWorkspace(null)}>Cancel</button>
+                  <button className="btn dark" type="submit" disabled={savingWorkspace}>{savingWorkspace ? "Saving…" : "Save changes"}</button>
                 </div>
               </form>
             </div>
