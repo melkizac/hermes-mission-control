@@ -35,7 +35,6 @@ export function MemoryContext() {
   const [q, setQ] = useState("");
   const [scope, setScope] = useState<ScopeFilter>("");
   const [category, setCategory] = useState("");
-  const [section, setSection] = useState("");
   const [pageTab, setPageTab] = useState<PageTab>("memory");
   const [drawer, setDrawer] = useState<DrawerKind>(null);
   const [tab, setTab] = useState<DrawerTab>("summary");
@@ -47,7 +46,7 @@ export function MemoryContext() {
       setLoading(true);
       const [nextMemory, nextKb, nextGraph, nextHealth] = await Promise.all([
         client.getMemoryContext({ q, scope, category }),
-        client.getSecondBrainIndex({ q, section }),
+        client.getSecondBrainIndex({}),
         client.getSecondBrainGraph(),
         client.getSecondBrainHealth(),
       ]);
@@ -66,7 +65,7 @@ export function MemoryContext() {
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 180);
     return () => window.clearTimeout(timer);
-  }, [q, scope, category, section]);
+  }, [q, scope, category]);
 
   const entries = memory?.entries ?? [];
   const notes = kb?.wiki ?? [];
@@ -123,37 +122,6 @@ export function MemoryContext() {
         <Metric label="Health" value={health?.health.status ?? memory?.summary.redacted ?? "—"} sub="KB governance state" tone={health?.health.status === "healthy" ? "good" : undefined} />
       </section>
 
-      <section className="skills-filters memory-filters knowledge-filters">
-        <div className="filter-search-with-view">
-          <label>
-            <span>Search memory + second brain</span>
-            <input value={q} onChange={(event) => setQ(event.target.value)} placeholder="SGQR, workflow, company, source evidence…" />
-          </label>
-        </div>
-        <label>
-          <span>Memory scope</span>
-          <select value={scope} onChange={(event) => setScope(event.target.value as ScopeFilter)}>
-            <option value="">All scopes</option>
-            <option value="user">User profile</option>
-            <option value="memory">Operational memory</option>
-          </select>
-        </label>
-        <label>
-          <span>Memory category</span>
-          <select value={category} onChange={(event) => setCategory(event.target.value)}>
-            <option value="">All categories</option>
-            {(memory?.categories ?? []).map((item) => <option key={item} value={item}>{categoryLabel(item)}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>KB section</span>
-          <select value={section} onChange={(event) => setSection(event.target.value)}>
-            <option value="">All sections</option>
-            {(kb?.sections ?? []).map((item) => <option key={item} value={item}>{categoryLabel(item)}</option>)}
-          </select>
-        </label>
-      </section>
-
       <nav className="memory-tabs" aria-label="Memory and knowledge tabs">
         {[
           ["memory", "Agent Memory"],
@@ -162,7 +130,31 @@ export function MemoryContext() {
         ].map(([key, label]) => <button key={key} className={pageTab === key ? "on" : ""} onClick={() => setPageTab(key as PageTab)}>{label}</button>)}
       </nav>
 
-      <KnowledgeReadiness kb={kb} graph={graph} health={health} />
+      {pageTab === "memory" && (
+        <section className="skills-filters memory-filters memory-only-filters">
+          <div className="filter-search-with-view">
+            <label>
+              <span>Search agent memory</span>
+              <input value={q} onChange={(event) => setQ(event.target.value)} placeholder="Preference, workflow, company, source…" />
+            </label>
+          </div>
+          <label>
+            <span>Memory scope</span>
+            <select value={scope} onChange={(event) => setScope(event.target.value as ScopeFilter)}>
+              <option value="">All scopes</option>
+              <option value="user">User profile</option>
+              <option value="memory">Operational memory</option>
+            </select>
+          </label>
+          <label>
+            <span>Memory category</span>
+            <select value={category} onChange={(event) => setCategory(event.target.value)}>
+              <option value="">All categories</option>
+              {(memory?.categories ?? []).map((item) => <option key={item} value={item}>{categoryLabel(item)}</option>)}
+            </select>
+          </label>
+        </section>
+      )}
 
       {error && <div className="skills-error">{error}</div>}
 
@@ -231,25 +223,6 @@ function SourcesPanel({ sources, loading, openNote }: { sources: SecondBrainItem
   return <section className="ops-list memory-list knowledge-list"><div className="ops-list-head"><span>Sources & evidence</span><small>{loading ? "Loading…" : `${sources.length} files`}</small></div>{sources.map((item) => <KnowledgeRow key={notePath(item)} item={item} onSelect={() => void openNote(item)} />)}{!loading && sources.length === 0 && <div className="empty big">No source evidence matched this filter.</div>}</section>;
 }
 
-function KnowledgeReadiness({ kb, graph, health }: { kb: SecondBrainIndexResponse | null; graph: SecondBrainGraphResponse | null; health: SecondBrainHealthResponse | null }) {
-  const workflowStatus = health?.write_workflows.status ?? (kb?.sections?.includes("schema") ? "Indexed" : "Not indexed");
-  const healthStatus = health?.health.status ?? "Unknown";
-  const relatedCount = graph?.summary.edges ?? kb?.summary.links ?? 0;
-  const chunks = kb?.summary.chunks ?? health?.semantic_search.chunks ?? 0;
-
-  return (
-    <section className="memory-readiness-strip" aria-label="Knowledge readiness">
-      <div className="ops-list-head"><span>Knowledge readiness</span><small>System context, compressed</small></div>
-      <div className="memory-readiness-grid">
-        <InfoCard title="Workflow rules" body="Reusable workflow/schema knowledge is available as background context, not a separate user workspace." meta={workflowStatus} />
-        <InfoCard title="Related knowledge" body="Connected notes are surfaced inside note details as links, backlinks, and supporting evidence." meta={`${relatedCount} connections`} />
-        <InfoCard title="Knowledge status" body="Indexing and governance checks stay visible as a trust signal without taking over the main Memory tabs." meta={healthStatus} />
-        <InfoCard title="Search readiness" body="Prepared chunks support later retrieval and context attachment across memory, notes, and evidence." meta={`${chunks} chunks`} />
-      </div>
-    </section>
-  );
-}
-
 function Metric({ label, value, sub, tone }: { label: string; value: number | string; sub: string; tone?: "good" | "bad" }) {
   return <div className={`skills-metric ${tone ?? ""}`}><span>{label}</span><b>{value}</b><small>{sub}</small></div>;
 }
@@ -288,10 +261,6 @@ function NoteLinks({ note }: { note: SecondBrainNoteResponse }) {
 
 function NoteGovernance({ note }: { note: SecondBrainNoteResponse }) {
   return <div className="memory-drawer-stack"><section className="skill-section"><h3>Knowledge governance</h3><p>Second Brain notes are external knowledge, not compact Hermes memory. Use them as inspectable context/evidence; promote only stable pointers into durable memory.</p></section><section className="skill-section"><h3>Read-only policy</h3><p>{note.policy.write_workflows ?? "Writes are planned but disabled until confirmation and audit logging are implemented."}</p></section><section className="skill-section"><h3>Safety</h3><div className="drawer-section-list"><div className="skill-route"><b>Redacted</b><span>{note.note.health.redacted ? "Likely secret was hidden" : "No likely secret detected"}</span></div><div className="skill-route"><b>Path constrained</b><span>Readback is restricted to the configured second-brain root.</span></div></div></section></div>;
-}
-
-function InfoCard({ title, body, meta }: { title: string; body: string; meta: string }) {
-  return <article className="memory-info-card"><span>{meta}</span><h3>{title}</h3><p>{body}</p></article>;
 }
 
 function Info({ label, value }: { label: string; value: string }) {
