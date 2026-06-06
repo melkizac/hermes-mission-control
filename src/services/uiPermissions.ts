@@ -34,6 +34,7 @@ export const workspaceViews = new Set<ViewKey>([
   "agent-org",
   "skills",
   "tools",
+  "plugins",
   "projects",
   "second-brain",
   "board",
@@ -86,6 +87,7 @@ export function viewLabelForRole(role: UserRole, view: ViewKey, fallback: string
     automations: "Routines",
     "browser-ops": "Browser Activity",
     "research-runs": "Research Runs",
+    plugins: "Plugins",
     "second-brain": "Workspace Knowledge",
     audit: "My Audit / Evidence",
   };

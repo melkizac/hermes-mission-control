@@ -941,6 +941,33 @@ export interface SkillsHubResponse {
   error?: string;
 }
 
+export interface PluginHubRecord {
+  id: string;
+  name: string;
+  category: string;
+  status: string;
+  enabled: boolean;
+  version: string;
+  description: string;
+  source: string;
+}
+
+export interface PluginsHubResponse {
+  plugins: PluginHubRecord[];
+  summary: {
+    total: number;
+    enabled: number;
+    disabled: number;
+    bundled: number;
+    user: number;
+    categories: number;
+  };
+  categories: string[];
+  sources: string[];
+  statuses: string[];
+  error?: string;
+}
+
 export interface CostPeriodSummary {
   sessions: number;
   cost: number;
@@ -1539,6 +1566,7 @@ export type ViewKey =
   | "agent-org"
   | "runtimes"
   | "tools"
+  | "plugins"
   | "projects"
   | "second-brain"
   | "board"

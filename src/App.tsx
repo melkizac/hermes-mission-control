@@ -18,6 +18,7 @@ import { Automations } from "./views/Automations";
 import { TaskBoard } from "./views/TaskBoard";
 import { SkillsHub } from "./views/SkillsHub";
 import { ToolsHub } from "./views/ToolsHub";
+import { PluginsHub } from "./views/PluginsHub";
 import { CostDashboard } from "./views/CostDashboard";
 import { ModelRouter } from "./views/ModelRouter";
 import { SettingsDesktop } from "./views/SettingsDesktop";
@@ -93,6 +94,7 @@ function Shell() {
         {canRenderView && view === "board" && <TaskBoard />}
         {canRenderView && view === "skills" && <SkillsHub />}
         {canRenderView && view === "tools" && <ToolsHub />}
+        {canRenderView && view === "plugins" && <PluginsHub />}
         {canRenderView && view === "automations" && <Automations />}
         {canRenderView && view === "audit" && <AuditLog />}
         {canRenderView && view === "costs" && <CostDashboard />}

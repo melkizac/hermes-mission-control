@@ -27,6 +27,7 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
       { key: "dashboard", label: "Dashboard", icon: "dashboard" },
       { key: "projects", label: "Projects", icon: "projects" },
       { key: "board", label: "Task Board", icon: "board" },
+      { key: "plugins", label: "Plugins", icon: "setup" },
     ],
   },
   {

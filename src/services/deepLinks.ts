@@ -17,6 +17,7 @@ const allowedViews = new Set<ViewKey>([
   "agent-org",
   "runtimes",
   "tools",
+  "plugins",
   "projects",
   "second-brain",
   "board",

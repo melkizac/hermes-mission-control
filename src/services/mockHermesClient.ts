@@ -1,4 +1,4 @@
-import type { Agent, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, MissionControlMe, ModelRoutingSelection, OperatorLinkPreviewResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, CreateResearchRunRequest, CreateResearchRunResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainResponse, Skill, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
+import type { Agent, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, MissionControlMe, ModelRoutingSelection, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, CreateResearchRunRequest, CreateResearchRunResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainResponse, Skill, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
 import { seedAgents, seedApprovals } from "../data/mockData";
 
@@ -518,6 +518,22 @@ export class MockHermesClient implements HermesClient {
       content: `---\nname: ${id}\ndescription: Mock skill file\n---\n\n# ${id}\n\nThis is the full mock SKILL.md content.`,
       size: 96,
       updated_at: "now",
+    };
+  }
+
+  async listPlugins(): Promise<PluginsHubResponse> {
+    await delay(90);
+    const plugins = [
+      { id: "web/ddgs", name: "web/ddgs", category: "web", status: "not enabled", enabled: false, version: "1.0.0", description: "DuckDuckGo web search via the ddgs Python package — no API key required.", source: "bundled" },
+      { id: "platforms/telegram", name: "platforms/telegram", category: "platforms", status: "enabled", enabled: true, version: "1.0.0", description: "Telegram gateway adapter for Hermes Agent.", source: "bundled" },
+      { id: "spotify", name: "spotify", category: "general", status: "not enabled", enabled: false, version: "1.0.0", description: "Native Spotify integration using Spotify Web API + PKCE OAuth.", source: "bundled" },
+    ];
+    return {
+      plugins,
+      summary: { total: plugins.length, enabled: 1, disabled: 2, bundled: plugins.length, user: 0, categories: 3 },
+      categories: ["general", "platforms", "web"],
+      sources: ["bundled"],
+      statuses: ["enabled", "not enabled"],
     };
   }
 
