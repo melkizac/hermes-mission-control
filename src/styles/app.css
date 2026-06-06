@@ -5038,6 +5038,164 @@ input, select, textarea { font-family: inherit; }
   }
 }
 
+/* Mobile Mission Control is intentionally chat-only: no app navigation,
+   admin chrome, category pages, or secondary dashboard surfaces. */
+@media (max-width: 760px) {
+  .mobile-chat-only-shell {
+    height: 100vh;
+    height: 100dvh;
+    width: 100vw;
+    overflow: hidden;
+    background: #fff;
+  }
+
+  .mobile-chat-only-main {
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .mobile-chat-only-shell .rail,
+  .mobile-chat-only-shell .top-right-actions {
+    display: none !important;
+  }
+
+  .mobile-chat-only-main .clean-chat-page {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    padding: 16px 12px calc(16px + env(safe-area-inset-bottom));
+    overflow: hidden;
+    display: grid;
+    align-items: center;
+  }
+
+  .mobile-chat-only-main .clean-chat-shell {
+    max-width: none;
+    width: 100%;
+  }
+
+  .mobile-chat-only-main .clean-chat-shell h1,
+  .mobile-chat-only-main .clean-project-strip,
+  .mobile-chat-only-main .clean-permission-select,
+  .mobile-chat-only-main .main-chat-project-select,
+  .mobile-chat-only-main .clean-chat-right-controls .clean-select {
+    display: none;
+  }
+
+  .mobile-chat-only-main .clean-chat-composer {
+    min-height: 128px;
+    border-radius: 26px;
+  }
+
+  .mobile-chat-only-main .clean-chat-toolbar {
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px 11px 14px;
+  }
+
+  .mobile-chat-only-main .clean-chat-left-controls,
+  .mobile-chat-only-main .clean-chat-right-controls {
+    width: auto;
+    flex: 0 0 auto;
+    gap: 12px;
+    justify-content: flex-start;
+  }
+
+  .mobile-chat-only-main .clean-chat-right-controls {
+    margin-left: auto;
+  }
+
+  .mobile-chat-only-main .main-chat-surface.clean-chat-page {
+    display: block;
+    height: 100vh;
+    height: 100dvh;
+    padding: 0;
+  }
+
+  .mobile-chat-only-main .main-chat-shell {
+    height: 100vh;
+    height: 100dvh;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .mobile-chat-only-main .main-chat-header {
+    min-height: 54px;
+    padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
+  }
+
+  .mobile-chat-only-main .main-chat-avatar,
+  .mobile-chat-only-main .main-chat-user-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    font-size: 10px;
+  }
+
+  .mobile-chat-only-main .main-chat-header h1 {
+    font-size: 15px;
+  }
+
+  .mobile-chat-only-main .main-chat-header p,
+  .mobile-chat-only-main .main-chat-status,
+  .mobile-chat-only-main .main-chat-details {
+    display: none;
+  }
+
+  .mobile-chat-only-main .main-chat-history {
+    gap: 18px;
+    padding: 16px 12px;
+  }
+
+  .mobile-chat-only-main .main-chat-history.voice-mode {
+    padding: 0;
+  }
+
+  .mobile-chat-only-main .voice-activation.full-window {
+    min-height: 100%;
+    padding: 18px;
+  }
+
+  .mobile-chat-only-main .voice-activation.full-window .voice-jarvis-orb {
+    width: min(58vw, 210px);
+    height: min(58vw, 210px);
+  }
+
+  .mobile-chat-only-main .main-chat-message-stack,
+  .mobile-chat-only-main .main-chat-reply-context {
+    max-width: calc(100vw - 70px);
+  }
+
+  .mobile-chat-only-main .main-chat-meta span,
+  .mobile-chat-only-main .main-chat-meta time {
+    display: none;
+  }
+
+  .mobile-chat-only-main .main-chat-composer {
+    padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-chat-only-main .main-chat-composer textarea {
+    min-height: 50px;
+    border-radius: 22px;
+    padding: 14px 16px;
+  }
+
+  .mobile-chat-only-main .main-chat-composer-toolbar {
+    gap: 10px;
+    padding: 0 2px;
+  }
+
+  .mobile-chat-only-main .main-chat-left-controls,
+  .mobile-chat-only-main .main-chat-right-controls {
+    gap: 12px;
+  }
+}
+
 /* Dashboard: agent operating metrics, not chat intake. */
 .dashboard-page { background: linear-gradient(180deg, #fbfcff 0%, #f5f7fb 100%); }
 .dashboard-hero {

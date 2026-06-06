@@ -57,6 +57,7 @@ function Shell() {
   const { view, setView, applyDeepLinkTarget, me, loading } = useStore();
   const pathname = window.location.pathname.replace(/\/$/, "") || "/";
   const canRenderView = canAccessView(me?.user?.role, view);
+  const [isMobileChatOnly, setIsMobileChatOnly] = useState(false);
 
   useEffect(() => {
     const syncDeepLink = () => applyDeepLinkTarget(parseMissionControlDeepLink(window.location));
@@ -64,12 +65,30 @@ function Shell() {
     return () => window.removeEventListener("popstate", syncDeepLink);
   }, [applyDeepLinkTarget]);
 
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 760px)");
+    const syncMobileChatOnly = () => setIsMobileChatOnly(mediaQuery.matches);
+    syncMobileChatOnly();
+    mediaQuery.addEventListener("change", syncMobileChatOnly);
+    return () => mediaQuery.removeEventListener("change", syncMobileChatOnly);
+  }, []);
+
   if (docsPaths.has(pathname)) {
     return <MissionControlDocs />;
   }
 
   if (loading && !me) {
     return <div className="app-loading-screen" aria-label="Loading Mission Control" />;
+  }
+
+  if (isMobileChatOnly) {
+    return (
+      <div className="shell mobile-chat-only-shell">
+        <main className="main mobile-chat-only-main">
+          <MissionControl />
+        </main>
+      </div>
+    );
   }
 
   return (
