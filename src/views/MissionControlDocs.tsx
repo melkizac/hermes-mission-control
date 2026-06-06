@@ -65,6 +65,97 @@ const pages: DocPage[] = [
     ],
   },
   {
+    id: "hermes-agent",
+    label: "Hermes Agent",
+    kicker: "Hermes Agent foundation",
+    title: "Hermes Agent is the worker layer Mission Control supervises.",
+    intro:
+      "Mission Control is built around Hermes Agent by Nous Research: an autonomous, self-improving AI agent that can run in the terminal, messaging platforms, browser-capable runtimes, scheduled jobs, webhooks, MCP tools, plugins, and profile-isolated workers. Mission Control documents how those Hermes capabilities become visible, governable, and evidence-backed for operators.",
+    sections: [
+      {
+        heading: "What Hermes Agent provides",
+        body:
+          "Hermes is not just a chat window. It is the execution layer that can use tools, remember stable context, load reusable skills, run from different providers and profiles, connect to messaging platforms, execute scheduled jobs, and coordinate durable multi-agent work. Mission Control sits above that layer to show status, ownership, approvals, evidence, runtime boundaries, and cost.",
+        bullets: [
+          "Self-improving skills: reusable procedures Hermes can create, load, improve, and apply across sessions.",
+          "Persistent memory: stable user preferences and environment facts that reduce repeated steering.",
+          "Provider-agnostic models: OpenRouter, Anthropic, OpenAI, Nous Portal, Gemini, DeepSeek, xAI, local/custom endpoints, and other OpenAI-compatible providers.",
+          "Toolsets: terminal, file, browser, web, vision, image generation, text-to-speech, delegation, cron, messaging, MCP, and more depending on configuration.",
+          "Profiles: isolated Hermes identities with their own config, sessions, memory, skills, plugins, and gateway behavior.",
+          "Gateway: Telegram, Discord, Slack, WhatsApp, Signal, Matrix, Email, Teams, SMS, Mattermost, Home Assistant, Feishu, WeCom, DingTalk, webhooks, and API Server surfaces.",
+        ],
+      },
+      {
+        heading: "How Mission Control maps Hermes features",
+        body:
+          "Mission Control should not duplicate Hermes documentation line by line. Instead, it translates Hermes primitives into operator surfaces: Profiles become AI Workforce identities, skills become reusable know-how in Skills Hub, cron jobs become Routines, Kanban tasks become Task Board work, browser/tool calls become Browser Activity and Audit Log evidence, plugins/MCP become connectors and capabilities, and gateway sessions become multi-channel agent history.",
+        bullets: [
+          "Hermes Chat / Gateway → Chat, Agents, Telegram links, and session history.",
+          "Hermes Skills → Skills Hub, workflow rules, and repeatable operating procedures.",
+          "Hermes Cron → Routines, scheduled checks, recurring monitors, and delivery logs.",
+          "Hermes Kanban → Task Board, multi-agent work queues, dependencies, worker runs, and verification stages.",
+          "Hermes MCP / Plugins → Tools Hub, Plugins Hub, Runtime Connectors, and external capability readiness.",
+          "Hermes Sessions / Audit → evidence, cost telemetry, source channels, run traces, and proof of work.",
+        ],
+      },
+      {
+        heading: "Key Hermes commands operators should recognize",
+        body:
+          "Most daily work should be driven through Mission Control or Melkizac chat, but these Hermes commands are useful reference points when diagnosing configuration, capabilities, or runtime behavior.",
+        bullets: [
+          "hermes setup — configure model, terminal, gateway, tools, and agent settings.",
+          "hermes model — select or change the model/provider.",
+          "hermes doctor — check dependencies and configuration health.",
+          "hermes tools list — inspect enabled toolsets and availability.",
+          "hermes skills list — inspect installed skills and reusable procedures.",
+          "hermes plugins list — inspect bundled or installed plugins.",
+          "hermes mcp list — inspect configured MCP servers and exposed tools.",
+          "hermes cron list — inspect scheduled routines and recurring jobs.",
+          "hermes kanban list / watch / runs / log — inspect durable task-board work and worker attempts.",
+          "hermes gateway status — inspect messaging gateway health.",
+          "hermes profile list — inspect isolated Hermes identities such as Melkizac and DevOps profiles.",
+        ],
+      },
+      {
+        heading: "When to use each Hermes work mode",
+        body:
+          "Different Hermes primitives serve different operating patterns. Mission Control should make the choice understandable without forcing non-technical users to choose raw infrastructure every time.",
+        bullets: [
+          "Normal chat: small, direct tasks or questions that do not need durable tracking.",
+          "delegate_task: quick parallel subtasks inside the current session, useful for research fan-out or review/implementation splits.",
+          "Kanban / Kanban Swarm: durable multi-agent projects, large migrations, verifier/synthesizer flows, and work that needs logs, ownership, retry, or resume.",
+          "Cron / Routines: recurring checks, daily planners, monitors, reports, and scheduled deliveries.",
+          "Webhooks: event-triggered work from external systems.",
+          "MCP and plugins: external capabilities that should be connected, permissioned, and shown as tools/connectors in Mission Control.",
+          "Profiles and worktrees: isolated agents or coding lanes when separate identity, tools, memory, or filesystem isolation matters.",
+        ],
+      },
+      {
+        heading: "Reference source",
+        body:
+          "The canonical Hermes Agent documentation remains the source of truth for installation, providers, toolsets, gateway setup, MCP, skills, plugins, cron, Kanban, profiles, slash commands, and developer extension details. Mission Control documentation should link to it and summarize only the operator-relevant parts needed to run Melverick_OS safely.",
+        bullets: [
+          "Official docs: https://hermes-agent.nousresearch.com/docs/",
+          "Use Hermes docs for exact setup/configuration commands.",
+          "Use Mission Control docs for operating model, governance, evidence, workflow, and UI behavior.",
+        ],
+      },
+    ],
+    cards: [
+      { title: "Hermes = worker layer", body: "Executes with tools, skills, memory, models, profiles, gateways, cron, Kanban, plugins, and MCP." },
+      { title: "Mission Control = governance layer", body: "Supervises work with task ownership, approvals, runtime readiness, browser visibility, evidence, cost, and audit trails." },
+      { title: "Skills preserve know-how", body: "Reusable procedures turn one-off successful work into repeatable operating capability." },
+      { title: "Kanban makes work durable", body: "Large multi-agent work belongs on the board when logs, retries, dependencies, or verification matter." },
+    ],
+    example:
+      "Example mapping: a request to audit a website funnel can become a Hermes Kanban task, use browser/web/file tools, load a website-audit skill, pause behind approval before submit, publish Browser Activity events, and finish with Task Board evidence in Mission Control.",
+    operatorNotes: [
+      "Do not expose raw credentials, tokens, profile files, or private runtime data while documenting Hermes capabilities.",
+      "If exact setup details change, link back to the official Hermes docs rather than copying stale command fragments into Mission Control.",
+      "Mission Control should explain what a capability means operationally: who owns it, what it can do, what requires approval, and what evidence proves completion.",
+    ],
+  },
+  {
     id: "glossary",
     label: "Glossary",
     kicker: "Mission Control terminology",

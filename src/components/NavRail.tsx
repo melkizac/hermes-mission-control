@@ -27,7 +27,6 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
       { key: "dashboard", label: "Dashboard", icon: "dashboard" },
       { key: "projects", label: "Projects", icon: "projects" },
       { key: "board", label: "Task Board", icon: "board" },
-      { key: "plugins", label: "Plugins", icon: "setup" },
     ],
   },
   {
@@ -44,6 +43,7 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
       { key: "agent-org", label: "AI Workforce", icon: "agentOrg" },
       { key: "skills", label: "Skills", icon: "skills" },
       { key: "tools", label: "Tools", icon: "setup" },
+      { key: "plugins", label: "Plugins", icon: "setup" },
       { key: "approvals", label: "Approvals", icon: "approvals" },
     ],
   },

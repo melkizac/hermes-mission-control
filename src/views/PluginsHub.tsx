@@ -167,6 +167,8 @@ function Metric({ label, value, sub, tone }: { label: string; value: number | st
 }
 
 function PluginCard({ plugin, active, onSelect }: { plugin: PluginHubRecord; active: boolean; onSelect: () => void }) {
+  const source = sourceLabel(plugin.source);
+  const version = plugin.version || "—";
   return (
     <article className={`skill-card plugin-card ${active ? "on" : ""}`}>
       <button className="skill-card-main" onClick={onSelect}>
@@ -180,11 +182,22 @@ function PluginCard({ plugin, active, onSelect }: { plugin: PluginHubRecord; act
         <p>{plugin.description || "No description reported for this plugin."}</p>
         <div className="skill-chips">
           <span>{statusLabel(plugin)}</span>
-          <span>Source: {sourceLabel(plugin.source)}</span>
-          <span>Version: {plugin.version || "—"}</span>
+          <span>Source: {source}</span>
+          <span>Version: {version}</span>
+        </div>
+        <div className="skill-triplet">
+          <Mini label="Status" value={statusLabel(plugin)} />
+          <Mini label="Source" value={source} />
+          <Mini label="Version" value={version} />
         </div>
       </button>
     </article>
+  );
+}
+
+function Mini({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div><b>{value}</b><span>{label}</span></div>
   );
 }
 

@@ -1199,8 +1199,9 @@ input, select, textarea { font-family: inherit; }
 
 /* ---------------- TOOLS HUB ---------------- */
 .tools-grid { background: #fff; border: 1px solid #e1e7ef; border-radius: 20px; box-shadow: 0 16px 45px rgba(20,26,38,.05); min-width: 0; }
-.tool-registry-card .skill-card-top { justify-content: space-between; }
+.tool-registry-card .skill-card-top, .plugin-card .skill-card-top { justify-content: space-between; }
 .tools-page .skill-card-main p { min-height: 74px; }
+.plugins-page .skill-card-main p { min-height: 74px; }
 .tools-list-row .ops-row-meta span { color: #3730a3; }
 .tool-drawer .drawer-tabs { margin-top: 0; }
 .drawer-section-list { display: grid; gap: 10px; }
@@ -1209,6 +1210,7 @@ input, select, textarea { font-family: inherit; }
 .individual-tool-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .individual-tool-chip { border: 1px solid #dbeafe; background: #eff6ff; color: #1e3a8a; border-radius: 999px; padding: 7px 10px; font-size: 11px; font-weight: 800; }
 .tool-registry-card .skill-triplet div:first-child b { font-size: 11px; }
+.plugin-card .skill-triplet b { font-size: 11px; }
 .kv { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px; align-items: center; border: 1px solid #edf1f5; border-radius: 12px; background: #fafbfc; padding: 10px; min-width: 0; }
 .kv span { color: var(--muted); font-size: 10.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .kv b { display: block; font-size: 12px; color: var(--ink2); min-width: 0; overflow-wrap: anywhere; }

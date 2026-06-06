@@ -69,8 +69,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<MissionControlMe | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const effectiveRole = me?.user.role === "admin" && uiMode === "admin" ? "admin" : me?.user.role === "admin" ? "user" : me?.user.role;
-  const permissions = useMemo(() => permissionsForRole(effectiveRole, me?.user.role), [effectiveRole, me?.user.role]);
+  const accountRole = me?.user?.role;
+  const effectiveRole = accountRole === "admin" && uiMode === "admin" ? "admin" : accountRole === "admin" ? "user" : accountRole;
+  const permissions = useMemo(() => permissionsForRole(effectiveRole, accountRole), [effectiveRole, accountRole]);
 
   const setView = useCallback((next: ViewKey) => {
     setRawView((current) => {
@@ -93,7 +94,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setAgents(a);
     setApprovals(ap);
     setSelectedId((cur) => cur ?? a[0]?.id ?? null);
-    const nextRole = nextMe?.user.role === "admin" && uiMode === "admin" ? "admin" : nextMe?.user.role === "admin" ? "user" : nextMe?.user.role;
+    const nextAccountRole = nextMe?.user?.role;
+    const nextRole = nextAccountRole === "admin" && uiMode === "admin" ? "admin" : nextAccountRole === "admin" ? "user" : nextAccountRole;
     setRawView((next) => canAccessView(nextRole, next) ? next : safeDefaultViewForRole(nextRole));
     setLoading(false);
   }, [uiMode]);

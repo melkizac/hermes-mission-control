@@ -55,7 +55,7 @@ function Shell() {
   // Preserve auth-flash regression contract: const { view, setView, me, loading } = useStore();
   const { view, setView, applyDeepLinkTarget, me, loading } = useStore();
   const pathname = window.location.pathname.replace(/\/$/, "") || "/";
-  const canRenderView = canAccessView(me?.user.role, view);
+  const canRenderView = canAccessView(me?.user?.role, view);
 
   useEffect(() => {
     const syncDeepLink = () => applyDeepLinkTarget(parseMissionControlDeepLink(window.location));
@@ -205,6 +205,10 @@ function AdminOnlyNotice({ onGoHome }: { onGoHome: () => void }) {
 
 export default function App() {
   const pathname = window.location.pathname.replace(/\/$/, "") || "/";
+
+  if (docsPaths.has(pathname)) {
+    return <MissionControlDocs />;
+  }
 
   if (publicPaths.has(pathname)) {
     return pathname === "/login" ? <LoginPage /> : <LandingPage />;
