@@ -71,11 +71,9 @@ const adminConsoleGroups: NavGroup[] = [
     label: "Runtime",
     items: [
       { key: "runtimes", label: "Runtime Connectors", icon: "runtimes" },
-      { key: "automations", label: "Routine Admin", icon: "automations" },
-      { key: "desktop-gateway", label: "Desktop Gateway", icon: "settings" },
-      { key: "browser-ops", label: "Browser Activity", icon: "runtimes" },
+      { key: "automations", label: "Workflow Routine Admin", icon: "automations" },
+      { key: "browser-ops", label: "Browser Evidence", icon: "runtimes" },
       { key: "research-runs", label: "Research Runs", icon: "audit" },
-      { key: "models", label: "Model Router", icon: "modelRouter" },
     ],
   },
   {

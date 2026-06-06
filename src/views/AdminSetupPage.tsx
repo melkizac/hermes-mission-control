@@ -1,9 +1,48 @@
 import { useEffect, useState } from "react";
 import type { DesktopGatewayStatus, ViewKey } from "../types";
+import { Icon } from "../components/Icon";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { useStore } from "../services/store";
 
 const client = new HttpHermesClient();
+
+type AccessRole = "admin" | "user" | "viewer";
+type AccessStatus = "active" | "disabled";
+
+type AccessUser = {
+  id: string;
+  email: string;
+  name: string;
+  role: AccessRole | string;
+  status: AccessStatus | string;
+  created_at: string;
+  last_login_at?: string | null;
+  workspace?: { id: string; name: string; slug: string } | null;
+  activity?: { projects: number; tasks: number; inbox: number };
+};
+
+type AccessResponse = {
+  ok: boolean;
+  users: AccessUser[];
+  summary: { total_users: number; active: number; admins: number; workspaces: number };
+  roles: AccessRole[];
+  statuses: AccessStatus[];
+  policy: { destructive_delete: boolean; passwords_returned_once: boolean; admin_required: boolean };
+};
+
+type UserFormState = { email: string; name: string; workspaceName: string; role: AccessRole; password: string };
+type EditUserFormState = { name: string; workspaceName: string; role: AccessRole; status: AccessStatus; password: string };
+
+async function adminRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${window.location.protocol}//${window.location.host}${path}`, {
+    credentials: "include",
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : res.statusText);
+  return data as T;
+}
 
 type AdminMetric = { label: string; value: string; detail: string; tone?: "good" | "warn" | "bad" };
 type AdminCard = { title: string; body: string; target?: ViewKey; action: string; note?: string };
@@ -169,6 +208,254 @@ function metricClass(tone?: AdminMetric["tone"]) {
   return `skills-metric${tone ? ` ${tone}` : ""}`;
 }
 
+function formatDate(value?: string | null) {
+  if (!value) return "Never";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}
+
+function UsersAccessPanel() {
+  const [access, setAccess] = useState<AccessResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [addDrawerOpen, setAddDrawerOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [editingUser, setEditingUser] = useState<AccessUser | null>(null);
+  const [editForm, setEditForm] = useState<EditUserFormState>({ name: "", workspaceName: "", role: "user", status: "active", password: "" });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [form, setForm] = useState<UserFormState>({ email: "", name: "", workspaceName: "", role: "user", password: "" });
+
+  async function loadAccess() {
+    try {
+      setError(null);
+      const next = await adminRequest<AccessResponse>("/api/admin/access");
+      setAccess(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load users and access");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadAccess();
+  }, []);
+
+  const filteredUsers = (access?.users ?? []).filter((user) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return [user.email, user.name, user.role, user.status, user.workspace?.name, user.workspace?.slug].some((value) => String(value ?? "").toLowerCase().includes(q));
+  });
+
+  async function createUser() {
+    if (!form.email.trim()) {
+      setError("Email is required.");
+      return;
+    }
+    try {
+      setError(null);
+      setNotice(null);
+      setCreating(true);
+      const result = await adminRequest<{ ok: boolean; user: AccessUser; temporary_password?: string }>("/api/admin/users", {
+        method: "POST",
+        body: JSON.stringify({ email: form.email, name: form.name, workspaceName: form.workspaceName, role: form.role, password: form.password }),
+      });
+      setForm({ email: "", name: "", workspaceName: "", role: "user", password: "" });
+      setAddDrawerOpen(false);
+      setNotice(result.temporary_password ? `Created ${result.user.email}. Temporary password: ${result.temporary_password}` : `Created ${result.user.email}.`);
+      await loadAccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create user");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function updateUser(user: AccessUser, payload: Record<string, unknown>) {
+    try {
+      setError(null);
+      setNotice(null);
+      const result = await adminRequest<{ ok: boolean; user: AccessUser; temporary_password?: string }>(`/api/admin/users/${encodeURIComponent(user.id)}/action`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setNotice(result.temporary_password ? `Reset password for ${result.user.email}: ${result.temporary_password}` : `Updated ${result.user.email}.`);
+      await loadAccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update user");
+    }
+  }
+
+  function openEditDrawer(user: AccessUser) {
+    setError(null);
+    setNotice(null);
+    setEditingUser(user);
+    setEditForm({
+      name: user.name || user.email,
+      workspaceName: user.workspace?.name ?? "",
+      role: (user.role === "admin" || user.role === "viewer" || user.role === "user" ? user.role : "user") as AccessRole,
+      status: (user.status === "disabled" ? "disabled" : "active") as AccessStatus,
+      password: "",
+    });
+  }
+
+  async function saveEditUser() {
+    if (!editingUser) return;
+    try {
+      setError(null);
+      setNotice(null);
+      setSavingEdit(true);
+      const payload: Record<string, unknown> = {
+        name: editForm.name,
+        workspaceName: editForm.workspaceName,
+        role: editForm.role,
+        status: editForm.status,
+      };
+      if (editForm.password.trim()) payload.password = editForm.password;
+      const result = await adminRequest<{ ok: boolean; user: AccessUser; temporary_password?: string }>(`/api/admin/users/${encodeURIComponent(editingUser.id)}/action`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      setEditingUser(null);
+      setEditForm({ name: "", workspaceName: "", role: "user", status: "active", password: "" });
+      setNotice(result.temporary_password ? `Updated ${result.user.email}. New password: ${result.temporary_password}` : `Updated ${result.user.email}.`);
+      await loadAccess();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update user");
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  return (
+    <section className="users-access-panel" aria-label="Users and access management">
+      <div className="access-toolbar router-panel">
+        <div>
+          <h2>Access roster</h2>
+          <p>Manage sign-in accounts, workspace ownership, and role boundaries. Deletes are intentionally disabled; disable access instead so the audit trail remains intact.</p>
+        </div>
+        <div className="access-toolbar-actions">
+          <button className="task-icon-action primary" aria-label="Add user" title="Add user" onClick={() => setAddDrawerOpen(true)}><Icon name="plus" size={18} /></button>
+          <button className="task-icon-action dark" aria-label="Refresh users and access" title="Refresh users and access" onClick={() => void loadAccess()}><Icon name="refresh" size={18} /></button>
+        </div>
+      </div>
+
+      {error && <div className="skills-error">{error}</div>}
+      {notice && <div className="access-secret-notice" role="status">{notice}</div>}
+
+      <div className="users-access-layout">
+        <article className="router-panel access-users-card">
+          <div className="section-head compact access-users-head">
+            <div>
+              <h2>Current access</h2>
+              <p>{loading ? "Loading users…" : `${filteredUsers.length} shown · ${access?.summary.total_users ?? 0} total accounts`}</p>
+            </div>
+            <input className="access-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search user, role, workspace…" />
+          </div>
+          <div className="access-user-list">
+            {filteredUsers.map((user) => (
+              <div className="access-user-row" key={user.id} role="button" tabIndex={0} aria-label={`Edit ${user.email}`} onClick={() => openEditDrawer(user)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openEditDrawer(user); } }}>
+                <div className="access-user-main">
+                  <strong>{user.name || user.email}</strong>
+                  <span>{user.email}</span>
+                  <small>{user.workspace?.name ?? "No workspace"} · last login {formatDate(user.last_login_at)}</small>
+                </div>
+                <div className="access-user-activity">
+                  <span>{user.activity?.projects ?? 0} projects</span>
+                  <span>{user.activity?.tasks ?? 0} tasks</span>
+                  <span>{user.activity?.inbox ?? 0} approvals</span>
+                </div>
+                <select aria-label={`Role for ${user.email}`} value={user.role} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()} onChange={(event) => void updateUser(user, { role: event.target.value })}>
+                  <option value="admin">admin</option><option value="user">user</option><option value="viewer">viewer</option>
+                </select>
+                <select aria-label={`Status for ${user.email}`} value={user.status} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()} onChange={(event) => void updateUser(user, { status: event.target.value })}>
+                  <option value="active">active</option><option value="disabled">disabled</option>
+                </select>
+                <div className="access-user-actions" onClick={(event) => event.stopPropagation()}>
+                  <button className="btn ghost small" onClick={() => openEditDrawer(user)}><Icon name="edit" size={14} /> Edit</button>
+                  <button className="btn ghost small" onClick={() => void updateUser(user, { resetPassword: true })}>Reset password</button>
+                </div>
+              </div>
+            ))}
+            {!loading && filteredUsers.length === 0 && <div className="mc-empty inline"><h3>No matching users</h3><p>Try another search or create a new account.</p></div>}
+          </div>
+        </article>
+      </div>
+
+      <article className="router-panel access-policy-card">
+        <h2>Access policy boundary</h2>
+        <div className="access-policy-grid">
+          <div><b>Roles</b><span>admin manages platform settings; user operates workspace agents; viewer is read-only.</span></div>
+          <div><b>No hard delete</b><span>Disable accounts instead of deleting them, preserving audit/evidence history.</span></div>
+          <div><b>Passwords</b><span>Temporary passwords are returned once in this browser response and are not stored in plaintext.</span></div>
+        </div>
+      </article>
+
+      {addDrawerOpen && (
+        <div className="mc-drawer-layer access-add-drawer-layer" role="presentation">
+          <button className="mc-drawer-scrim" aria-label="Close add user drawer" onClick={() => setAddDrawerOpen(false)} />
+          <aside className="mc-drawer mc-drawer-narrow access-add-drawer" aria-label="Add user drawer" role="dialog" aria-modal="true">
+            <div className="mc-drawer-head">
+              <div className="mc-drawer-title">
+                <span className="stub-tag">ACCOUNT ADMIN</span>
+                <h2>Add user</h2>
+                <p>Create a local Mission Control login and workspace. If password is blank, a one-time temporary password is generated and shown once.</p>
+              </div>
+              <button className="mc-drawer-close" aria-label="Close add user drawer" onClick={() => setAddDrawerOpen(false)}>×</button>
+            </div>
+            <div className="mc-drawer-body">
+              <form className="access-create-card access-create-form" onSubmit={(event) => { event.preventDefault(); void createUser(); }}>
+                <label><span>Email</span><input value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="operator@example.com" autoFocus /></label>
+                <label><span>Name</span><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Operator name" /></label>
+                <label><span>Workspace</span><input value={form.workspaceName} onChange={(event) => setForm({ ...form, workspaceName: event.target.value })} placeholder="Company / Team Workspace" /></label>
+                <label><span>Role</span><select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as AccessRole })}><option value="user">User</option><option value="viewer">Viewer</option><option value="admin">Admin</option></select></label>
+                <label><span>Password</span><input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="Blank = generate" /></label>
+                <div className="access-drawer-actions">
+                  <button className="btn ghost" type="button" onClick={() => setAddDrawerOpen(false)}>Cancel</button>
+                  <button className="btn dark" type="submit" disabled={creating}>{creating ? "Creating…" : "Create user"}</button>
+                </div>
+              </form>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {editingUser && (
+        <div className="mc-drawer-layer access-edit-drawer-layer" role="presentation">
+          <button className="mc-drawer-scrim" aria-label="Close edit user drawer" onClick={() => setEditingUser(null)} />
+          <aside className="mc-drawer mc-drawer-narrow access-edit-drawer" aria-label="Edit user drawer" role="dialog" aria-modal="true">
+            <div className="mc-drawer-head">
+              <div className="mc-drawer-title">
+                <span className="stub-tag">ACCOUNT ADMIN</span>
+                <h2>Edit user</h2>
+                <p>{editingUser.email}</p>
+              </div>
+              <button className="mc-drawer-close" aria-label="Close edit user drawer" onClick={() => setEditingUser(null)}>×</button>
+            </div>
+            <div className="mc-drawer-body">
+              <form className="access-create-card access-create-form" onSubmit={(event) => { event.preventDefault(); void saveEditUser(); }}>
+                <label><span>Email</span><input value={editingUser.email} readOnly aria-readonly="true" /></label>
+                <label><span>Name</span><input value={editForm.name} onChange={(event) => setEditForm({ ...editForm, name: event.target.value })} placeholder="Operator name" autoFocus /></label>
+                <label><span>Workspace</span><input value={editForm.workspaceName} onChange={(event) => setEditForm({ ...editForm, workspaceName: event.target.value })} placeholder="Company / Team Workspace" /></label>
+                <label><span>Role</span><select value={editForm.role} onChange={(event) => setEditForm({ ...editForm, role: event.target.value as AccessRole })}><option value="user">User</option><option value="viewer">Viewer</option><option value="admin">Admin</option></select></label>
+                <label><span>Status</span><select value={editForm.status} onChange={(event) => setEditForm({ ...editForm, status: event.target.value as AccessStatus })}><option value="active">Active</option><option value="disabled">Disabled</option></select></label>
+                <label><span>New password</span><input type="password" value={editForm.password} onChange={(event) => setEditForm({ ...editForm, password: event.target.value })} placeholder="Leave blank to keep current" /></label>
+                <div className="access-drawer-actions">
+                  <button className="btn ghost" type="button" onClick={() => setEditingUser(null)}>Cancel</button>
+                  <button className="btn dark" type="submit" disabled={savingEdit}>{savingEdit ? "Saving…" : "Save changes"}</button>
+                </div>
+              </form>
+            </div>
+          </aside>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function AdminSetupPage({ kind }: { kind: keyof typeof pageConfigs }) {
   const { setView } = useStore();
   const config = pageConfigs[kind];
@@ -231,6 +518,8 @@ export function AdminSetupPage({ kind }: { kind: keyof typeof pageConfigs }) {
           </article>
         ))}
       </section>
+
+      {kind === "users-workspaces" && <UsersAccessPanel />}
 
       {kind === "desktop-gateway" && (
         <section className="desktop-gateway-live" aria-label="Desktop Gateway live readiness">
@@ -298,6 +587,7 @@ export function AdminSetupPage({ kind }: { kind: keyof typeof pageConfigs }) {
         </section>
       )}
 
+      {kind !== "users-workspaces" && (
       <div className="admin-setup-grid">
         <section className="admin-setup-main">
           {config.sections.map((section) => (
@@ -344,6 +634,7 @@ export function AdminSetupPage({ kind }: { kind: keyof typeof pageConfigs }) {
           </article>
         </aside>
       </div>
+      )}
     </div>
   );
 }

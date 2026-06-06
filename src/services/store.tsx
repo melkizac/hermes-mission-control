@@ -9,7 +9,7 @@ import {
 } from "react";
 import type { Agent, Approval, Attachment, ConfigFile, Message, MissionControlMe, ModelRoutingSelection, ReplyContext, RouterConfig, Skill, ViewKey } from "../types";
 import type { UiPermissions } from "./uiPermissions";
-import { canAccessView, permissionsForRole, safeDefaultViewForRole } from "./uiPermissions";
+import { adminOnlyViews, canAccessView, permissionsForRole, safeDefaultViewForRole } from "./uiPermissions";
 import type { HermesClient } from "./hermesClient";
 import { HttpHermesClient } from "./httpHermesClient";
 import { initialDeepLinkTarget, parseMissionControlDeepLink, type MissionControlDeepLinkTarget } from "./deepLinks";
@@ -65,7 +65,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [view, setRawView] = useState<ViewKey>(startingDeepLink.view ?? "mission");
-  const [uiMode, setRawUiMode] = useState<UiMode>("workspace");
+  const [uiMode, setRawUiMode] = useState<UiMode>(startingDeepLink.view && adminOnlyViews.has(startingDeepLink.view) ? "admin" : "workspace");
   const [me, setMe] = useState<MissionControlMe | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -74,11 +74,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const permissions = useMemo(() => permissionsForRole(effectiveRole, accountRole), [effectiveRole, accountRole]);
 
   const setView = useCallback((next: ViewKey) => {
+    if (accountRole === "admin" && adminOnlyViews.has(next)) {
+      setRawUiMode("admin");
+      setRawView(next);
+      return;
+    }
     setRawView((current) => {
       if (canAccessView(effectiveRole, next)) return next;
       return canAccessView(effectiveRole, current) ? current : safeDefaultViewForRole(effectiveRole);
     });
-  }, [effectiveRole]);
+  }, [accountRole, effectiveRole]);
 
   const setUiMode = useCallback((mode: UiMode) => {
     setRawUiMode(mode);

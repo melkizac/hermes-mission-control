@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { StoreProvider, useStore } from "./services/store";
-import { canAccessView, safeDefaultViewForRole } from "./services/uiPermissions";
+import { adminOnlyViews, canAccessView, safeDefaultViewForRole } from "./services/uiPermissions";
 import { NavRail } from "./components/NavRail";
 import { Icon } from "./components/Icon";
 import { MissionControl } from "./views/MissionControl";
@@ -54,7 +54,7 @@ async function safeJson<T>(path: string, fallback: T): Promise<T> {
 
 function Shell() {
   // Preserve auth-flash regression contract: const { view, setView, me, loading } = useStore();
-  const { view, setView, applyDeepLinkTarget, me, loading } = useStore();
+  const { view, setView, applyDeepLinkTarget, uiMode, me, loading } = useStore();
   const pathname = window.location.pathname.replace(/\/$/, "") || "/";
   const canRenderView = canAccessView(me?.user?.role, view);
   const [isMobileChatOnly, setIsMobileChatOnly] = useState(false);
@@ -81,7 +81,9 @@ function Shell() {
     return <div className="app-loading-screen" aria-label="Loading Mission Control" />;
   }
 
-  if (isMobileChatOnly) {
+  const shouldRenderMobileChatOnly = isMobileChatOnly && uiMode !== "admin" && !adminOnlyViews.has(view);
+
+  if (shouldRenderMobileChatOnly) {
     return (
       <div className="shell mobile-chat-only-shell">
         <main className="main mobile-chat-only-main">
