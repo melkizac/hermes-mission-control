@@ -23,6 +23,55 @@ input, select, textarea { font-family: inherit; }
 .app-loading-screen { min-height: 100vh; min-height: 100dvh; background: var(--panel); }
 .main { flex: 1; min-width: 0; overflow: hidden; display: flex; padding-top: var(--top-chrome-reserve); }
 
+/* ---------------- HERMES DESKTOP ADMIN ---------------- */
+.hermes-desktop-admin {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: calc(100vh - var(--top-chrome-reserve));
+  height: calc(100dvh - var(--top-chrome-reserve));
+  display: flex;
+  flex-direction: column;
+  background: #080b12;
+  overflow: hidden;
+}
+.hermes-desktop-admin-bar {
+  flex: 0 0 auto;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 18px;
+  border-bottom: 1px solid rgba(255,255,255,.1);
+  background: linear-gradient(180deg, rgba(15,23,42,.98), rgba(8,11,18,.96));
+  color: #fff;
+}
+.hermes-desktop-admin-bar h1 { font-size: 18px; letter-spacing: -.02em; margin-top: 2px; }
+.hermes-desktop-admin-bar .eyebrow { color: rgba(255,255,255,.56); }
+.hermes-desktop-admin-actions { display: flex; align-items: center; gap: 9px; min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
+.hermes-desktop-status,
+.hermes-desktop-meta,
+.hermes-desktop-error {
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+.hermes-desktop-status.good { background: rgba(20,184,166,.16); color: #5eead4; border: 1px solid rgba(45,212,191,.28); }
+.hermes-desktop-status.warn { background: rgba(245,158,11,.14); color: #fcd34d; border: 1px solid rgba(251,191,36,.26); }
+.hermes-desktop-status.bad { background: rgba(239,68,68,.14); color: #fca5a5; border: 1px solid rgba(248,113,113,.26); }
+.hermes-desktop-meta { background: rgba(148,163,184,.16); color: #cbd5e1; }
+.hermes-desktop-error { max-width: 360px; overflow: hidden; text-overflow: ellipsis; background: rgba(239,68,68,.14); color: #fecaca; }
+.hermes-desktop-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  background: #fff;
+}
+
 /* ---------------- NAV RAIL ---------------- */
 .rail { width: 214px; flex: 0 0 214px; background: var(--rail); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
 .ws { display: flex; align-items: center; gap: 9px; padding: 17px 16px 14px; }

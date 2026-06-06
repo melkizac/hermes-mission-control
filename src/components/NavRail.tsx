@@ -61,7 +61,7 @@ const adminConsoleGroups: NavGroup[] = [
   {
     label: "Platform",
     items: [
-      { key: "settings", label: "Admin Overview", icon: "dashboard" },
+      { key: "settings", label: "Hermes Desktop", icon: "dashboard" },
       { key: "users-workspaces", label: "Users & Workspaces", icon: "profile" },
       { key: "agent-org", label: "Platform Agent Org", icon: "agentOrg" },
       { key: "shared-agent-templates", label: "Shared Agent Templates", icon: "agents" },

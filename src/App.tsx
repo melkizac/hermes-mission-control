@@ -22,7 +22,7 @@ import { ToolsHub } from "./views/ToolsHub";
 import { PluginsHub } from "./views/PluginsHub";
 import { CostDashboard } from "./views/CostDashboard";
 import { ModelRouter } from "./views/ModelRouter";
-import { SettingsDesktop } from "./views/SettingsDesktop";
+import { HermesDesktopAdmin } from "./views/HermesDesktopAdmin";
 import { MissionControlDocs } from "./views/MissionControlDocs";
 import { LandingPage } from "./views/LandingPage";
 import { LoginPage } from "./views/LoginPage";
@@ -120,7 +120,7 @@ function Shell() {
         {canRenderView && view === "audit" && <AuditLog />}
         {canRenderView && view === "costs" && <CostDashboard />}
         {canRenderView && view === "models" && <ModelRouter />}
-        {canRenderView && view === "settings" && <SettingsDesktop />}
+        {canRenderView && view === "settings" && <HermesDesktopAdmin />}
         {canRenderView && view === "users-workspaces" && <AdminSetupPage kind="users-workspaces" />}
         {canRenderView && view === "shared-agent-templates" && <AdminSetupPage kind="shared-agent-templates" />}
         {canRenderView && view === "desktop-gateway" && <AdminSetupPage kind="desktop-gateway" />}
