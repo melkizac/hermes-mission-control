@@ -159,8 +159,9 @@ export function MissionControl() {
     const lineHeight = Number.parseFloat(styles.lineHeight) || 24;
     const paddingY = Number.parseFloat(styles.paddingTop || "0") + Number.parseFloat(styles.paddingBottom || "0");
     const borderY = Number.parseFloat(styles.borderTopWidth || "0") + Number.parseFloat(styles.borderBottomWidth || "0");
+    const minHeight = lineHeight * 2 + paddingY + borderY;
     const maxHeight = lineHeight * 10 + paddingY + borderY;
-    const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
+    const nextHeight = Math.max(minHeight, Math.min(textarea.scrollHeight, maxHeight));
     textarea.style.height = `${nextHeight}px`;
     textarea.style.overflowY = textarea.scrollHeight > maxHeight + 1 ? "auto" : "hidden";
   }

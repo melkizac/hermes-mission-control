@@ -5574,9 +5574,11 @@ button.voice-activation {
   }
 
   .mobile-chat-only-main .main-chat-composer textarea {
-    min-height: 50px;
+    min-height: calc(2 * 1.5em + 30px);
+    max-height: calc(10 * 1.5em + 30px);
     border-radius: 22px;
     padding: 14px 16px;
+    align-self: start;
   }
 
   .mobile-chat-only-main .main-chat-composer-toolbar {
