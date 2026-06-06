@@ -51,7 +51,7 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
   {
     label: "System",
     items: [
-      { key: "settings", label: "Settings", icon: "settings" },
+      { key: "profile", label: "Settings", icon: "settings" },
       { action: "logout", label: "Logout", icon: "logout" },
     ],
   },

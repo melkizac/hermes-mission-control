@@ -106,7 +106,7 @@ function Shell() {
         {canRenderView && view === "dashboard" && <Dashboard />}
         {canRenderView && view === "delegate-work" && <DelegateWork />}
         {canRenderView && view === "workflow-library" && <WorkflowLibrary />}
-        {canRenderView && view === "profile" && <Placeholder title="Profile" blurb="Account identity and operator preferences for Mission Control." />}
+        {canRenderView && view === "profile" && <Placeholder title="Account Settings" blurb="Account identity and operator preferences for your Mission Control workspace." />}
         {canRenderView && view === "agents" && <Agents />}
         {canRenderView && view === "agent-org" && <AgentOrg />}
         {canRenderView && view === "runtimes" && <Runtimes />}

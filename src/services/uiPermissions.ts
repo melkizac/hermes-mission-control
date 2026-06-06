@@ -22,6 +22,7 @@ export const adminOnlyViews = new Set<ViewKey>([
   "desktop-gateway",
   "approval-policy",
   "quota",
+  "settings",
 ]);
 
 export const workspaceViews = new Set<ViewKey>([
@@ -44,7 +45,6 @@ export const workspaceViews = new Set<ViewKey>([
   "browser-ops",
   "audit",
   "research-runs",
-  "settings",
 ]);
 
 export function isAdminRole(role: UserRole) {
