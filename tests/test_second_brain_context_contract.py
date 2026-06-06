@@ -30,6 +30,7 @@ def seed_kb(tmp_path: Path) -> Path:
     (wiki / 'sources' / 'nets-source.md').write_text('# Nets Source\n\nEvidence for [[SGQR PayNow Web Integration]].\n', encoding='utf-8')
     (wiki / 'companies' / 'nexius-labs.md').write_text('# Nexius Labs\n\nRelated to [[SGQR PayNow Web Integration]].\n', encoding='utf-8')
     (raw / 'receipt.txt').write_text('raw evidence token=RAW_SECRET', encoding='utf-8')
+    (raw / 'receipt.jpg').write_bytes(b'\xff\xd8\xff\xe0\x00\x10JFIF\x00[[\x1eQ\xff\xfe!@$\xff]]\x00\x00')
     return root
 
 
@@ -47,7 +48,7 @@ def test_second_brain_context_endpoints_index_search_note_graph_and_health(monke
 
     index = app.second_brain_index_payload({})
     assert index['summary']['wiki_pages'] == 5
-    assert index['summary']['raw_sources'] == 1
+    assert index['summary']['raw_sources'] == 2
     assert index['summary']['chunks'] >= 5
     assert {'topics', 'sources', 'companies'} <= set(index['sections'])
     assert index['policy']['mode'] == 'read-only'
@@ -73,6 +74,12 @@ def test_second_brain_context_endpoints_index_search_note_graph_and_health(monke
     graph = app.second_brain_graph_payload({})
     assert any(node['id'] == 'wiki/topics/sgqr-paynow-web-integration.md' for node in graph['nodes'])
     assert any(edge['target'] == 'wiki/topics/sgqr-paynow-web-integration.md' for edge in graph['edges'])
+    assert all(edge['source'] != 'raw/receipt.jpg' for edge in graph['edges'])
+    assert all('\ufffd' not in str(edge.get('label', '')) for edge in graph['edges'])
+    raw_jpg = next(item for item in index['raw_sources'] if item['relative_path'] == 'receipt.jpg')
+    assert raw_jpg['is_text'] is False
+    assert raw_jpg['links'] == []
+    assert raw_jpg['preview'] == ''
 
     health = app.second_brain_health_payload({})
     assert health['health']['status'] in {'healthy', 'needs-attention'}
