@@ -141,11 +141,13 @@ function AdminUserModeToggle() {
   if (!permissions.accountIsAdmin) return null;
 
   function switchToUser() {
+    window.history.pushState({}, "", "/app");
     setUiMode("workspace");
     setView("mission");
   }
 
   function switchToAdmin() {
+    window.history.pushState({}, "", "/admin");
     setUiMode("admin");
     setView("settings");
   }

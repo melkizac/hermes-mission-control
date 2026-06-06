@@ -61,11 +61,13 @@ const StoreContext = createContext<StoreValue | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const startingDeepLink = initialDeepLinkTarget();
+  const startingPath = window.location.pathname.replace(/\/$/, "") || "/";
+  const startsInAdmin = startingPath === "/admin";
   const [agents, setAgents] = useState<Agent[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [view, setRawView] = useState<ViewKey>(startingDeepLink.view ?? "mission");
-  const [uiMode, setRawUiMode] = useState<UiMode>(startingDeepLink.view && adminOnlyViews.has(startingDeepLink.view) ? "admin" : "workspace");
+  const [view, setRawView] = useState<ViewKey>(startingDeepLink.view ?? (startsInAdmin ? "settings" : "mission"));
+  const [uiMode, setRawUiMode] = useState<UiMode>(startsInAdmin || (startingDeepLink.view && adminOnlyViews.has(startingDeepLink.view)) ? "admin" : "workspace");
   const [me, setMe] = useState<MissionControlMe | null>(null);
   const [loading, setLoading] = useState(true);
 

@@ -19,7 +19,9 @@ export function LoginPage() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "Login failed");
-      window.location.assign("/app");
+      const next = new URLSearchParams(window.location.search).get("next");
+      const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "/app";
+      window.location.assign(safeNext);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {

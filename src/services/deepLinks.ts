@@ -43,6 +43,7 @@ export function parseMissionControlDeepLink(input: string | URL | Location = win
   const rawView = params.get("view") as ViewKey | null;
   const target: MissionControlDeepLinkTarget = {};
   if (rawView && allowedViews.has(rawView)) target.view = rawView;
+  if (!target.view && url.pathname.replace(/\/$/, "") === "/admin") target.view = "settings";
   const taskId = params.get("task") || params.get("task_id");
   const approvalId = params.get("approval") || params.get("approval_id");
   const agentId = params.get("agent") || params.get("agent_id");
@@ -66,7 +67,9 @@ export function buildMissionControlUrl(target: MissionControlDeepLinkTarget, ori
   if (target.agentId) params.set("agent", target.agentId);
   const query = params.toString();
   // Keep these examples literal for regression docs/tests: view=approvals&approval=, view=board&task=, view=agents&agent=
-  return `${origin.replace(/\/$/, "")}/app?${query}`;
+  const adminViews = new Set<ViewKey>(["settings", "users-workspaces", "shared-agent-templates", "desktop-gateway", "approval-policy", "quota"]);
+  const basePath = adminViews.has(view) ? "/admin" : "/app";
+  return `${origin.replace(/\/$/, "")}${basePath}?${query}`;
 }
 
 export const initialDeepLinkTarget = () => parseMissionControlDeepLink(window.location);
