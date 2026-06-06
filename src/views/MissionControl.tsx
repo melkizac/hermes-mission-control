@@ -311,6 +311,33 @@ export function MissionControl() {
   function renderVoiceActivation(mode: "compact" | "full" = "compact") {
     if (voiceStatus === "idle") return null;
     const isListening = voiceStatus === "listening";
+    const orb = (
+      <div className="voice-jarvis-orb" aria-hidden="true">
+        <span className="voice-ring ring-one" />
+        <span className="voice-ring ring-two" />
+        <span className="voice-ring ring-three" />
+        <span className="voice-core" />
+        <span className="voice-ray ray-one" />
+        <span className="voice-ray ray-two" />
+        <span className="voice-ray ray-three" />
+        <span className="voice-particle particle-one" />
+        <span className="voice-particle particle-two" />
+        <span className="voice-particle particle-three" />
+      </div>
+    );
+    if (mode === "full" && isListening) {
+      return (
+        <button
+          className="voice-activation full-window listening voice-deactivate-hitarea"
+          type="button"
+          onClick={stopVoiceInput}
+          aria-label={voiceTranscript ? `Voice captured: ${voiceTranscript}. Tap to stop voice input and return to the message box.` : "Listening. Tap to stop voice input and return to the message box."}
+          title="Tap to stop voice input"
+        >
+          {orb}
+        </button>
+      );
+    }
     return (
       <div
         className={`voice-activation ${mode === "full" ? "full-window" : "compact"} ${isListening ? "listening" : "notice"}`}
@@ -318,18 +345,7 @@ export function MissionControl() {
         aria-live="polite"
         aria-label={voiceTranscript ? `Voice captured: ${voiceTranscript}` : voiceMessage}
       >
-        <div className="voice-jarvis-orb" aria-hidden="true">
-          <span className="voice-ring ring-one" />
-          <span className="voice-ring ring-two" />
-          <span className="voice-ring ring-three" />
-          <span className="voice-core" />
-          <span className="voice-ray ray-one" />
-          <span className="voice-ray ray-two" />
-          <span className="voice-ray ray-three" />
-          <span className="voice-particle particle-one" />
-          <span className="voice-particle particle-two" />
-          <span className="voice-particle particle-three" />
-        </div>
+        {orb}
       </div>
     );
   }
@@ -561,6 +577,9 @@ export function MissionControl() {
         </main>
 
         <form className="main-chat-composer" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+          <div className="mobile-composer-prompt">
+            {selectedProject ? `What should we work on in ${projectLabel(selectedProject)}?` : "What should Melkizac work on?"}
+          </div>
           {routingPreview && (
             <ChatIntentRoutingPreview
               preview={routingPreview.preview}
