@@ -8,6 +8,36 @@ Runtime app: `/opt/hermes-mission-control`
 Backend entrypoint: `/opt/hermes-mission-control/app.py`
 Production frontend bundle: `/opt/hermes-mission-control/dist`
 
+## Root-only login credential reset
+
+Mission Control credentials are reset from the server, not from public demo shortcuts. The root/operator helper is:
+
+```bash
+sudo /opt/hermes-mission-control/reset-login.py --username NEW_LOGIN_ID
+```
+
+Safe operating rules:
+
+- Run it only as root or via sudo on the Mission Control host; it fails before reading or writing credentials for non-root users.
+- Omit `--password` for normal use so the helper prompts with `getpass` and never echoes the password.
+- Use `--generate` to create a temporary password. It remains hidden by default; `--print-password` is allowed only with `--generate` from an interactive local TTY for display-once emergency handoff.
+- The helper updates the systemd `HMC_USER` / `HMC_PASSWORD_FILE` values, writes the password file as `0600`, updates the Mission Control auth DB user record, clears `last_login_at`, and restarts `hermes-mission-control.service` unless `--no-restart` is supplied.
+- The helper backs up `/opt/hermes-mission-control/mission_control.db` before modifying auth records. Keep that backup root-only and delete stale backups after the emergency window.
+- Output is redacted by default: it prints the username, password-file path, auth DB path, backup path, and service restart status, but not the password.
+
+Rollback:
+
+1. Re-run the helper with the prior intended username/password, or restore the timestamped `mission_control.db.reset-backup-*` file after stopping the service.
+2. Restore the previous `Environment=HMC_USER=...` and `Environment=HMC_PASSWORD_FILE=...` lines in `/etc/systemd/system/hermes-mission-control.service` if needed.
+3. Run `systemctl daemon-reload && systemctl restart hermes-mission-control.service`.
+4. Verify login through `/api/login` or `/login`; do not paste passwords into shared logs or chat.
+
+Related design docs:
+
+- [`ADMIN_PLATFORM_MULTI_RUNTIME_DESIGN.md`](./ADMIN_PLATFORM_MULTI_RUNTIME_DESIGN.md) — Admin control-plane design for many isolated Hermes user/workspace runtimes, written for both technical and functional stakeholders.
+- [`plans/2026-06-06-admin-runtime-governance-phases-7-11.md`](./plans/2026-06-06-admin-runtime-governance-phases-7-11.md) — proposed later phases for Runtime Connectors, Approval Policy, Workflow Routine Admin, workspace run history, Browser Evidence, Research Runs, Costs / Usage, and Quota.
+- [`RUNTIME_CONNECTOR_V2.md`](./RUNTIME_CONNECTOR_V2.md) — external runtime connector registration, heartbeat, and event ingestion.
+
 ## 1. What Mission Control is
 
 Hermes is the worker layer. **Mission Control is the management, audit, and trust layer.**

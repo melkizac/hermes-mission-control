@@ -40,6 +40,7 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
     label: "Workforce",
     items: [
       { key: "agents", label: "Agents", icon: "agents" },
+      { key: "agent-voice", label: "Agent Voice", icon: "mic" },
       { key: "agent-org", label: "AI Workforce", icon: "agentOrg" },
       { key: "skills", label: "Skills", icon: "skills" },
       { key: "memory", label: "Memory", icon: "memory" },
@@ -62,8 +63,9 @@ const adminConsoleGroups: NavGroup[] = [
     label: "Platform",
     items: [
       { key: "settings", label: "Hermes Desktop", icon: "dashboard" },
-      { key: "users-workspaces", label: "Users & Workspaces", icon: "profile" },
-      { key: "agent-org", label: "Platform Agent Org", icon: "agentOrg" },
+      { key: "users-workspaces", label: "User Access", icon: "profile" },
+      { key: "workspace-runtime-console", label: "Workspace Runtime Console", icon: "runtimes" },
+      { key: "agent-platform-admin", label: "Agent Platform Admin", icon: "agentOrg" },
       { key: "shared-agent-templates", label: "Shared Agent Templates", icon: "agents" },
     ],
   },
@@ -72,8 +74,6 @@ const adminConsoleGroups: NavGroup[] = [
     items: [
       { key: "runtimes", label: "Runtime Connectors", icon: "runtimes" },
       { key: "automations", label: "Workflow Routine Admin", icon: "automations" },
-      { key: "browser-ops", label: "Browser Evidence", icon: "runtimes" },
-      { key: "research-runs", label: "Research Runs", icon: "audit" },
     ],
   },
   {

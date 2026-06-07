@@ -10,14 +10,32 @@ import { Icon } from "../components/Icon";
 
 const client = new HttpHermesClient();
 const TASK_PAGE_SIZE = 5;
-const initialLaneCounts = (): Record<BoardStatus, number> => ({ queued: TASK_PAGE_SIZE, running: TASK_PAGE_SIZE, blocked: TASK_PAGE_SIZE, done: TASK_PAGE_SIZE, error: TASK_PAGE_SIZE });
-const lanes: { key: BoardStatus; label: string; helper: string }[] = [
-  { key: "queued", label: "Queued", helper: "Ready for a worker" },
-  { key: "running", label: "Running", helper: "Claimed or in progress" },
+type BoardLaneKey = "triage" | "scheduled" | "running" | "pending" | "done";
+const initialLaneCounts = (): Record<BoardLaneKey, number> => ({ triage: TASK_PAGE_SIZE, scheduled: TASK_PAGE_SIZE, running: TASK_PAGE_SIZE, pending: TASK_PAGE_SIZE, done: TASK_PAGE_SIZE });
+const statusOptions: { key: BoardStatus; label: string; helper: string }[] = [
+  { key: "todo", label: "Triage", helper: "Needs sorting, owner, or priority" },
+  { key: "scheduled", label: "Scheduled", helper: "Planned for a future run" },
+  { key: "running", label: "Running", helper: "Actively executing now" },
+  { key: "queued", label: "Review", helper: "Output/work waiting for inspection" },
   { key: "blocked", label: "Blocked", helper: "Needs human or dependency" },
-  { key: "done", label: "Done", helper: "Completed evidence" },
-  { key: "error", label: "Error", helper: "Crashed or failed" },
+  { key: "error", label: "Error", helper: "Failed and needs investigation" },
+  { key: "done", label: "Done", helper: "Completed and verified" },
 ];
+const laneGroups: { title: string; className: string; lanes: { key: BoardLaneKey; label: string; helper: string; statuses: BoardStatus[] }[] }[] = [
+  { title: "To-do", className: "todo", lanes: [
+    { key: "triage", label: "Triage", helper: "New work needing sorting", statuses: ["todo"] },
+    { key: "scheduled", label: "Scheduled", helper: "Future run or reminder", statuses: ["scheduled"] },
+  ] },
+  { title: "Active", className: "active", lanes: [
+    { key: "running", label: "Running", helper: "Executing now", statuses: ["running"] },
+  ] },
+  { title: "Attention & Outcome", className: "outcome", lanes: [
+    { key: "pending", label: "Pending", helper: "Review, blocked, or error", statuses: ["queued", "blocked", "error"] },
+    { key: "done", label: "Done", helper: "Completed evidence", statuses: ["done"] },
+  ] },
+];
+const pendingTag = (status: BoardStatus) => status === "blocked" ? "Blocked" : status === "error" ? "Error" : status === "queued" ? "Review" : statusOptions.find((item) => item.key === status)?.label ?? status;
+
 
 type DetailTab = "overview" | "evidence" | "activity" | "execution";
 type ViewMode = "cards" | "list";
@@ -31,7 +49,7 @@ export function TaskBoard() {
   const [project, setProject] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
   const [tasks, setTasks] = useState<BoardTask[]>([]);
-  const [summary, setSummary] = useState({ total: 0, queued: 0, running: 0, blocked: 0, done: 0, error: 0, assignees: [] as string[], projects: [] as string[] });
+  const [summary, setSummary] = useState({ total: 0, todo: 0, queued: 0, scheduled: 0, running: 0, blocked: 0, done: 0, error: 0, assignees: [] as string[], projects: [] as string[] });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab>("overview");
@@ -42,7 +60,7 @@ export function TaskBoard() {
   const [comment, setComment] = useState("");
   const [humanNote, setHumanNote] = useState("");
   const [agentTarget, setAgentTarget] = useState("");
-  const [laneVisibleCounts, setLaneVisibleCounts] = useState<Record<BoardStatus, number>>(() => initialLaneCounts());
+  const [laneVisibleCounts, setLaneVisibleCounts] = useState<Record<BoardLaneKey, number>>(() => initialLaneCounts());
   const [listVisibleCount, setListVisibleCount] = useState(TASK_PAGE_SIZE);
   const deepLinkedTaskId = useMemo(() => parseMissionControlDeepLink(window.location).taskId ?? null, []);
 
@@ -111,7 +129,7 @@ export function TaskBoard() {
   const create = async () => {
     if (!draft.title.trim()) return setError("Title required");
     try {
-      const result = await client.createBoardTask({ ...draft, status: "queued" });
+      const result = await client.createBoardTask({ ...draft, status: "todo" });
       if (!result.ok) throw new Error(result.error || "Create failed");
       setNotice(`Created issue: ${result.task?.title}`);
       setDraft({ title: "", body: "", assignee: "", priority: 50, tenant: "" });
@@ -217,9 +235,9 @@ export function TaskBoard() {
     }
   };
 
-  const grouped = useMemo(() => lanes.reduce((acc, lane) => ({ ...acc, [lane.key]: tasks.filter((task) => task.status === lane.key) }), {} as Record<BoardStatus, BoardTask[]>), [tasks]);
+  const grouped = useMemo(() => laneGroups.flatMap((group) => group.lanes).reduce((acc, lane) => ({ ...acc, [lane.key]: tasks.filter((task) => lane.statuses.includes(task.status)) }), {} as Record<BoardLaneKey, BoardTask[]>), [tasks]);
   const visibleListTasks = useMemo(() => tasks.slice(0, listVisibleCount), [tasks, listVisibleCount]);
-  const showMoreLane = (lane: BoardStatus) => setLaneVisibleCounts((current) => ({ ...current, [lane]: current[lane] + TASK_PAGE_SIZE }));
+  const showMoreLane = (lane: BoardLaneKey) => setLaneVisibleCounts((current) => ({ ...current, [lane]: current[lane] + TASK_PAGE_SIZE }));
 
   return (
     <div className="task-page task-board-first scroll">
@@ -248,8 +266,8 @@ export function TaskBoard() {
 
       <section className="task-metrics task-metrics-compact">
         <Metric label="Total" value={summary.total} sub="tracked issues" />
-        <Metric label="Open" value={summary.queued + summary.running} sub="queued + running" />
-        <Metric label="Blocked" value={summary.blocked} sub="needs attention" tone={summary.blocked ? "bad" : "good"} />
+        <Metric label="To-do" value={summary.todo + summary.scheduled} sub="triage + scheduled" />
+        <Metric label="Pending" value={summary.queued + summary.blocked + summary.error} sub="review + blocked + error" tone={summary.blocked || summary.error ? "bad" : undefined} />
         <Metric label="Done" value={summary.done} sub="completed" tone="good" />
       </section>
 
@@ -278,7 +296,7 @@ export function TaskBoard() {
             <button className={viewMode === "list" ? "on" : ""} onClick={() => setViewMode("list")}>List</button>
           </div>
         </div>
-        <select value={status} onChange={(e) => setStatus(e.target.value as BoardStatus | "")}><option value="">All status</option>{lanes.map((lane) => <option key={lane.key} value={lane.key}>{lane.label}</option>)}</select>
+        <select value={status} onChange={(e) => setStatus(e.target.value as BoardStatus | "")}><option value="">All status</option>{statusOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select>
         <select value={assignee} onChange={(e) => setAssignee(e.target.value)}><option value="">All owners</option>{summary.assignees.map((item) => <option key={item} value={item}>{item}</option>)}</select>
         <select value={project} onChange={(e) => setProject(e.target.value)}><option value="">All projects</option>{summary.projects.map((item) => <option key={item} value={item}>{item}</option>)}</select>
         <span>{loading ? "Loading…" : `${tasks.length} issues shown`}</span>
@@ -288,20 +306,27 @@ export function TaskBoard() {
       {error && <div className="task-error">{error}</div>}
 
       {viewMode === "cards" ? (
-        <section className="task-kanban task-kanban-full">
-          {lanes.map((lane) => {
-            const laneTasks = grouped[lane.key] ?? [];
-            const visibleTasks = laneTasks.slice(0, laneVisibleCounts[lane.key]);
-            const remaining = Math.max(0, laneTasks.length - visibleTasks.length);
-            return (
-              <div className="task-lane" key={lane.key}>
-                <div className="task-lane-head"><div><b>{lane.label}</b><small>{lane.helper}</small></div><span>{laneTasks.length}</span></div>
-                {visibleTasks.map((task) => <TaskCard key={task.id} task={task} selected={selected?.id === task.id} onSelect={() => openTask(task)} onMove={move} onDelete={remove} />)}
-                {laneTasks.length === 0 && <div className="empty task-empty">No cards</div>}
-                {remaining > 0 && <button className="task-view-more" onClick={() => showMoreLane(lane.key)}>View More <span>{Math.min(TASK_PAGE_SIZE, remaining)} more</span></button>}
+        <section className="task-kanban task-kanban-full" aria-label="Task board grouped by To-do, Active, and Attention & Outcome">
+          {laneGroups.map((group) => (
+            <div className={`task-lane-group task-lane-group-${group.className}`} key={group.title}>
+              <div className="task-lane-group-head"><span>{group.title}</span></div>
+              <div className="task-lane-group-columns">
+                {group.lanes.map((lane) => {
+                  const laneTasks = grouped[lane.key] ?? [];
+                  const visibleTasks = laneTasks.slice(0, laneVisibleCounts[lane.key]);
+                  const remaining = Math.max(0, laneTasks.length - visibleTasks.length);
+                  return (
+                    <div className="task-lane" key={lane.key}>
+                      <div className="task-lane-head"><div><b>{lane.label}</b><small>{lane.helper}</small></div><span>{laneTasks.length}</span></div>
+                      {visibleTasks.map((task) => <TaskCard key={task.id} task={task} selected={selected?.id === task.id} onSelect={() => openTask(task)} onMove={move} onDelete={remove} />)}
+                      {laneTasks.length === 0 && <div className="empty task-empty">No cards</div>}
+                      {remaining > 0 && <button className="task-view-more" onClick={() => showMoreLane(lane.key)}>View More <span>{Math.min(TASK_PAGE_SIZE, remaining)} more</span></button>}
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            </div>
+          ))}
         </section>
       ) : (
         <section className="ops-list task-list-view">
@@ -344,7 +369,7 @@ function TaskListRow({ task, active, onSelect }: { task: BoardTask; active: bool
       <div className="ops-row-main">
         <div className="ops-row-top">
           <b>{task.title}</b>
-          <span className={`tag ${task.status === "blocked" || task.status === "error" ? "warn" : task.status === "done" ? "good" : "muted"}`}>{task.status}</span>
+          <span className={`tag ${task.status === "blocked" || task.status === "error" ? "warn" : task.status === "done" ? "good" : "muted"}`}>{pendingTag(task.status)}</span>
         </div>
         <p>{task.body || "No description yet."}</p>
         <small className="mono">{task.id}</small>
@@ -382,7 +407,7 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
     <SlideOverDrawer
       title={task.title}
       subtitle={<span className="mono">{task.id}</span>}
-      eyebrow={task.status}
+      eyebrow={pendingTag(task.status)}
       statusClassName={`tag ${task.status === "blocked" || task.status === "error" ? "warn" : "good"}`}
       onClose={onClose}
       closeLabel="Close task details"
@@ -406,7 +431,7 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
               <Info label="Workspace" value={task.workspace_path || task.workspace_kind} />
             </div>
             <div className="task-drawer-actions">
-              <select value={task.status} onChange={(e) => void onMove(task, e.target.value as BoardStatus)}>{lanes.map((lane) => <option value={lane.key} key={lane.key}>{lane.label}</option>)}</select>
+              <select value={task.status} onChange={(e) => void onMove(task, e.target.value as BoardStatus)}>{statusOptions.map((option) => <option value={option.key} key={option.key}>{option.label}</option>)}</select>
               <button className="ghost tiny danger" onClick={() => void onDelete(task)}>Delete</button>
             </div>
             <label className="task-inline-edit"><span>Assign owner/profile</span><input defaultValue={task.assignee === "unassigned" ? "" : task.assignee} onBlur={(e) => e.target.value !== task.assignee && void onSaveAssignee(task, e.target.value)} /></label>
@@ -449,7 +474,7 @@ function TaskCard({ task, selected, onSelect, onMove, onDelete }: { task: BoardT
         <h2>{task.title}</h2><p>{task.body || "No detail yet."}</p>
         <div className="task-card-meta"><span>{task.assignee}</span><span>{task.created_by}</span>{task.tenant && <span>{task.tenant}</span>}</div>
       </button>
-      <footer><select value={task.status} onChange={(e) => void onMove(task, e.target.value as BoardStatus)}>{lanes.map((lane) => <option value={lane.key} key={lane.key}>{lane.label}</option>)}</select><button className="ghost tiny danger" onClick={() => void onDelete(task)}>Delete</button></footer>
+      <footer><select value={task.status} aria-label={`Move ${task.title}`} onChange={(e) => void onMove(task, e.target.value as BoardStatus)}>{statusOptions.map((option) => <option value={option.key} key={option.key}>{option.label}</option>)}</select><span className={`task-status-tag task-status-${task.status}`}>{pendingTag(task.status)}</span><button className="ghost tiny danger" onClick={() => void onDelete(task)}>Delete</button></footer>
     </article>
   );
 }

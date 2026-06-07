@@ -81,6 +81,18 @@ function projectLabel(project: ProjectRecord) {
   return project.name || project.id;
 }
 
+function singaporeDaypartGreeting() {
+  const singaporeHour = Number(new Intl.DateTimeFormat("en-SG", {
+    timeZone: "Asia/Singapore",
+    hour: "numeric",
+    hour12: false,
+  }).format(new Date()));
+
+  if (singaporeHour < 12) return "Good morning";
+  if (singaporeHour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
 function isRenderableChatMessage(message: Message) {
   return (message.role === "user" || message.role === "agent") && Boolean(message.text?.trim() || message.attachments?.length);
 }
@@ -218,6 +230,8 @@ export function MissionControl() {
   );
   const selectedPermission = permissionModeOptions.find((option) => option.value === permissionMode) ?? permissionModeOptions[0];
   const selectedModel = modelModeOptions.find((option) => option.value === modelMode) ?? modelModeOptions[0];
+  const greeting = singaporeDaypartGreeting();
+  const heroPrompt = selectedProject ? `What should we work on in “${projectLabel(selectedProject)}”?` : `${greeting}, Melverick!`;
   const melkizac = agents.find((agent) => agent.id === "default") ?? agents[0];
   const mainChatMessages = useMemo(
     () => (melkizac?.messages ?? []).filter(isRenderableChatMessage).slice(-80),
@@ -816,7 +830,33 @@ export function MissionControl() {
   return !hasStartedMainChat ? (
     <div className="clean-chat-page">
       <section className="clean-chat-shell" aria-label="Clean Chat command center">
-        <h1>{selectedProject ? `What should we work on in ${projectLabel(selectedProject)}?` : "What should Melkizac work on?"}</h1>
+        <header className="clean-chat-mobile-topbar" aria-label="Chat controls">
+          <button className="clean-chat-round-button" type="button" aria-label="Open Mission Control menu">
+            <span aria-hidden="true" />
+            <span aria-hidden="true" />
+            <span aria-hidden="true" />
+          </button>
+          <label className="clean-chat-model-button clean-chat-top-model-select" aria-label="AI model selector">
+            <strong>{selectedModel.label === "AUTO" ? "Melkizac" : selectedModel.label}</strong>
+            <span>{selectedModel.value === "auto" ? "Auto" : ""}</span>
+            <select value={modelMode} onChange={(event) => setModelMode(event.target.value as ChatModelMode)}>
+              {modelModeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M7 10l5 5 5-5" />
+            </svg>
+          </label>
+          <button className="clean-chat-round-button clean-chat-compose-button" type="button" aria-label="New chat">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M5 19l1.4-4.8L17 3.6a2.1 2.1 0 013 3L9.4 17.2 5 19z" />
+              <path d="M13.5 6.5l4 4" />
+            </svg>
+          </button>
+        </header>
+
+        <div className="clean-chat-hero" aria-label="Chat start prompt">
+          <h1>{heroPrompt}</h1>
+        </div>
 
         <form className="clean-chat-composer" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
           <textarea
@@ -824,7 +864,7 @@ export function MissionControl() {
             value={draft}
             onChange={(event) => updateDraft(event.target.value)}
             onKeyDown={handleComposerKeyDown}
-            placeholder="Do anything"
+            placeholder="Ask Melkizac"
             rows={2}
           />
 
@@ -872,7 +912,9 @@ export function MissionControl() {
               </label>
               {renderVoiceReplyControl()}
               {renderMicButton()}
-              <button className="clean-chat-send" type="submit" disabled={sending || !draft.trim()} aria-label="Send message">↑</button>
+              <button className={`clean-chat-send ${draft.trim() ? "ready" : "idle-disabled"}`} type="submit" disabled={sending || !draft.trim()} aria-label="Send message">
+                ↑
+              </button>
             </div>
           </div>
         </form>

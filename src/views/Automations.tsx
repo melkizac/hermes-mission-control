@@ -244,9 +244,9 @@ export function Automations() {
       </header>
 
       <section className="automation-metrics">
-        <Metric label="Routines" value={summary?.total ?? automations.length} sub="Hermes cron jobs" />
+        <Metric label="Routines" value={summary?.total ?? automations.length} sub="Cron + governed routines" />
         <Metric label="Enabled" value={summary?.enabled ?? 0} sub="Visible background workers" />
-        <Metric label="Script-only" value={summary?.no_agent ?? 0} sub="Watchdogs/no-agent jobs" />
+        <Metric label="Governed" value={summary?.governed ?? 0} sub={`${summary?.platform ?? 0} platform · ${summary?.workspace ?? 0} workspace · ${summary?.personal ?? 0} personal`} />
         <Metric label="Needs attention" value={summary?.error ?? 0} sub={`${summary?.paused ?? 0} paused`} tone={(summary?.error ?? 0) > 0 ? "bad" : "good"} />
       </section>
 
@@ -269,6 +269,9 @@ export function Automations() {
             <option value="paused">Paused</option>
             <option value="error">Error</option>
             <option value="script">Script-only</option>
+            <option value="platform">Platform governed</option>
+            <option value="workspace">Workspace governed</option>
+            <option value="personal">Personal governed</option>
           </select>
         </label>
         <div className="automation-filter-note">Actions call Hermes cron directly. “Run now” may execute real workflows and deliveries.</div>
@@ -538,7 +541,24 @@ function isWebsiteMonitor(automation: AutomationRoutine) {
   return automation.workflow_template_id === "website-funnel-check" || Boolean(automation.targetUrl || automation.safeTargetRequired || automation.noSubmit);
 }
 
+function isGovernedRoutine(automation: AutomationRoutine) {
+  return automation.workflow_template_id === "workflow-routine-admin" || Boolean(automation.routine_type);
+}
+
+function policyCount(value: Record<string, unknown> | undefined) {
+  return value && Object.keys(value).length > 0 ? "configured" : "none";
+}
+
 function safetyChipsFor(automation: AutomationRoutine) {
+  if (isGovernedRoutine(automation)) {
+    const deps = automation.connector_dependencies?.length ?? 0;
+    return [
+      `${automation.routine_type ?? "workspace"} scoped`,
+      deps ? `${deps} connector gate${deps === 1 ? "" : "s"}` : "No connector gates",
+      `Approval ${policyCount(automation.approval_policy_dependency)}`,
+      `Quota ${policyCount(automation.quota_policy)}`,
+    ];
+  }
   if (!usesBrowserAutomation(automation)) return ["No browser use"];
   const chips = ["Approval required"];
   if (automation.noSubmit || isWebsiteMonitor(automation)) chips.unshift("No form submission");
@@ -550,6 +570,28 @@ function RoutineSafetyPanel({ automation }: { automation: AutomationRoutine }) {
   const browser = usesBrowserAutomation(automation);
   const website = isWebsiteMonitor(automation);
   const evidenceCount = automation.evidenceHistory?.length ?? 0;
+
+  if (isGovernedRoutine(automation)) {
+    const run = automation.last_run;
+    return (
+      <section className="automation-section routine-safety-panel">
+        <h3>Governance gates</h3>
+        <p>This admin routine is checked against connector dependencies, approval policy, and quota policy before Mission Control records a run.</p>
+        <div className="automation-chip-cloud safety-chip-cloud">
+          {safetyChipsFor(automation).map((chip) => <span key={chip}>{chip}</span>)}
+        </div>
+        <div className="automation-kv operator-routine-kv">
+          <Info label="Scope" value={automation.routine_type ?? "workspace"} />
+          <Info label="Workspace" value={automation.workspace_id || "platform/personal"} />
+          <Info label="Connector gates" value={String(automation.connector_dependencies?.length ?? 0)} />
+          <Info label="Quota policy" value={policyCount(automation.quota_policy)} />
+          <Info label="Last policy result" value={run?.status || automation.run_status || "not-run"} />
+          <Info label="Approval request" value={run?.approval_request_id || "none"} />
+        </div>
+        {run?.reason && <div className="automation-error compact">{run.reason}</div>}
+      </section>
+    );
+  }
 
   if (!browser) {
     return (
@@ -617,7 +659,8 @@ function AutomationCard({ automation, active, busy, onSelect, onAction }: {
   onAction: (action: ActionName) => void;
 }) {
   const isBusy = (action: ActionName) => busy === `${automation.id}:${action}`;
-  const mode = automation.no_agent ? "Script watchdog" : "Agent routine";
+  const governed = isGovernedRoutine(automation);
+  const mode = governed ? `${automation.routine_type ?? "workspace"} governed` : automation.no_agent ? "Script watchdog" : "Agent routine";
   return (
     <article className={`automation-card ${active ? "on" : ""} ${!automation.enabled ? "disabled" : ""}`}>
       <button className="automation-card-main" onClick={onSelect}>
@@ -656,10 +699,12 @@ function AutomationCard({ automation, active, busy, onSelect, onAction }: {
           {automation.workflow_template_id === "website-funnel-check" && !automation.enabled && (
             <button className="ghost tiny" onClick={() => onAction("enable_funnel_routine")} disabled={!!busy}>{isBusy("enable_funnel_routine") ? "Enabling…" : "Enable approved routine"}</button>
           )}
-          <button className="ghost tiny" onClick={() => onAction(automation.enabled ? "pause" : "resume")} disabled={!!busy}>
-            {isBusy(automation.enabled ? "pause" : "resume") ? "Working…" : automation.enabled ? "Pause" : "Resume"}
-          </button>
-          <button className="ghost tiny" onClick={() => onAction("run")} disabled={!!busy}>{isBusy("run") ? "Queued…" : "Run now"}</button>
+          {!governed && (
+            <button className="ghost tiny" onClick={() => onAction(automation.enabled ? "pause" : "resume")} disabled={!!busy}>
+              {isBusy(automation.enabled ? "pause" : "resume") ? "Working…" : automation.enabled ? "Pause" : "Resume"}
+            </button>
+          )}
+          <button className="ghost tiny" onClick={() => onAction("run")} disabled={!!busy}>{isBusy("run") ? "Checking…" : governed ? "Run policy check" : "Run now"}</button>
         </div>
       </footer>
     </article>
@@ -675,6 +720,7 @@ function AutomationListRow({ automation, active, busy, onSelect, onAction }: {
   onAction: (action: ActionName) => void;
 }) {
   const isBusy = (action: ActionName) => busy === `${automation.id}:${action}`;
+  const governed = isGovernedRoutine(automation);
   return (
     <article className={`ops-row automation-list-row ${active ? "on" : ""} ${!automation.enabled ? "disabled" : ""}`}>
       <button className="ops-row-main" onClick={onSelect}>
@@ -697,8 +743,8 @@ function AutomationListRow({ automation, active, busy, onSelect, onAction }: {
         {automation.workflow_template_id === "website-funnel-check" && !automation.enabled && (
           <button className="ghost tiny" onClick={() => onAction("enable_funnel_routine")} disabled={!!busy}>{isBusy("enable_funnel_routine") ? "Enabling…" : "Enable approved routine"}</button>
         )}
-        <button className="ghost tiny" onClick={() => onAction(automation.enabled ? "pause" : "resume")} disabled={!!busy}>{isBusy(automation.enabled ? "pause" : "resume") ? "Working…" : automation.enabled ? "Pause" : "Resume"}</button>
-        <button className="ghost tiny" onClick={() => onAction("run")} disabled={!!busy}>{isBusy("run") ? "Queued…" : "Run now"}</button>
+        {!governed && <button className="ghost tiny" onClick={() => onAction(automation.enabled ? "pause" : "resume")} disabled={!!busy}>{isBusy(automation.enabled ? "pause" : "resume") ? "Working…" : automation.enabled ? "Pause" : "Resume"}</button>}
+        <button className="ghost tiny" onClick={() => onAction("run")} disabled={!!busy}>{isBusy("run") ? "Checking…" : governed ? "Run policy check" : "Run now"}</button>
       </div>
     </article>
   );
@@ -723,6 +769,7 @@ function AutomationDrawer({ automation, tab, setTab, busy, onClose, onAction }: 
 }) {
   const lastRun = automation.recent_runs[0];
   const isBusy = (action: ActionName) => busy === `${automation.id}:${action}`;
+  const governed = isGovernedRoutine(automation);
   return (
     <SlideOverDrawer
       title={automation.name}
@@ -743,8 +790,8 @@ function AutomationDrawer({ automation, tab, setTab, busy, onClose, onAction }: 
               {automation.workflow_template_id === "website-funnel-check" && !automation.enabled && (
                 <button className="ghost tiny" onClick={() => onAction("enable_funnel_routine")} disabled={!!busy}>{isBusy("enable_funnel_routine") ? "Enabling…" : "Enable approved routine"}</button>
               )}
-              <button className="ghost tiny" onClick={() => onAction(automation.enabled ? "pause" : "resume")} disabled={!!busy}>{isBusy(automation.enabled ? "pause" : "resume") ? "Working…" : automation.enabled ? "Pause" : "Resume"}</button>
-              <button className="ghost tiny" onClick={() => onAction("run")} disabled={!!busy}>{isBusy("run") ? "Queued…" : "Run now"}</button>
+              {!governed && <button className="ghost tiny" onClick={() => onAction(automation.enabled ? "pause" : "resume")} disabled={!!busy}>{isBusy(automation.enabled ? "pause" : "resume") ? "Working…" : automation.enabled ? "Pause" : "Resume"}</button>}
+              <button className="ghost tiny" onClick={() => onAction("run")} disabled={!!busy}>{isBusy("run") ? "Checking…" : governed ? "Run policy check" : "Run now"}</button>
             </div>
             <div className="automation-kv operator-routine-kv">
               <Info label="Schedule" value={automation.schedule} />
@@ -752,6 +799,8 @@ function AutomationDrawer({ automation, tab, setTab, busy, onClose, onAction }: 
               <Info label="Last run" value={`${formatSingaporeTime(automation.last_run_at)} · ${automation.last_run_relative}`} />
               <Info label="Delivery" value={automation.deliver} />
               <Info label="Workflow" value={automation.workflowName || automation.workflow_template_id || "—"} />
+              <Info label="Scope" value={automation.routine_type || automation.agent_class || "cron"} />
+              <Info label="Runtime / agent" value={[automation.runtime_id, automation.agent_id].filter(Boolean).join(" / ") || automation.profile || "—"} />
               <Info label="Task Board" value={automation.taskBoardTenant || "—"} />
             </div>
             {automation.last_error && <div className="automation-error compact">{automation.last_error}</div>}
@@ -783,7 +832,15 @@ function AutomationDrawer({ automation, tab, setTab, busy, onClose, onAction }: 
         {tab === "execution" && (
           <section className="automation-section">
             <h3>Recent run trace</h3>
-            {automation.recent_runs.length === 0 && <div className="empty">No run sessions recorded yet.</div>}
+            {governed && automation.last_run && (
+              <div className="automation-run">
+                <div><b>Workflow Routine Admin run</b><small className="mono">{automation.last_run.id}</small></div>
+                <span>{automation.last_run.status}</span>
+                <small>{automation.last_run.reason || "Connector, approval, and quota gates passed."}</small>
+                {automation.last_run.run_detail_url && <a href={automation.last_run.run_detail_url}>Open run detail</a>}
+              </div>
+            )}
+            {automation.recent_runs.length === 0 && !automation.last_run && <div className="empty">No run sessions recorded yet.</div>}
             {automation.recent_runs.map((run) => (
               <div className="automation-run" key={run.id}>
                 <div><b>{run.title}</b><small className="mono">{run.id}</small></div>
@@ -797,7 +854,19 @@ function AutomationDrawer({ automation, tab, setTab, busy, onClose, onAction }: 
         {tab === "outputs" && (
           <section className="automation-section">
             <h3>Latest outputs</h3>
-            {automation.recent_outputs.length === 0 && <div className="empty">No saved cron outputs found.</div>}
+            {governed && automation.last_run && (
+              <>
+                <details className="automation-output" open>
+                  <summary>Browser evidence <span>{automation.last_run.status}</span></summary>
+                  <pre>{JSON.stringify(automation.last_run.browser_evidence || {}, null, 2)}</pre>
+                </details>
+                <details className="automation-output">
+                  <summary>Research artifact linkage <span>{String(automation.last_run.research_run?.source || "recorded")}</span></summary>
+                  <pre>{JSON.stringify(automation.last_run.research_run || {}, null, 2)}</pre>
+                </details>
+              </>
+            )}
+            {automation.recent_outputs.length === 0 && !automation.last_run && <div className="empty">No saved cron outputs found.</div>}
             {automation.recent_outputs.map((output) => (
               <details className="automation-output" key={output.path}>
                 <summary>{output.name} <span>{formatSingaporeTime(output.updated_at)}</span></summary>

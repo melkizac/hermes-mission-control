@@ -5,13 +5,21 @@ from test_multi_user_phase1 import load_app
 from test_multi_user_phase2_phase3 import make_user
 
 
+def assign_agent(app, identity, agent_id):
+    admin = app.authenticate_user("melverick", "admin-secret")
+    current = app.admin_user_agent_access(app.auth_db_connect(), identity["id"], identity["workspace"]["id"], identity.get("role", "user"))["assigned_agent_ids"]
+    result, status = app.admin_set_user_agents(admin, identity["id"], {"agent_ids": sorted(set(current + [agent_id]))})
+    assert status == 200
+    assert agent_id in result["assigned_agent_ids"]
+
+
 def test_phase6_workspace_profile_is_one_profile_per_workspace_not_per_agent(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
     app = load_app(tmp_path, monkeypatch)
     acme = make_user(app, "acme@example.com", name="Acme")
 
-    app.select_user_agent(acme, "default", {})
-    app.select_user_agent(acme, "devops", {})
+    assign_agent(app, acme, "default")
+    assign_agent(app, acme, "devops")
     default_route, default_status = app.resolve_agent_runtime_route(acme, "default")
     devops_route, devops_status = app.resolve_agent_runtime_route(acme, "devops")
 
@@ -32,8 +40,8 @@ def test_phase6_runtime_route_is_isolated_between_workspaces(tmp_path, monkeypat
     acme = make_user(app, "acme@example.com", name="Acme")
     beta = make_user(app, "beta@example.com", name="Beta")
 
-    app.select_user_agent(acme, "devops", {})
-    app.select_user_agent(beta, "devops", {})
+    assign_agent(app, acme, "devops")
+    assign_agent(app, beta, "devops")
     acme_route, _ = app.resolve_agent_runtime_route(acme, "devops")
     beta_route, _ = app.resolve_agent_runtime_route(beta, "devops")
 
@@ -50,9 +58,9 @@ def test_phase6_normal_user_must_select_agent_before_runtime_chat(tmp_path, monk
 
     denied, status = app.resolve_agent_runtime_route(acme, "devops")
     assert status == 403
-    assert "select" in denied["error"].lower()
+    assert "assigned" in denied["error"].lower()
 
-    app.select_user_agent(acme, "devops", {})
+    assign_agent(app, acme, "devops")
     allowed, status = app.resolve_agent_runtime_route(acme, "devops")
     assert status == 200
     assert allowed["ok"] is True
@@ -62,7 +70,7 @@ def test_phase6_runtime_prompt_and_headers_include_workspace_profile(tmp_path, m
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
     app = load_app(tmp_path, monkeypatch)
     acme = make_user(app, "acme@example.com", name="Acme")
-    app.select_user_agent(acme, "devops", {})
+    assign_agent(app, acme, "devops")
     route, status = app.resolve_agent_runtime_route(acme, "devops")
     assert status == 200
 

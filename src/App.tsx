@@ -6,6 +6,7 @@ import { Icon } from "./components/Icon";
 import { MissionControl } from "./views/MissionControl";
 import { Dashboard } from "./views/Dashboard";
 import { Agents } from "./views/Agents";
+import { AgentVoice } from "./views/AgentVoice";
 import { AgentOrg } from "./views/AgentOrg";
 import { Runtimes } from "./views/Runtimes";
 import { Projects } from "./views/Projects";
@@ -54,9 +55,9 @@ async function safeJson<T>(path: string, fallback: T): Promise<T> {
 
 function Shell() {
   // Preserve auth-flash regression contract: const { view, setView, me, loading } = useStore();
-  const { view, setView, applyDeepLinkTarget, uiMode, me, loading } = useStore();
+  const { view, setView, applyDeepLinkTarget, uiMode, me, loading, permissions } = useStore();
   const pathname = window.location.pathname.replace(/\/$/, "") || "/";
-  const canRenderView = canAccessView(me?.user?.role, view);
+  const canRenderView = (permissions.canAccessAdmin || !adminOnlyViews.has(view)) ? canAccessView(me?.user?.role, view) : false;
   const [isMobileChatOnly, setIsMobileChatOnly] = useState(false);
 
   useEffect(() => {
@@ -81,7 +82,7 @@ function Shell() {
     return <div className="app-loading-screen" aria-label="Loading Mission Control" />;
   }
 
-  const shouldRenderMobileChatOnly = isMobileChatOnly && uiMode !== "admin" && !adminOnlyViews.has(view);
+  const shouldRenderMobileChatOnly = isMobileChatOnly && uiMode !== "admin" && !adminOnlyViews.has(view) && view !== "agent-voice";
 
   if (shouldRenderMobileChatOnly) {
     return (
@@ -108,6 +109,7 @@ function Shell() {
         {canRenderView && view === "workflow-library" && <WorkflowLibrary />}
         {canRenderView && view === "profile" && <Placeholder title="Account Settings" blurb="Account identity and operator preferences for your Mission Control workspace." />}
         {canRenderView && view === "agents" && <Agents />}
+        {canRenderView && view === "agent-voice" && <AgentVoice />}
         {canRenderView && view === "agent-org" && <AgentOrg />}
         {canRenderView && view === "runtimes" && <Runtimes />}
         {canRenderView && view === "projects" && <Projects />}
@@ -123,7 +125,9 @@ function Shell() {
         {canRenderView && view === "costs" && <CostDashboard />}
         {canRenderView && view === "models" && <ModelRouter />}
         {canRenderView && view === "settings" && <HermesDesktopAdmin />}
+        {canRenderView && view === "agent-platform-admin" && <AdminSetupPage kind="agent-platform-admin" />}
         {canRenderView && view === "users-workspaces" && <AdminSetupPage kind="users-workspaces" />}
+        {canRenderView && view === "workspace-runtime-console" && <AdminSetupPage kind="workspace-runtime-console" />}
         {canRenderView && view === "shared-agent-templates" && <AdminSetupPage kind="shared-agent-templates" />}
         {canRenderView && view === "desktop-gateway" && <AdminSetupPage kind="desktop-gateway" />}
         {canRenderView && view === "browser-ops" && <BrowserOperations />}

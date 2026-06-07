@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AuditMessage, AuditSession, AuditSessionDetailResponse, AuditSessionListResponse } from "../types";
+import type { AuditMessage, AuditSession, AuditSessionDetailResponse, AuditSessionListResponse, WorkspaceRunHistoryResponse, WorkspaceRunRecord } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { formatSingaporeTime } from "../utils/time";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
@@ -32,6 +32,7 @@ function roleLabel(message: AuditMessage) {
 
 export function AuditLog() {
   const [data, setData] = useState<AuditSessionListResponse | null>(null);
+  const [workspaceRuns, setWorkspaceRuns] = useState<WorkspaceRunHistoryResponse | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<AuditSessionDetailResponse | null>(null);
   const [tab, setTab] = useState<AuditTab>("summary");
@@ -46,9 +47,13 @@ export function AuditLog() {
     const timer = window.setTimeout(async () => {
       try {
         setLoading(true);
-        const next = await client.listAuditSessions({ q, source, limit: 80 });
+        const [next, runHistory] = await Promise.all([
+          client.listAuditSessions({ q, source, limit: 80 }),
+          client.listWorkspaceRuns({ q }),
+        ]);
         if (!alive) return;
         setData(next);
+        setWorkspaceRuns(runHistory);
         setError(next.error ?? null);
       } catch (err) {
         if (!alive) return;
@@ -98,6 +103,7 @@ export function AuditLog() {
 
   const sessions = data?.sessions ?? [];
   const summary = data?.summary;
+  const contextualRuns = workspaceRuns?.runs ?? [];
   const selectedSession = useMemo(
     () => sessions.find((session) => session.id === selected) ?? detail?.session,
     [sessions, selected, detail],
@@ -133,6 +139,7 @@ export function AuditLog() {
         <Metric label="Tool calls" value={compactNumber(summary?.tool_calls)} sub="Auditable tool activity" />
         <Metric label="Tokens" value={compactNumber(summary?.tokens)} sub="Input + output + cache" />
         <Metric label="Est. cost" value={money(summary?.estimated_cost_usd)} sub="From Hermes billing fields" />
+        <Metric label="Contextual evidence" value={workspaceRuns?.summary.browser_evidence ?? 0} sub={`${workspaceRuns?.summary.research_runs ?? 0} research · ${workspaceRuns?.summary.artifacts ?? 0} artifacts`} />
       </section>
 
       <section className="audit-filters">
@@ -151,6 +158,15 @@ export function AuditLog() {
       </section>
 
       {error && <div className="audit-error">{error}</div>}
+
+      <section className="audit-list audit-list-full">
+        <div className="audit-panel-head">
+          <span>Contextual run evidence</span>
+          <small>{contextualRuns.length} workflow runs with governed evidence access</small>
+        </div>
+        {contextualRuns.length === 0 && !loading && <div className="empty big">No contextual browser/research run evidence is visible for this workspace.</div>}
+        {contextualRuns.slice(0, 8).map((run) => <WorkspaceRunEvidenceCard key={run.id} run={run} />)}
+      </section>
 
       <section className="audit-list audit-list-full">
         <div className="audit-panel-head">
@@ -189,6 +205,31 @@ function Metric({ label, value, sub }: { label: string; value: number | string; 
       <b>{value}</b>
       <small>{sub}</small>
     </div>
+  );
+}
+
+function WorkspaceRunEvidenceCard({ run }: { run: WorkspaceRunRecord }) {
+  const browserCount = run.browser_evidence?.sessions?.length ?? (run.contextual_access.has_browser_evidence ? 1 : 0);
+  const researchTitle = run.research_run?.title || run.research_run?.id || "No research run attached";
+  const surfaces = run.contextual_access.surfaces.join(" · ");
+  return (
+    <article className="audit-session workspace-run-evidence-card" data-testid="workspace-run-evidence-card">
+      <div className="audit-session-main">
+        <div className="audit-session-top">
+          <b>{run.routine_name || run.id}</b>
+          <span className={"tag " + (run.status === "completed" ? "good" : run.status === "blocked" ? "warn" : "muted")}>{run.status}</span>
+        </div>
+        <p>{run.contextual_access.note || "Browser screenshots, research outputs, and artifacts are surfaced only inside governed run details."}</p>
+        <small className="mono">{run.id}</small>
+      </div>
+      <div className="audit-session-meta">
+        <span>{run.scope} · {run.agent_id || "agent"}</span>
+        <small>{formatSingaporeTime(run.started_at)}</small>
+        <em>{browserCount} browser · {researchTitle} · {run.artifacts.length} artifacts</em>
+        <a className="btn ghost tiny" href={`/app?view=audit&run=${encodeURIComponent(run.id)}`} onClick={(event) => event.stopPropagation()}>Open governed run detail</a>
+        <small>{surfaces}</small>
+      </div>
+    </article>
   );
 }
 

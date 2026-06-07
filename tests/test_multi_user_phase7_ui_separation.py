@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 SRC = Path('/opt/hermes-mission-control/source/src')
@@ -33,7 +34,11 @@ def test_phase7_store_fetches_me_and_guards_forbidden_views():
     assert 'me: MissionControlMe | null;' in store
     assert 'permissions: UiPermissions;' in store
     assert 'client.getMe()' in store
-    assert 'const nextRole = nextMe?.user.role === "admin" && uiMode === "admin" ? "admin" : nextMe?.user.role === "admin" ? "user" : nextMe?.user.role;' in store
+    assert 'const nextAccountRole = nextMe?.user?.role;' in store
+    assert re.search(
+        r'const nextRole = nextAccountRole === "admin" && uiMode === "admin"\s*\? "admin"\s*:\s*nextAccountRole === "admin"\s*\? "user"\s*:\s*nextAccountRole;',
+        store,
+    )
     assert 'canAccessView(nextRole, next)' in store
     assert 'safeDefaultViewForRole(nextRole)' in store
     assert 'getMe(): Promise<MissionControlMe>;' in client
@@ -73,7 +78,9 @@ def test_phase7_agent_details_are_read_only_for_normal_users():
 def test_phase7_app_blocks_direct_admin_view_render_for_non_admins():
     app = read('App.tsx')
 
-    assert 'canAccessView(me?.user.role, view)' in app
+    assert 'permissions.canAccessAdmin' in app
+    assert 'adminOnlyViews.has(view)' in app
+    assert re.search(r'canAccessView\(me\?\.user\?\.role, view\)', app)
     assert 'safeDefaultViewForRole(me?.user.role)' in app
     assert 'AdminOnlyNotice' in app
     assert 'This area is restricted to Mission Control admins' in app

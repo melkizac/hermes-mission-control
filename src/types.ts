@@ -464,6 +464,38 @@ export interface Message {
   requestId?: string;
 }
 
+export interface WorkerTranscriptEntry {
+  id: string;
+  type: "message" | "tool-call" | "tool-result" | "processing" | "activity" | "system" | string;
+  role: "user" | "agent" | "assistant" | "tool" | "system" | string;
+  title: string;
+  text?: string;
+  at?: string;
+  ts?: number;
+  source?: string;
+  sessionId?: string;
+  sessionTitle?: string;
+  requestId?: string;
+  toolName?: string;
+  toolCalls?: Array<Record<string, unknown>>;
+  tokens?: number;
+  finishReason?: string;
+  status?: string;
+  jobId?: string;
+  jobName?: string;
+  actor?: string;
+}
+
+export interface WorkerTranscriptResponse {
+  agentId: string;
+  generatedAt: string;
+  active: WorkerTranscriptEntry[];
+  entries: WorkerTranscriptEntry[];
+  sessions: Array<{ id: string; title: string; source?: string; model?: string; started_at?: string }>;
+  summary: { entries: number; active: number; toolEvents: number; sessions: number };
+  error?: string;
+}
+
 export interface ProjectChatSession {
   id: string;
   title: string;
@@ -690,6 +722,29 @@ export interface AutomationRoutine {
   safeTargetRequired?: boolean;
   latestRunStatus?: FunnelRunStatus;
   evidenceHistory?: FunnelEvidenceHistoryItem[];
+  routine_type?: "platform" | "workspace" | "personal";
+  workspace_id?: string | null;
+  owner_user_id?: string | null;
+  runtime_id?: string | null;
+  agent_id?: string | null;
+  agent_class?: string | null;
+  connector_dependencies?: Array<{ connector_id: string; action: string }>;
+  approval_policy_dependency?: Record<string, unknown>;
+  quota_impact?: Record<string, unknown>;
+  quota_policy?: Record<string, unknown>;
+  run_status?: string;
+  last_run?: {
+    id: string;
+    status: string;
+    reason?: string;
+    approval_request_id?: string | null;
+    browser_evidence?: Record<string, unknown>;
+    research_run?: Record<string, unknown>;
+    run_detail_url?: string;
+    started_at?: string;
+    completed_at?: string | null;
+  } | null;
+  run_detail_url?: string | null;
 }
 
 export interface AutomationsResponse {
@@ -700,8 +755,14 @@ export interface AutomationsResponse {
     paused: number;
     error: number;
     no_agent: number;
+    governed?: number;
+    platform?: number;
+    workspace?: number;
+    personal?: number;
   };
   states: string[];
+  workflow_routines?: AutomationRoutine[];
+  routine_summary?: Record<string, number>;
   error?: string;
 }
 
@@ -778,7 +839,7 @@ export interface FunnelTargetMutationResponse {
   error?: string;
 }
 
-export type BoardStatus = "queued" | "running" | "blocked" | "done" | "error";
+export type BoardStatus = "todo" | "queued" | "scheduled" | "running" | "blocked" | "done" | "error";
 
 export interface BoardComment {
   id: number | null;
@@ -868,7 +929,9 @@ export interface BoardResponse {
   lanes: Record<BoardStatus, BoardTask[]>;
   summary: {
     total: number;
+    todo: number;
     queued: number;
+    scheduled: number;
     running: number;
     blocked: number;
     done: number;
@@ -1035,6 +1098,62 @@ export interface CostPeriodSummary {
 export interface CostBreakdownRow extends CostPeriodSummary {
   model?: string;
   source?: string;
+  label?: string;
+  agent_class?: string;
+  workspace_id?: string;
+  user_id?: string;
+  provider?: string;
+}
+
+export interface CostUsageRecord {
+  id?: string;
+  routine_id?: string;
+  workspace_id?: string;
+  runtime_id?: string;
+  user_id?: string;
+  role_id?: string;
+  agent_id?: string;
+  agent_class?: string;
+  connector_id?: string;
+  run_type?: string;
+  model?: string;
+  provider?: string;
+  routine_type?: string;
+  research_depth?: string;
+  tokens?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  cache_read_tokens?: number;
+  cache_write_tokens?: number;
+  reasoning_tokens?: number;
+  cost?: number;
+  estimated_cost_usd?: number;
+  browser_minutes?: number;
+  browser_actions?: number;
+  browser_sessions?: number;
+  file_extraction_count?: number;
+  file_extraction_size_bytes?: number;
+  status?: string;
+  started_at?: string | number;
+}
+
+export interface ResearchUsageSummary {
+  runs: number;
+  cost: number;
+  tokens: number;
+  by_depth: Record<string, { runs: number; cost: number; tokens: number }>;
+}
+
+export interface BrowserUsageSummary {
+  runs: number;
+  minutes: number;
+  actions: number;
+}
+
+export interface FileExtractionUsageSummary {
+  runs: number;
+  count: number;
+  size_bytes: number;
 }
 
 export interface CostDailyRow {
@@ -1082,6 +1201,15 @@ export interface CostsResponse {
   by_source: CostBreakdownRow[];
   daily: CostDailyRow[];
   expensive_sessions: CostSessionRecord[];
+  usage_records?: CostUsageRecord[];
+  by_agent_class?: CostBreakdownRow[];
+  by_workspace?: CostBreakdownRow[];
+  by_user?: CostBreakdownRow[];
+  by_model_provider?: CostBreakdownRow[];
+  research_usage?: ResearchUsageSummary;
+  browser_usage?: BrowserUsageSummary;
+  file_extraction_usage?: FileExtractionUsageSummary;
+  quota_dimensions?: string[];
   error?: string;
 }
 
@@ -1543,6 +1671,54 @@ export interface BrowserSessionsResponse {
   updatedAt: string;
 }
 
+export interface WorkspaceRunContextualAccess {
+  surfaces: string[];
+  audit_url?: string;
+  approval_request_id?: string | null;
+  has_browser_evidence: boolean;
+  has_research_run: boolean;
+  artifact_count: number;
+  note?: string;
+}
+
+export interface WorkspaceRunRecord {
+  id: string;
+  routine_id: string;
+  routine_name?: string;
+  workspace_id?: string | null;
+  owner_user_id?: string | null;
+  runtime_id?: string | null;
+  agent_id?: string | null;
+  agent_class?: string | null;
+  scope: "personal" | "workspace" | "shared" | string;
+  status: string;
+  reason?: string;
+  approval_request_id?: string | null;
+  browser_evidence?: { sessions?: BrowserSession[]; [key: string]: unknown };
+  research_run?: Partial<ResearchRun> & { id?: string; title?: string; sources?: Array<Record<string, unknown>>; [key: string]: unknown };
+  metadata?: Record<string, unknown>;
+  artifacts: MissionArtifact[];
+  started_at: string;
+  completed_at?: string | null;
+  run_detail_url: string;
+  contextual_access: WorkspaceRunContextualAccess;
+}
+
+export interface WorkspaceRunHistoryResponse {
+  ok: boolean;
+  runs: WorkspaceRunRecord[];
+  summary: { total: number; browser_evidence: number; research_runs: number; artifacts: number };
+  contextual_access: { surfaces: string[] };
+  error?: string;
+}
+
+export interface WorkspaceRunDetailResponse {
+  ok: boolean;
+  run: WorkspaceRunRecord;
+  contextual_access: WorkspaceRunContextualAccess;
+  error?: string;
+}
+
 export interface BrowserRuntimeEventIngestRequest {
   sessionId: string;
   title?: string;
@@ -1670,7 +1846,9 @@ export type ViewKey =
   | "workflow-library"
   | "profile"
   | "agents"
+  | "agent-voice"
   | "agent-org"
+  | "agent-platform-admin"
   | "runtimes"
   | "tools"
   | "plugins"
@@ -1685,6 +1863,7 @@ export type ViewKey =
   | "costs"
   | "models"
   | "users-workspaces"
+  | "workspace-runtime-console"
   | "shared-agent-templates"
   | "desktop-gateway"
   | "browser-ops"

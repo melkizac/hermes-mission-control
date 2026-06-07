@@ -14,7 +14,9 @@ const allowedViews = new Set<ViewKey>([
   "workflow-library",
   "profile",
   "agents",
+  "agent-voice",
   "agent-org",
+  "agent-platform-admin",
   "runtimes",
   "tools",
   "plugins",
@@ -67,7 +69,7 @@ export function buildMissionControlUrl(target: MissionControlDeepLinkTarget, ori
   if (target.agentId) params.set("agent", target.agentId);
   const query = params.toString();
   // Keep these examples literal for regression docs/tests: view=approvals&approval=, view=board&task=, view=agents&agent=
-  const adminViews = new Set<ViewKey>(["settings", "users-workspaces", "shared-agent-templates", "desktop-gateway", "approval-policy", "quota"]);
+  const adminViews = new Set<ViewKey>(["settings", "agent-platform-admin", "users-workspaces", "shared-agent-templates", "desktop-gateway", "approval-policy", "quota"]);
   const basePath = adminViews.has(view) ? "/admin" : "/app";
   return `${origin.replace(/\/$/, "")}${basePath}?${query}`;
 }

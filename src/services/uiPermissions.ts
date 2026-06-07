@@ -17,7 +17,9 @@ export const adminOnlyViews = new Set<ViewKey>([
   "runtimes",
   "models",
   "costs",
+  "agent-platform-admin",
   "users-workspaces",
+  "workspace-runtime-console",
   "shared-agent-templates",
   "desktop-gateway",
   "approval-policy",
@@ -32,6 +34,7 @@ export const workspaceViews = new Set<ViewKey>([
   "workflow-library",
   "profile",
   "agents",
+  "agent-voice",
   "agent-org",
   "skills",
   "memory",
@@ -79,6 +82,7 @@ export function viewLabelForRole(role: UserRole, view: ViewKey, fallback: string
   if (isAdminRole(role)) return fallback;
   const labels: Partial<Record<ViewKey, string>> = {
     agents: "My Agents",
+    "agent-voice": "Agent Voice",
     "delegate-work": "Delegate Work",
     "workflow-library": "Workflow Library",
     "agent-org": "My Agent Org",

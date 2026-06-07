@@ -46,40 +46,42 @@ def test_phase2_admin_can_see_all_workspace_records(tmp_path, monkeypatch):
     assert {p["id"] for p in projects} >= {"acme-launch", "beta-launch"}
 
 
-def test_phase3_shared_agent_directory_selection_is_per_workspace(tmp_path, monkeypatch):
+def test_phase3_shared_agent_directory_assignment_is_per_workspace(tmp_path, monkeypatch):
     app = load_app(tmp_path, monkeypatch)
+    admin = app.authenticate_user("melverick", "admin-secret")
     acme = make_user(app, "acme@example.com", name="Acme")
     beta = make_user(app, "beta@example.com", name="Beta")
 
     directory = app.list_agent_directory(acme)["agents"]
-    assert {a["id"] for a in directory} >= {"default", "devops"}
+    assert {a["id"] for a in directory} == set()
 
-    selected, status = app.select_user_agent(acme, "devops", {"nickname": "Builder"})
+    selected, status = app.admin_set_user_agents(admin, acme["user"]["id"], {"agent_ids": ["devops"]})
     assert status == 200
     assert selected["ok"] is True
 
     acme_agents = app.list_agent_directory(acme)["agents"]
     beta_agents = app.list_agent_directory(beta)["agents"]
     assert next(a for a in acme_agents if a["id"] == "devops")["selected"] is True
-    assert next(a for a in beta_agents if a["id"] == "devops")["selected"] is False
+    assert {a["id"] for a in beta_agents} == set()
 
-    unselected, status = app.unselect_user_agent(acme, "devops")
+    unselected, status = app.admin_set_user_agents(admin, acme["user"]["id"], {"agent_ids": []})
     assert status == 200
     assert unselected["ok"] is True
-    assert next(a for a in app.list_agent_directory(acme)["agents"] if a["id"] == "devops")["selected"] is False
+    assert "devops" not in {a["id"] for a in app.list_agent_directory(acme)["agents"]}
 
 
-def test_phase3_selected_agent_can_be_assigned_to_workspace_project(tmp_path, monkeypatch):
+def test_phase3_assigned_agent_can_be_assigned_to_workspace_project(tmp_path, monkeypatch):
     app = load_app(tmp_path, monkeypatch)
+    admin = app.authenticate_user("melverick", "admin-secret")
     acme = make_user(app, "acme@example.com", name="Acme")
     beta = make_user(app, "beta@example.com", name="Beta")
     app.create_workspace_project(acme, {"id": "acme-launch", "name": "Acme Launch"})
 
     denied, status = app.assign_agent_to_project(acme, "acme-launch", "devops")
     assert status == 403
-    assert "select" in denied["error"].lower()
+    assert "select" in denied["error"].lower() or "assigned" in denied["error"].lower()
 
-    app.select_user_agent(acme, "devops", {})
+    app.admin_set_user_agents(admin, acme["user"]["id"], {"agent_ids": ["devops"]})
     assigned, status = app.assign_agent_to_project(acme, "acme-launch", "devops")
     assert status == 200
     assert assigned["ok"] is True

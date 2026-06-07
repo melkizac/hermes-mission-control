@@ -31,7 +31,8 @@ def test_admin_setup_pages_have_real_cards_links_and_boundaries():
     page = read('views/AdminSetupPage.tsx')
 
     expected_titles = [
-        'Users & Workspaces',
+        'User Access',
+        'Agent Platform Admin',
         'Shared Agent Templates',
         'Desktop Gateway',
         'Approval Policy',
@@ -44,7 +45,11 @@ def test_admin_setup_pages_have_real_cards_links_and_boundaries():
     for route in ['settings', 'audit', 'costs', 'agent-org', 'skills', 'agents', 'runtimes', 'tools', 'approvals', 'board', 'automations']:
         assert f'target: "{route}"' in page
 
-    assert 'Workspace SOUL.md' in page
+    assert 'SOUL.md' in page
+    assert '/api/admin/agent-platform' in page
+    assert '/api/admin/agent-templates' in page
+    assert 'Template registry' in page
+    assert 'Editing a template does not overwrite user-owned agent SOUL.md files.' in page
     assert 'Planned API: /api/admin/users' in page
     assert 'Planned API: /api/admin/approval-policy' in page
     assert 'Planned API: /api/admin/quota' in page

@@ -97,12 +97,14 @@ function replyPreviewText(reply: ReplyContext) {
 export function ChatThread({
   agent,
   onOpenDetails,
+  onOpenWorkerLog,
   projectChats,
   selectedProjectId = "all",
   selectedSessionId = "all",
 }: {
   agent: Agent;
   onOpenDetails?: () => void;
+  onOpenWorkerLog?: () => void;
   projectChats?: ProjectChatResponse | null;
   selectedProjectId?: string;
   selectedSessionId?: string;
@@ -437,6 +439,11 @@ export function ChatThread({
           {agent.statusLabel || agent.status} · {agent.activityState || agent.availability || "runtime"} · session #{agent.sessionCount}
         </span>
         <div className="right">
+          {onOpenWorkerLog && (
+            <button className="btn agent-worker-log-trigger" onClick={onOpenWorkerLog}>
+              Worker log
+            </button>
+          )}
           {onOpenDetails && (
             <button className="btn agent-details-trigger" onClick={onOpenDetails}>
               Details

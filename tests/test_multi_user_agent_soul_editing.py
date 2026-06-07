@@ -4,14 +4,21 @@ from test_multi_user_phase1 import load_app
 from test_multi_user_phase2_phase3 import make_user
 
 
+def assign_agent(app, identity, agent_id="devops"):
+    admin = app.authenticate_user("melverick", "admin-secret")
+    result, status = app.admin_set_user_agents(admin, identity["id"], {"agent_ids": [agent_id]})
+    assert status == 200
+    assert agent_id in result["assigned_agent_ids"]
+
+
 def test_normal_user_workspace_agent_soul_is_scoped_to_workspace_profile(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
     app = load_app(tmp_path, monkeypatch)
     acme = make_user(app, "acme@example.com", name="Acme")
     beta = make_user(app, "beta@example.com", name="Beta")
 
-    app.select_user_agent(acme, "devops", {})
-    app.select_user_agent(beta, "devops", {})
+    assign_agent(app, acme, "devops")
+    assign_agent(app, beta, "devops")
 
     result, status = app.write_workspace_agent_soul(acme, "devops", "# Andrej for Acme\nAcme-specific identity.")
     assert status == 200
@@ -32,7 +39,7 @@ def test_workspace_agent_soul_is_exposed_as_editable_identity_file_and_prompt_co
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
     app = load_app(tmp_path, monkeypatch)
     acme = make_user(app, "acme@example.com", name="Acme")
-    app.select_user_agent(acme, "devops", {})
+    assign_agent(app, acme, "devops")
     app.write_workspace_agent_soul(acme, "devops", "# Workspace DevOps Soul\nSpeak as Acme's builder.")
 
     route, status = app.resolve_agent_runtime_route(acme, "devops")
@@ -55,7 +62,7 @@ def test_default_workspace_agent_soul_is_returned_before_file_exists(tmp_path, m
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
     app = load_app(tmp_path, monkeypatch)
     acme = make_user(app, "acme@example.com", name="Acme")
-    app.select_user_agent(acme, "devops", {})
+    assign_agent(app, acme, "devops")
 
     files = app.read_config_files("devops", identity=acme, agent_id="devops", agent_name="Andrej / DevOps Builder")
     soul = files[0]
@@ -71,7 +78,7 @@ def test_agent_file_put_route_writes_workspace_soul_for_normal_user(tmp_path, mo
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
     app = load_app(tmp_path, monkeypatch)
     acme = make_user(app, "acme@example.com", name="Acme")
-    app.select_user_agent(acme, "devops", {})
+    assign_agent(app, acme, "devops")
 
     token = app.make_session_token(acme["email"])
     data, status = put_agent_file(
@@ -92,7 +99,7 @@ def test_agent_file_put_route_denies_viewer_workspace_soul_edit(tmp_path, monkey
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes-home"))
     app = load_app(tmp_path, monkeypatch)
     viewer = make_user(app, "viewer@example.com", role="viewer", name="Viewer")
-    app.select_user_agent(viewer, "devops", {})
+    assign_agent(app, viewer, "devops")
 
     token = app.make_session_token(viewer["email"])
     data, status = put_agent_file(

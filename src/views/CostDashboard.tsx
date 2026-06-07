@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { CostBreakdownRow, CostSessionRecord, CostsResponse } from "../types";
+import type { CostBreakdownRow, CostSessionRecord, CostUsageRecord, CostsResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { formatSingaporeTime } from "../utils/time";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
@@ -118,6 +118,10 @@ export function CostDashboard() {
         <Breakdown title="Spend by model" rows={data?.by_model ?? []} field="model" total={selectedWindow?.cost ?? 0} />
         <Breakdown title="Spend by source" rows={data?.by_source ?? []} field="source" total={selectedWindow?.cost ?? 0} />
 
+        <AgentClassUsage rows={data?.by_agent_class ?? []} total={(data?.by_agent_class ?? []).reduce((sum, row) => sum + (row.cost ?? 0), 0)} />
+        <GovernanceUsage data={data} />
+        <QuotaEnforcement dimensions={data?.quota_dimensions ?? []} />
+
         <div className="cost-panel cost-span-12">
           <div className="cost-panel-head">
             <span>Highest-cost sessions</span>
@@ -168,6 +172,78 @@ function Breakdown({ title, rows, field, total }: { title: string; rows: CostBre
         ))}
         {rows.length === 0 && <div className="empty">No grouped cost data for this window.</div>}
       </div>
+    </div>
+  );
+}
+
+function AgentClassUsage({ rows, total }: { rows: CostBreakdownRow[]; total: number }) {
+  const defaults = [
+    { agent_class: "platform", label: "Platform agents", sessions: 0, cost: 0, tokens: 0, tool_calls: 0 },
+    { agent_class: "workspace", label: "Workspace agents", sessions: 0, cost: 0, tokens: 0, tool_calls: 0 },
+    { agent_class: "personal", label: "Personal agents", sessions: 0, cost: 0, tokens: 0, tool_calls: 0 },
+  ];
+  const merged = defaults.map((fallback) => rows.find((row) => row.agent_class === fallback.agent_class || row.label === fallback.label) ?? fallback);
+  return (
+    <div className="cost-panel cost-span-6">
+      <div className="cost-panel-head"><span>Agent class usage</span><small>Platform / Workspace / Personal</small></div>
+      <div className="cost-breakdown">
+        {merged.map((row) => (
+          <div className="cost-breakdown-row" key={row.agent_class ?? row.label}>
+            <div>
+              <b>{row.label ?? row.agent_class ?? "Unknown agents"}</b>
+              <small>{row.sessions} runs · {compact(row.tokens)} tokens</small>
+            </div>
+            <span>{money(row.cost)}</span>
+            <div className="mini-bar"><i style={{ width: `${pct(row.cost, total)}%` }} /></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GovernanceUsage({ data }: { data: CostsResponse | null }) {
+  const research = data?.research_usage;
+  const browser = data?.browser_usage;
+  const files = data?.file_extraction_usage;
+  const recent = (data?.usage_records ?? []).slice(0, 5);
+  return (
+    <div className="cost-panel cost-span-6">
+      <div className="cost-panel-head"><span>Governance usage</span><small>research, browser, file evidence</small></div>
+      <div className="cost-governance-metrics">
+        <Info label="Research usage" value={`${research?.runs ?? 0} runs · ${money(research?.cost)}`} />
+        <Info label="Browser usage" value={`${browser?.runs ?? 0} runs · ${compact(browser?.actions)} actions`} />
+        <Info label="File extraction" value={`${files?.count ?? 0} files · ${compact(files?.size_bytes)}B`} />
+      </div>
+      <div className="cost-usage-list">
+        {recent.map((record) => <UsageRecordRow key={record.id ?? record.routine_id ?? `${record.agent_id}-${record.model}`} record={record} />)}
+        {recent.length === 0 && <div className="empty">No governed routine usage recorded in this window.</div>}
+      </div>
+    </div>
+  );
+}
+
+function UsageRecordRow({ record }: { record: CostUsageRecord }) {
+  return (
+    <div className="cost-usage-row">
+      <div>
+        <b>{record.routine_id ?? record.agent_id ?? "Routine usage"}</b>
+        <small>{record.agent_class ?? "unknown"} · {record.provider ?? "provider"}/{record.model ?? "model"} · {record.run_type ?? "routine"}</small>
+      </div>
+      <span>{money(record.cost)}</span>
+    </div>
+  );
+}
+
+function QuotaEnforcement({ dimensions }: { dimensions: string[] }) {
+  const defaults = dimensions.length ? dimensions : ["platform", "workspace", "user", "agent", "routine", "connector", "model/provider", "research_depth"];
+  return (
+    <div className="cost-panel cost-span-12">
+      <div className="cost-panel-head"><span>Quota enforcement</span><small>checked before routine execution</small></div>
+      <p className="cost-policy-copy">
+        Quota enforcement is evaluated before runs start across platform, workspace, user, agent, routine, connector, model/provider, and research depth dimensions. Quota blocks are written to Audit Log evidence instead of appearing as successful executions.
+      </p>
+      <div className="cost-quota-tags">{defaults.map((dimension) => <span key={dimension}>{dimension}</span>)}</div>
     </div>
   );
 }

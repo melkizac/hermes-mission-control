@@ -3,6 +3,7 @@ import { useStore } from "../services/store";
 import { Roster } from "../components/Roster";
 import { ChatThread } from "../components/ChatThread";
 import { ContextPanel } from "../components/ContextPanel";
+import { WorkerTranscriptDrawer } from "../components/WorkerTranscriptDrawer";
 import type { ProjectChatResponse } from "../types";
 
 async function fetchProjectChats(): Promise<ProjectChatResponse> {
@@ -15,6 +16,7 @@ async function fetchProjectChats(): Promise<ProjectChatResponse> {
 export function Agents() {
   const { selected, loading } = useStore();
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [workerLogOpen, setWorkerLogOpen] = useState(false);
   const [projectChats, setProjectChats] = useState<ProjectChatResponse | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState("all");
   const [selectedSessionId, setSelectedSessionId] = useState("all");
@@ -27,7 +29,10 @@ export function Agents() {
 
   useEffect(() => {
     const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setDetailsOpen(false);
+      if (event.key === "Escape") {
+        setDetailsOpen(false);
+        setWorkerLogOpen(false);
+      }
     };
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
@@ -74,7 +79,14 @@ export function Agents() {
         <>
           <ChatThread
             agent={selected}
-            onOpenDetails={() => setDetailsOpen(true)}
+            onOpenDetails={() => {
+              setWorkerLogOpen(false);
+              setDetailsOpen(true);
+            }}
+            onOpenWorkerLog={() => {
+              setDetailsOpen(false);
+              setWorkerLogOpen(true);
+            }}
             projectChats={projectChats}
             selectedProjectId={selectedProjectId}
             selectedSessionId={selectedSessionId}
@@ -83,6 +95,12 @@ export function Agents() {
             <div className="agent-drawer-layer" role="dialog" aria-modal="true" aria-label="Selected agent details">
               <button className="agent-drawer-scrim" aria-label="Close selected agent details" onClick={() => setDetailsOpen(false)} />
               <ContextPanel agent={selected} drawer onClose={() => setDetailsOpen(false)} />
+            </div>
+          )}
+          {workerLogOpen && (
+            <div className="agent-drawer-layer worker-log-layer" role="dialog" aria-modal="true" aria-label="Selected agent worker log and transcript">
+              <button className="agent-drawer-scrim" aria-label="Close selected agent worker log" onClick={() => setWorkerLogOpen(false)} />
+              <WorkerTranscriptDrawer agent={selected} onClose={() => setWorkerLogOpen(false)} />
             </div>
           )}
         </>

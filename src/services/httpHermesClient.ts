@@ -380,6 +380,17 @@ export class HttpHermesClient implements HermesClient {
     return request<ResearchRunsResponse>("/api/research-runs");
   }
 
+  async listWorkspaceRuns(filters?: { q?: string }): Promise<import("../types").WorkspaceRunHistoryResponse> {
+    const params = new URLSearchParams();
+    if (filters?.q) params.set("q", filters.q);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request<import("../types").WorkspaceRunHistoryResponse>(`/api/workspace-runs${suffix}`);
+  }
+
+  async getWorkspaceRun(id: string): Promise<import("../types").WorkspaceRunDetailResponse> {
+    return request<import("../types").WorkspaceRunDetailResponse>(`/api/workspace-runs/${encodeURIComponent(id)}`);
+  }
+
   async createResearchRun(input: ResearchRunCreateRequest): Promise<ResearchRunCreateResponse> {
     return request<ResearchRunCreateResponse>("/api/research-runs", { method: "POST", body: JSON.stringify(input) });
   }

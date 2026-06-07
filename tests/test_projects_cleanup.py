@@ -30,6 +30,7 @@ def test_project_list_returns_tidy_real_initiatives_only():
     ids = {project['id'] for project in data['projects']}
 
     assert 'mission-control' in ids
+    assert 'hmc-admin-redesign' in ids
     assert 'nexius-academy-agentic-ai-course-growth' in ids
     assert 'melverick-site' in ids
     assert 'melverick-second-brain' in ids

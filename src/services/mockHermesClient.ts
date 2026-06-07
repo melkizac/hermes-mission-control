@@ -1,4 +1,4 @@
-import type { Agent, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, CreateResearchRunRequest, CreateResearchRunResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
+import type { Agent, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, CreateResearchRunRequest, CreateResearchRunResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse, WorkspaceRunDetailResponse, WorkspaceRunHistoryResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
 import { seedAgents, seedApprovals } from "../data/mockData";
 
@@ -125,6 +125,47 @@ export class MockHermesClient implements HermesClient {
       summary: { total: 1, active_lanes: 2, blocked_lanes: 1, source_coverage: 4, evidence_items: 1, synthesis_ready: 0 },
       updatedAt: "now",
     };
+  }
+
+  async listWorkspaceRuns(): Promise<WorkspaceRunHistoryResponse> {
+    await delay(30);
+    const run: WorkspaceRunHistoryResponse["runs"][number] = {
+      id: "mock-workflow-run-contextual-evidence",
+      routine_id: "mock-research-routine",
+      routine_name: "Mock governed research routine",
+      workspace_id: "mock-workspace",
+      owner_user_id: "mock-admin",
+      runtime_id: "vps",
+      agent_id: "melkizac",
+      agent_class: "workspace",
+      scope: "workspace",
+      status: "completed",
+      reason: "Mock contextual run evidence",
+      approval_request_id: null,
+      browser_evidence: { sessions: [this.mockBrowserSession()] },
+      research_run: { id: "research-parallel-visibility-demo", title: "ICP and funnel research sprint" },
+      metadata: {},
+      artifacts: [{ id: "mock-governed-report", kind: "report", title: "Governed evidence report", summary: "Mock report attached to the governed run detail.", createdAt: "now" }],
+      started_at: "now",
+      completed_at: "now",
+      run_detail_url: "/app?view=audit&run=mock-workflow-run-contextual-evidence",
+      contextual_access: {
+        surfaces: ["audit", "approval", "costs", "quota", "workspace-runtime-console"],
+        audit_url: "/app?view=audit&run=mock-workflow-run-contextual-evidence",
+        approval_request_id: null,
+        has_browser_evidence: true,
+        has_research_run: true,
+        artifact_count: 1,
+        note: "Browser evidence and research details are contextual run evidence, not standalone Admin menu items.",
+      },
+    };
+    return { ok: true, runs: [run], summary: { total: 1, browser_evidence: 1, research_runs: 1, artifacts: 1 }, contextual_access: { surfaces: run.contextual_access.surfaces } };
+  }
+
+  async getWorkspaceRun(id: string): Promise<WorkspaceRunDetailResponse> {
+    const history = await this.listWorkspaceRuns();
+    const run = history.runs.find((item) => item.id === id) ?? history.runs[0];
+    return { ok: true, run, contextual_access: run.contextual_access };
   }
 
   async createResearchRun(input: CreateResearchRunRequest): Promise<CreateResearchRunResponse> {
@@ -751,7 +792,7 @@ export class MockHermesClient implements HermesClient {
 
   async listBoard(): Promise<BoardResponse> {
     await delay(90);
-    return { tasks: [], lanes: { queued: [], running: [], blocked: [], done: [], error: [] }, summary: { total: 0, queued: 0, running: 0, blocked: 0, done: 0, error: 0, assignees: [], projects: [] }, statuses: ["queued", "running", "blocked", "done", "error"], projects: [] };
+    return { tasks: [], lanes: { todo: [], queued: [], scheduled: [], running: [], blocked: [], done: [], error: [] }, summary: { total: 0, todo: 0, queued: 0, scheduled: 0, running: 0, blocked: 0, done: 0, error: 0, assignees: [], projects: [] }, statuses: ["todo", "queued", "scheduled", "running", "blocked", "done", "error"], projects: [] };
   }
 
   async getTaskResult(id: string): Promise<TaskResultResponse> {
