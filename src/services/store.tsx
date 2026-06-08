@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Agent, Approval, Attachment, ConfigFile, Message, MissionControlMe, ModelRoutingSelection, ReplyContext, RouterConfig, Skill, ViewKey } from "../types";
+import type { Agent, Approval, Attachment, CapabilityAssignmentMutationResponse, CapabilityMatrixResponse, ConfigFile, Message, MissionControlMe, ModelRoutingSelection, ReplyContext, RouterConfig, Skill, ViewKey } from "../types";
 import type { UiPermissions } from "./uiPermissions";
 import { adminOnlyViews, canAccessView, permissionsForRole, safeDefaultViewForRole } from "./uiPermissions";
 import type { HermesClient } from "./hermesClient";
@@ -54,6 +54,9 @@ interface StoreValue {
   saveFile: (file: ConfigFile) => Promise<void>;
   addSkill: (skill: Skill) => Promise<void>;
   removeSkill: (skillId: string) => Promise<void>;
+  getCapabilityMatrix: (filters?: { agent?: string; agentId?: string; q?: string; type?: string; status?: string; risk?: string; health?: string; assigned?: string }) => Promise<CapabilityMatrixResponse>;
+  assignCapability: (capabilityId: string, input: { agentId: string; agent?: Record<string, unknown>; reason?: string }) => Promise<CapabilityAssignmentMutationResponse>;
+  unassignCapability: (capabilityId: string, input: { agentId: string; agent?: Record<string, unknown>; reason?: string }) => Promise<CapabilityAssignmentMutationResponse>;
   resolveApproval: (id: string, decision: "approve" | "reject") => Promise<void>;
 }
 
@@ -294,6 +297,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [selectedId, refresh],
   );
 
+  const getCapabilityMatrix = useCallback((filters?: { agent?: string; agentId?: string; q?: string; type?: string; status?: string; risk?: string; health?: string; assigned?: string }) => client.getCapabilityMatrix(filters), []);
+
+  const assignCapability = useCallback(
+    async (capabilityId: string, input: { agentId: string; agent?: Record<string, unknown>; reason?: string }) => {
+      const result = await client.assignCapability(capabilityId, input);
+      await refresh();
+      return result;
+    },
+    [refresh],
+  );
+
+  const unassignCapability = useCallback(
+    async (capabilityId: string, input: { agentId: string; agent?: Record<string, unknown>; reason?: string }) => {
+      const result = await client.unassignCapability(capabilityId, input);
+      await refresh();
+      return result;
+    },
+    [refresh],
+  );
+
   const resolveApproval = useCallback(
     async (id: string, decision: "approve" | "reject") => {
       await client.resolveApproval(id, decision);
@@ -327,6 +350,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     saveFile,
     addSkill,
     removeSkill,
+    getCapabilityMatrix,
+    assignCapability,
+    unassignCapability,
     resolveApproval,
   };
 

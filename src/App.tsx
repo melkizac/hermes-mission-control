@@ -20,6 +20,7 @@ import { TaskBoard } from "./views/TaskBoard";
 import { SkillsHub } from "./views/SkillsHub";
 import { MemoryContext } from "./views/MemoryContext";
 import { ToolsHub } from "./views/ToolsHub";
+import { CapabilityRegistry } from "./views/CapabilityRegistry";
 import { PluginsHub } from "./views/PluginsHub";
 import { CostDashboard } from "./views/CostDashboard";
 import { ModelRouter } from "./views/ModelRouter";
@@ -119,6 +120,7 @@ function Shell() {
         {canRenderView && view === "skills" && <SkillsHub />}
         {canRenderView && view === "memory" && <MemoryContext />}
         {canRenderView && view === "tools" && <ToolsHub />}
+        {canRenderView && view === "capabilities" && <CapabilityRegistry />}
         {canRenderView && view === "plugins" && <PluginsHub />}
         {canRenderView && view === "automations" && <Automations />}
         {canRenderView && view === "audit" && <AuditLog />}

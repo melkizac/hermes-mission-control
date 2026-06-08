@@ -1838,6 +1838,269 @@ export interface ResearchRunsResponse {
   updatedAt: string;
 }
 
+export type CapabilityRegistryTab = "installed" | "available" | "intake" | "broken" | "assigned";
+
+export interface CapabilityAssignmentRef {
+  id: string;
+  name?: string;
+  title?: string;
+  enabled?: boolean;
+  status?: string;
+  reason?: string;
+}
+
+export interface CapabilityRegistryRecord {
+  id: string;
+  type: string;
+  name?: string;
+  displayName?: string;
+  description?: string;
+  category?: string;
+  tags?: string[];
+  status?: string;
+  sourceUri?: string | null;
+  sourceRef?: string | null;
+  sourceLabel?: string | null;
+  workspaceId?: string | null;
+  runtimeId?: string | null;
+  profileId?: string | null;
+  ownerKind?: string;
+  visibility?: string;
+  editable?: boolean;
+  enabled?: boolean;
+  installMethod?: {
+    kind?: string;
+    commandPreview?: string;
+    configPath?: string;
+    requiresRestart?: boolean;
+    requiredSecrets?: string[];
+    requiredPermissions?: string[];
+    wrapperType?: string;
+  };
+  license?: { name?: string; url?: string | null; allowed?: boolean | null; notes?: string };
+  maintenanceSignals?: Record<string, unknown>;
+  dependencyWeight?: { level?: string; signals?: Record<string, unknown> };
+  runtimeWeight?: { level?: string; signals?: Record<string, unknown> };
+  requiredSecrets?: string[];
+  suggestedWrapperType?: string;
+  smokeTestCommand?: string;
+  governance?: {
+    riskLevels?: string[];
+    primaryRisk?: string;
+    approvalRequired?: boolean;
+    approvalAuthority?: string;
+    approvalStatus?: string;
+    policyGate?: string;
+    policySummary?: string;
+    blockedActions?: string[];
+    actionableBlocker?: {
+      code?: string;
+      message?: string;
+      requiredApprover?: string;
+      action?: string;
+      riskLevels?: string[];
+    } | null;
+  };
+  policyEvidence?: {
+    riskLevels?: string[];
+    primaryRisk?: string;
+    approvalRequired?: boolean;
+    approvalAuthority?: string;
+    approvalStatus?: string;
+    policyGate?: string;
+    actionableBlocker?: Record<string, unknown> | null;
+  };
+  permissions?: string[];
+  health?: {
+    state?: string;
+    checkSummary?: string;
+    lastCheckedAt?: string;
+    nextCheckDueAt?: string;
+    evidenceIds?: string[];
+  };
+  evidence?: EvidenceRecord[];
+  assignment?: {
+    assignmentUnit?: string;
+    assignedAgents?: CapabilityAssignmentRef[];
+    assignedRoutines?: CapabilityAssignmentRef[];
+    assignedTasks?: CapabilityAssignmentRef[];
+    suggestedAgents?: CapabilityAssignmentRef[];
+    usageCount?: number;
+  };
+  rollback?: { supported?: boolean; disableSteps?: string[]; uninstallSteps?: string[]; restartRequired?: boolean };
+  audit?: Array<Record<string, unknown>>;
+  auditEvents?: Array<{
+    id: string;
+    action: string;
+    actorId?: string;
+    summary?: string;
+    createdAt?: string;
+    redacted?: boolean;
+    evidence?: Record<string, unknown>;
+  }>;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string | null;
+}
+
+export interface CapabilityIntakeRecord {
+  id: string;
+  title: string;
+  name?: string;
+  displayName?: string;
+  description?: string;
+  category?: string;
+  sourceType?: string;
+  sourceUri?: string | null;
+  sourceRef?: string | null;
+  sourceLabel?: string | null;
+  workspaceId?: string | null;
+  runtimeId?: string | null;
+  profileId?: string | null;
+  requestedBy?: string;
+  status?: string;
+  riskLevels?: string[];
+  installMethod?: CapabilityRegistryRecord["installMethod"];
+  license?: CapabilityRegistryRecord["license"];
+  maintenanceSignals?: CapabilityRegistryRecord["maintenanceSignals"];
+  dependencyWeight?: CapabilityRegistryRecord["dependencyWeight"];
+  runtimeWeight?: CapabilityRegistryRecord["runtimeWeight"];
+  requiredSecrets?: string[];
+  suggestedWrapperType?: string;
+  smokeTestCommand?: string;
+  permissions?: string[];
+  healthPlan?: Record<string, unknown>;
+  evidence?: EvidenceRecord[];
+  audit?: CapabilityRegistryRecord["audit"];
+  auditEvents?: CapabilityRegistryRecord["auditEvents"];
+  assignedAgents?: CapabilityAssignmentRef[];
+  rollbackNotes?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CapabilityRegistryResponse {
+  ok?: boolean;
+  capabilities: CapabilityRegistryRecord[];
+  summary: {
+    total: number;
+    enabled: number;
+    assigned: number;
+    awaitingApproval: number;
+    degraded: number;
+    requiringSecrets: number;
+  };
+  error?: string;
+}
+
+export interface CapabilityIntakeResponse {
+  ok?: boolean;
+  intake: CapabilityIntakeRecord[];
+  summary: {
+    total: number;
+    awaitingApproval: number;
+    requiringSecrets: number;
+  };
+  error?: string;
+}
+
+export interface CapabilityAssessmentResponse {
+  ok?: boolean;
+  assessment: CapabilityIntakeRecord;
+  error?: string;
+}
+
+export interface CapabilityIntakeMutationResponse {
+  ok?: boolean;
+  intake: CapabilityIntakeRecord;
+  error?: string;
+}
+
+export interface CapabilitySandboxResponse {
+  ok?: boolean;
+  status?: string;
+  intake?: CapabilityIntakeRecord;
+  sandbox?: Record<string, unknown>;
+  error?: string;
+}
+
+export interface CapabilityMatrixCapability {
+  id: string;
+  type?: string;
+  name?: string;
+  displayName?: string;
+  description?: string;
+  source?: string;
+  sourceLabel?: string;
+  status?: string;
+  enabled?: boolean;
+  assigned?: boolean;
+  assignmentUnit?: string;
+  assignmentRef?: Record<string, unknown>;
+  riskLevels?: string[];
+  approvalRequired?: boolean;
+  approvalStatus?: string;
+  approvalAuthority?: string;
+  policyGate?: string;
+  actionableBlocker?: Record<string, unknown> | null;
+  healthState?: string;
+  healthSummary?: string;
+  toolCount?: number;
+  sampleTools?: string[];
+}
+
+export interface CapabilityMatrixRow {
+  agent: {
+    id: string;
+    name?: string;
+    squad?: string;
+    status?: string;
+    profileId?: string;
+    profilePath?: string;
+    selected?: boolean;
+  };
+  capabilities: CapabilityMatrixCapability[];
+  assigned: CapabilityMatrixCapability[];
+  available: CapabilityMatrixCapability[];
+  blocked: CapabilityMatrixCapability[];
+  summary: {
+    total: number;
+    assigned: number;
+    available: number;
+    blocked: number;
+    skills: number;
+    tools: number;
+    registry: number;
+  };
+}
+
+export interface CapabilityMatrixResponse {
+  ok?: boolean;
+  matrix: CapabilityMatrixRow[];
+  agents?: CapabilityMatrixRow["agent"][];
+  summary: {
+    agents: number;
+    capabilities: number;
+    assigned: number;
+    blocked: number;
+    registry: number;
+    skills: number;
+    tools: number;
+  };
+  error?: string;
+}
+
+export interface CapabilityAssignmentMutationResponse {
+  ok?: boolean;
+  action?: "assign" | "unassign";
+  capability?: CapabilityRegistryRecord;
+  blockedCapability?: Record<string, unknown>;
+  nextAction?: string;
+  status?: string;
+  error?: string;
+}
+
 export type ViewKey =
   | "mission"
   | "dashboard"
@@ -1851,6 +2114,7 @@ export type ViewKey =
   | "agent-platform-admin"
   | "runtimes"
   | "tools"
+  | "capabilities"
   | "plugins"
   | "projects"
   | "second-brain"

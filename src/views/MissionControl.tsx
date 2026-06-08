@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
 import { ChatIntentRoutingPreview } from "../components/ChatIntentRoutingPreview";
+import type { ChatIntentRoutingAction, ChatIntentRoutingActionId } from "../components/ChatIntentRoutingPreview";
 import voiceHudReference from "../assets/voice-hud-reference.jpg";
 import { useStore } from "../services/store";
 import { buildChatIntentPreview, routeChatIntent, serializeChatIntentDecision } from "../services/chatIntentRouter";
 import type { ChatIntentDecision, ChatIntentPreview, ChatMissionContext, ChatRoutineContext, ChatWorkflowContext } from "../services/chatIntentRouter";
-import type { AutomationsResponse, BoardResponse, BoardTask, Message, ProjectRecord, ProjectsResponse, WorkflowLibraryResponse } from "../types";
+import type { AutomationsResponse, BoardResponse, BoardTask, BoardTaskMutationResponse, Message, ProjectRecord, ProjectsResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
 
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
@@ -65,9 +66,16 @@ const modelModeOptions: Array<{ value: ChatModelMode; label: string; promptLabel
   { value: "deep", label: "Deep", promptLabel: "Deep reasoning" },
 ];
 
-async function request<T>(path: string): Promise<T> {
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${window.location.protocol}//${window.location.host}${path}`;
-  const res = await fetch(url, { credentials: "include", headers: { Accept: "application/json" } });
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+  if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  const res = await fetch(url, {
+    ...init,
+    credentials: "include",
+    headers,
+  });
   if (!res.ok) throw new Error(`${path}: ${res.statusText}`);
   return res.json() as Promise<T>;
 }
@@ -159,6 +167,9 @@ export function MissionControl() {
     decision: ChatIntentDecision;
     preview: ChatIntentPreview;
   } | null>(null);
+  const [routingActionBusy, setRoutingActionBusy] = useState<ChatIntentRoutingActionId | null>(null);
+  const [routingActionMessage, setRoutingActionMessage] = useState<string | null>(null);
+  const [routingActionError, setRoutingActionError] = useState<string | null>(null);
   const latestMessageRef = useRef<HTMLDivElement | null>(null);
   const mainChatHistoryRef = useRef<HTMLElement | null>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -758,6 +769,101 @@ export function MissionControl() {
     if (next.length) setAttachments((current) => [...current, ...next]);
   }
 
+  function routerTaskTitle(prefix: string, instruction: string) {
+    const compact = instruction.replace(/\s+/g, " ").trim();
+    return `${prefix}: ${compact.slice(0, 84)}${compact.length > 84 ? "…" : ""}`;
+  }
+
+  function routerTaskBody(instruction: string, decision: ChatIntentDecision) {
+    return [
+      "Created from the main chat router recommendation card.",
+      selectedProject ? `Project scope: ${projectLabel(selectedProject)} (${selectedProject.id})` : "Project scope: none selected",
+      `Intent: ${decision.intentType}`,
+      `Confidence: ${decision.confidence}`,
+      `Next action: ${decision.nextAction}`,
+      `Reason: ${decision.reason}`,
+      "",
+      "Original instruction:",
+      instruction,
+      "",
+      "Safety: this card queues work only. External, destructive, account-sensitive, or scheduled actions still require normal Mission Control approval gates.",
+    ].join("\n");
+  }
+
+  function routerActionsFor(current: { instruction: string; decision: ChatIntentDecision; preview: ChatIntentPreview } | null): ChatIntentRoutingAction[] {
+    if (!current) return [];
+    const { decision, preview } = current;
+    if (!preview.canProceed || decision.confidence === "low") {
+      return [{ id: "clarify", label: "Ask clarification", detail: preview.suggestedQuestion || "Focus composer with the suggested clarification", kind: "primary" }];
+    }
+    const actions: ChatIntentRoutingAction[] = [];
+    if (selectedProject?.id) {
+      actions.push({ id: "create_project_task", label: "Create project task", detail: `Queue under ${projectLabel(selectedProject)}`, kind: "primary" });
+    } else {
+      actions.push({ id: "create_task", label: "Create Task Board card", detail: "Queue as a safe one-time task", kind: "primary" });
+    }
+    if (decision.matchedContext.workflowId) {
+      actions.push({ id: "launch_workflow", label: "Launch workflow", detail: `Queue ${decision.matchedContext.workflowTitle || decision.matchedContext.workflowId}`, kind: "safe" });
+    }
+    if (decision.intentType === "modify_routine") {
+      actions.push({ id: "recommend_routine", label: "Recommend routine", detail: "Create a reviewable routine recommendation task", kind: "safe" });
+    }
+    return actions;
+  }
+
+  async function runRoutingAction(action: ChatIntentRoutingActionId) {
+    const current = routingPreview;
+    if (!current || routingActionBusy) return;
+    if (action === "clarify") {
+      setRoutingActionMessage(null);
+      setRoutingActionError(null);
+      setError(current.preview.suggestedQuestion || "Please clarify the target before I route this.");
+      window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
+      return;
+    }
+    setRoutingActionBusy(action);
+    setRoutingActionMessage(null);
+    setRoutingActionError(null);
+    try {
+      if (action === "launch_workflow") {
+        const workflowId = current.decision.matchedContext.workflowId;
+        if (!workflowId) throw new Error("No workflow candidate is linked to this route.");
+        const response = await request<WorkflowLaunchResponse>(`/api/workflows/${encodeURIComponent(workflowId)}/launch`, {
+          method: "POST",
+          body: JSON.stringify({
+            projectId: selectedProject?.id,
+            title: routerTaskTitle("Workflow", current.instruction),
+            request: current.instruction,
+            runMode: "approval_required",
+          }),
+        });
+        if (!response.ok) throw new Error(response.error || "Workflow launch was not queued.");
+        setRoutingActionMessage(`Workflow queued${response.workflow?.name ? `: ${response.workflow.name}` : ""}.`);
+        return;
+      }
+
+      const titlePrefix = action === "recommend_routine" ? "Routine recommendation" : selectedProject ? "Project task" : "Chat task";
+      const payload = {
+        title: routerTaskTitle(titlePrefix, current.instruction),
+        body: routerTaskBody(current.instruction, current.decision),
+        assignee: "melkizac",
+        status: "todo",
+        priority: 1,
+        tenant: selectedProject?.id || current.decision.matchedContext.projectId || undefined,
+        skills: current.decision.intentType === "modify_routine" ? ["schedule"] : undefined,
+      };
+      const response = selectedProject?.id && action !== "create_task"
+        ? await request<BoardTaskMutationResponse>(`/api/projects/${encodeURIComponent(selectedProject.id)}/tasks`, { method: "POST", body: JSON.stringify(payload) })
+        : await request<BoardTaskMutationResponse>("/api/tasks", { method: "POST", body: JSON.stringify(payload) });
+      if (!response.ok) throw new Error(response.error || "Task was not created.");
+      setRoutingActionMessage(`Task Board card created${response.task?.id ? `: ${response.task.id}` : ""}.`);
+    } catch (err) {
+      setRoutingActionError(err instanceof Error ? err.message : "Router action failed.");
+    } finally {
+      setRoutingActionBusy(null);
+    }
+  }
+
   function routeInstruction(instruction: string): ChatIntentDecision {
     return routeChatIntent({
       instruction,
@@ -790,6 +896,8 @@ export function MissionControl() {
     const intentDecision = routeInstruction(instruction);
     const preview = buildChatIntentPreview(intentDecision);
     setRoutingPreview({ instruction, decision: intentDecision, preview });
+    setRoutingActionMessage(null);
+    setRoutingActionError(null);
     if (!preview.canProceed) {
       setSending(false);
       setError(preview.suggestedQuestion ?? "Please clarify the target before I route this.");
@@ -1000,6 +1108,11 @@ export function MissionControl() {
               preview={routingPreview.preview}
               decision={routingPreview.decision}
               sending={sending}
+              actions={routerActionsFor(routingPreview)}
+              actionBusy={routingActionBusy}
+              actionMessage={routingActionMessage}
+              actionError={routingActionError}
+              onAction={(action) => { void runRoutingAction(action); }}
               onEdit={() => composerTextareaRef.current?.focus()}
             />
           )}

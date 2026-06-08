@@ -1,4 +1,4 @@
-import type { Agent, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionPayload, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, ResearchRunCreateRequest, ResearchRunCreateResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillFileResponse, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
+import type { Agent, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, CapabilityAssignmentMutationResponse, CapabilityAssessmentResponse, CapabilityIntakeMutationResponse, CapabilityIntakeResponse, CapabilityMatrixResponse, CapabilityRegistryResponse, CapabilitySandboxResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionPayload, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, ResearchRunCreateRequest, ResearchRunCreateResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillFileResponse, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -273,6 +273,68 @@ export class HttpHermesClient implements HermesClient {
 
   async enableAutomationRoutine(id: string, payload: AutomationActionPayload): Promise<AutomationActionResponse> {
     return this.automationAction(id, "enable_funnel_routine", payload);
+  }
+
+  async listCapabilities(filters?: { q?: string; type?: string; status?: string; risk?: string; health?: string; assigned?: string }): Promise<CapabilityRegistryResponse> {
+    const params = new URLSearchParams();
+    if (filters?.q) params.set("q", filters.q);
+    if (filters?.type) params.set("type", filters.type);
+    if (filters?.status) params.set("status", filters.status);
+    if (filters?.risk) params.set("risk", filters.risk);
+    if (filters?.health) params.set("health", filters.health);
+    if (filters?.assigned) params.set("assigned", filters.assigned);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request<CapabilityRegistryResponse>(`/api/capabilities${suffix}`);
+  }
+
+  async getCapabilityMatrix(filters?: { agent?: string; agentId?: string; q?: string; type?: string; status?: string; risk?: string; health?: string; assigned?: string }): Promise<CapabilityMatrixResponse> {
+    const params = new URLSearchParams();
+    if (filters?.agent) params.set("agent", filters.agent);
+    if (filters?.agentId) params.set("agentId", filters.agentId);
+    if (filters?.q) params.set("q", filters.q);
+    if (filters?.type) params.set("type", filters.type);
+    if (filters?.status) params.set("status", filters.status);
+    if (filters?.risk) params.set("risk", filters.risk);
+    if (filters?.health) params.set("health", filters.health);
+    if (filters?.assigned) params.set("assigned", filters.assigned);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request<CapabilityMatrixResponse>(`/api/capabilities/matrix${suffix}`);
+  }
+
+  async assignCapability(capabilityId: string, input: { agentId: string; agent?: Record<string, unknown>; reason?: string }): Promise<CapabilityAssignmentMutationResponse> {
+    return request<CapabilityAssignmentMutationResponse>(`/api/capabilities/${encodeURIComponent(capabilityId)}/assign`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  async unassignCapability(capabilityId: string, input: { agentId: string; agent?: Record<string, unknown>; reason?: string }): Promise<CapabilityAssignmentMutationResponse> {
+    return request<CapabilityAssignmentMutationResponse>(`/api/capabilities/${encodeURIComponent(capabilityId)}/unassign`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  async listCapabilityIntake(filters?: { q?: string; type?: string; status?: string; risk?: string }): Promise<CapabilityIntakeResponse> {
+    const params = new URLSearchParams();
+    if (filters?.q) params.set("q", filters.q);
+    if (filters?.type) params.set("type", filters.type);
+    if (filters?.status) params.set("status", filters.status);
+    if (filters?.risk) params.set("risk", filters.risk);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request<CapabilityIntakeResponse>(`/api/capabilities/intake${suffix}`);
+  }
+
+  async assessCapabilitySource(input: Record<string, unknown>): Promise<CapabilityAssessmentResponse> {
+    return request<CapabilityAssessmentResponse>("/api/capabilities/assess", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  async createCapabilityIntake(input: Record<string, unknown>): Promise<CapabilityIntakeMutationResponse> {
+    return request<CapabilityIntakeMutationResponse>("/api/capabilities/intake", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  async runCapabilitySandbox(id: string, input: Record<string, unknown> = {}): Promise<CapabilitySandboxResponse> {
+    return request<CapabilitySandboxResponse>(`/api/capabilities/intake/${encodeURIComponent(id)}/sandbox`, { method: "POST", body: JSON.stringify(input) });
   }
 
   async listSkills(filters?: { q?: string; category?: string; source?: string }): Promise<SkillsHubResponse> {

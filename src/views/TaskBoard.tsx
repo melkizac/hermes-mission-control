@@ -37,9 +37,26 @@ const laneGroups: { title: string; className: string; lanes: { key: BoardLaneKey
 const pendingTag = (status: BoardStatus) => status === "blocked" ? "Blocked" : status === "error" ? "Error" : status === "queued" ? "Review" : statusOptions.find((item) => item.key === status)?.label ?? status;
 
 
-type DetailTab = "overview" | "evidence" | "activity" | "execution";
+type DetailTab = "overview" | "sources" | "tasks" | "outputs" | "evidence" | "settings";
 type ViewMode = "cards" | "list";
 type HumanActionKind = "feedback" | "approval" | "manual" | "agent";
+
+type DrawerRecord = Record<string, unknown>;
+
+type ProjectDrawerData = {
+  projectId: string;
+  workflowType: string;
+  objective: string;
+  currentStage: string;
+  nextAction: string;
+  progress: number;
+  needsHuman: boolean;
+  sources: DrawerRecord[];
+  outputs: DrawerRecord[];
+  evidence: DrawerRecord[];
+  settings: DrawerRecord;
+  stages: Array<{ id: string; label: string; status: string; owner: string; evidence?: string }>;
+};
 
 export function TaskBoard() {
   const { agents, select, setView } = useStore();
@@ -69,7 +86,19 @@ export function TaskBoard() {
       setLoading(true);
       const data = await client.listBoard({ q, status, assignee, project });
       setTasks(data.tasks);
-      setSummary({ ...data.summary, projects: data.summary.projects ?? data.projects ?? [] });
+      const nextSummary = { ...data.summary };
+      setSummary({
+        total: nextSummary.total ?? 0,
+        todo: nextSummary.todo ?? 0,
+        queued: nextSummary.queued ?? 0,
+        scheduled: nextSummary.scheduled ?? 0,
+        running: nextSummary.running ?? 0,
+        blocked: nextSummary.blocked ?? 0,
+        done: nextSummary.done ?? 0,
+        error: nextSummary.error ?? 0,
+        assignees: nextSummary.assignees ?? [],
+        projects: nextSummary.projects ?? data.projects ?? [],
+      });
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load task board");
@@ -403,62 +432,223 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
   onAssignToAgent: (task: BoardTask) => void;
 }) {
   const intent = classifyHumanTask(task);
+  const projectData = getProjectDrawerData(task);
   return (
     <SlideOverDrawer
       title={task.title}
-      subtitle={<span className="mono">{task.id}</span>}
+      subtitle={<span className="mono">{task.id} · {projectData.projectId}</span>}
       eyebrow={pendingTag(task.status)}
       statusClassName={`tag ${task.status === "blocked" || task.status === "error" ? "warn" : "good"}`}
       onClose={onClose}
-      closeLabel="Close task details"
-      ariaLabel="Task details"
+      closeLabel="Close project task cockpit"
+      ariaLabel="Project-aware task cockpit"
       dataDeepLinkTarget="task"
       // rendered attribute: data-deeplink-target="task"
-      tabs={["overview", "evidence", "activity", "execution"] as const}
+      tabs={["overview", "sources", "tasks", "outputs", "evidence", "settings"] as const}
       activeTab={tab}
       onTabChange={setTab}
-      className="task-detail task-detail-drawer"
+      className="task-detail task-detail-drawer project-task-drawer"
+      width="wide"
     >
-
-        {tab === "overview" && (
-          <>
-            <div className="task-kv">
-              <Info label="Owner" value={task.assignee} />
-              <Info label="Priority" value={`${task.priority_label} · ${task.priority}`} />
-              <Info label="Updated" value={formatSingaporeTime(task.updated_at)} />
-              <Info label="Source" value={task.created_by} />
-              <Info label="Project" value={task.tenant || "—"} />
-              <Info label="Workspace" value={task.workspace_path || task.workspace_kind} />
+      {tab === "overview" && (
+        <>
+          <section className="task-project-summary" aria-label="Project workflow overview">
+            <div>
+              <span className="stub-tag">PROJECT COCKPIT</span>
+              <h3>{projectData.objective}</h3>
+              <p>{projectData.nextAction}</p>
             </div>
-            <div className="task-drawer-actions">
-              <select value={task.status} onChange={(e) => void onMove(task, e.target.value as BoardStatus)}>{statusOptions.map((option) => <option value={option.key} key={option.key}>{option.label}</option>)}</select>
-              <button className="ghost tiny danger" onClick={() => void onDelete(task)}>Delete</button>
-            </div>
-            <label className="task-inline-edit"><span>Assign owner/profile</span><input defaultValue={task.assignee === "unassigned" ? "" : task.assignee} onBlur={(e) => e.target.value !== task.assignee && void onSaveAssignee(task, e.target.value)} /></label>
-            <HumanActionPanel task={task} intent={intent} note={humanNote} setNote={setHumanNote} onHumanAction={onHumanAction} agents={agents} agentTarget={agentTarget} setAgentTarget={setAgentTarget} onAssignToAgent={onAssignToAgent} />
-            <section className="task-section"><h3>Description</h3><pre>{task.body || "No description yet."}</pre></section>
-          </>
-        )}
+            <div className="project-progress-ring" style={{ background: `radial-gradient(circle at center, #fff 58%, transparent 59%), conic-gradient(#0f9488 ${projectData.progress}%, #e5edf7 0)` }} aria-label={`${projectData.progress}% complete`}><b>{projectData.progress}%</b><span>complete</span></div>
+          </section>
+          {projectData.needsHuman && <div className="project-needs-you"><b>Needs you</b><span>This workflow has a blocker, approval need, or manual decision before agents can continue.</span></div>}
+          <div className="task-kv project-task-kv">
+            <Info label="Owner" value={task.assignee || "unassigned"} />
+            <Info label="Stage" value={projectData.currentStage} />
+            <Info label="Updated" value={formatSingaporeTime(task.updated_at)} />
+            <Info label="Project" value={task.tenant || projectData.projectId} />
+            <Info label="Priority" value={`${task.priority_label} · ${task.priority}`} />
+            <Info label="Workspace" value={task.workspace_path || task.workspace_kind || "—"} />
+          </div>
+          <div className="task-drawer-actions">
+            <select value={task.status} onChange={(e) => void onMove(task, e.target.value as BoardStatus)}>{statusOptions.map((option) => <option value={option.key} key={option.key}>{option.label}</option>)}</select>
+            <button className="ghost tiny danger" onClick={() => void onDelete(task)}>Delete</button>
+          </div>
+          <label className="task-inline-edit"><span>Assign owner/profile</span><input defaultValue={task.assignee === "unassigned" ? "" : task.assignee} onBlur={(e) => e.target.value !== task.assignee && void onSaveAssignee(task, e.target.value)} /></label>
+          <HumanActionPanel task={task} intent={intent} note={humanNote} setNote={setHumanNote} onHumanAction={onHumanAction} agents={agents} agentTarget={agentTarget} setAgentTarget={setAgentTarget} onAssignToAgent={onAssignToAgent} />
+          <WorkflowStageList stages={projectData.stages} />
+          <section className="task-section"><h3>Description</h3><pre>{task.body || "No description yet."}</pre></section>
+        </>
+      )}
 
-        {tab === "evidence" && (
-          <TaskEvidenceProofView task={task} />
-        )}
-
-        {tab === "activity" && (
-          <>
-            <section className="task-section"><h3>Comments</h3>{task.comments.length === 0 && <div className="empty">No comments yet.</div>}{task.comments.map((c) => <div className="task-comment" key={c.id ?? c.created_at}><b>{c.author}</b><small>{formatSingaporeTime(c.created_at)}</small><p>{c.body}</p></div>)}<textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Add an operator note…" /><button className="ghost tiny" onClick={() => void onAddComment()}>Add comment</button></section>
-            <section className="task-section"><h3>Events</h3>{task.events.length === 0 && <div className="empty">No events recorded.</div>}{task.events.map((event) => <div className="task-event" key={event.id ?? event.created_at}><b>{event.kind}</b><small>{formatSingaporeTime(event.created_at)}</small></div>)}</section>
-          </>
-        )}
-
-        {tab === "execution" && (
-          <>
-            <section className="task-section"><h3>Skills / Links</h3><div className="task-chip-cloud">{(task.skills.length ? task.skills : ["No skills attached"]).map((skill) => <span key={skill}>{skill}</span>)}{task.session_id && <em>session: {task.session_id}</em>}{task.parents.map((id) => <em key={id}>parent: {id}</em>)}{task.children.map((id) => <em key={id}>child: {id}</em>)}</div></section>
-            <section className="task-section"><h3>Run trace</h3>{task.runs.length === 0 && <div className="empty">No worker runs yet.</div>}{task.runs.map((run) => <div className="task-run" key={run.id}><b>{run.profile || "worker"} · {run.status}</b><small>{formatSingaporeTime(run.started_at)} {run.outcome ? `· ${run.outcome}` : ""}</small><p>{run.summary || run.error || "No summary recorded."}</p></div>)}</section>
-          </>
-        )}
+      {tab === "sources" && <SourcesTab sources={projectData.sources} />}
+      {tab === "tasks" && <WorkflowTasksTab task={task} comment={comment} setComment={setComment} onAddComment={onAddComment} />}
+      {tab === "outputs" && <OutputsTab outputs={projectData.outputs} />}
+      {tab === "evidence" && <TaskEvidenceProofView task={task} />}
+      {tab === "settings" && <SettingsTab settings={projectData.settings} task={task} />}
     </SlideOverDrawer>
   );
+}
+
+function asRecord(value: unknown): DrawerRecord {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as DrawerRecord : {};
+}
+
+function asRecordArray(value: unknown): DrawerRecord[] {
+  return Array.isArray(value) ? value.filter((item): item is DrawerRecord => Boolean(item) && typeof item === "object" && !Array.isArray(item)) : [];
+}
+
+function getString(record: DrawerRecord, keys: string[], fallback = "—") {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value;
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
+  }
+  return fallback;
+}
+
+function getNumber(record: DrawerRecord, keys: string[], fallback: number) {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  }
+  return fallback;
+}
+
+function recordEntries(record: DrawerRecord) {
+  return Object.entries(record).filter(([, value]) => value !== undefined && value !== null && value !== "");
+}
+
+function taskStageStatus(status: BoardStatus) {
+  if (status === "done") return "done";
+  if (status === "running") return "running";
+  if (status === "blocked" || status === "error") return status;
+  if (status === "queued") return "queued";
+  return "not_started";
+}
+
+function getProjectDrawerData(task: BoardTask): ProjectDrawerData {
+  const details = asRecord(task.result_details);
+  const summary = asRecord(details.summary);
+  const requirements = asRecord(details.requirements);
+  const settings = Object.keys(requirements).length ? requirements : asRecord(details.settings);
+  const artifacts = task.mission_result?.artifacts.map((artifact) => artifact as unknown as DrawerRecord) ?? [];
+  const rawOutputs = asRecordArray(details.outputs);
+  const rawEvidence = asRecordArray(details.evidence);
+  const projectId = (task.tenant || task.mission_result?.workItem.projectId || task.workflow_template_id || task.id).replace(/^project:/, "");
+  const workflowType = getString(details, ["workflow_type", "workflowType"], task.workflow_template_id || (task.tenant?.startsWith("project:") ? "project_workflow" : "kanban_task"));
+  const fallbackProgress = task.status === "done" ? 100 : task.status === "running" ? 55 : task.status === "blocked" || task.status === "error" ? 35 : task.status === "queued" ? 70 : 15;
+  const sources = asRecordArray(details.sources);
+  const outputs = rawOutputs.length ? rawOutputs : artifacts;
+  const stages = asRecordArray(details.stages).map((stage, index) => ({
+    id: getString(stage, ["id", "stage", "key"], `stage_${index + 1}`),
+    label: getString(stage, ["label", "title", "stage"], `Stage ${index + 1}`),
+    status: getString(stage, ["status"], "not_started"),
+    owner: getString(stage, ["owner", "agent", "tool"], "agent"),
+    evidence: getString(stage, ["evidence", "evidence_ref", "evidenceRef"], ""),
+  }));
+  const derivedStages = stages.length ? stages : [
+    { id: "intent_understood", label: "Intent understood", status: "done", owner: "melkizac" },
+    { id: "project_linked", label: task.tenant ? "Project linked" : "Task in board", status: task.tenant ? "done" : "queued", owner: "mission-control" },
+    { id: "current_task", label: task.title, status: taskStageStatus(task.status), owner: task.assignee || "unassigned", evidence: task.result ? "result attached" : undefined },
+    { id: "verification", label: "QA / verification", status: task.status === "done" ? "done" : "pending", owner: "operator" },
+  ];
+  return {
+    projectId,
+    workflowType,
+    objective: getString(details, ["objective"], task.mission_result?.summary || task.body || task.title),
+    currentStage: getString(summary, ["current_stage_label", "stage", "currentStage"], pendingTag(task.status)),
+    nextAction: getString(summary, ["next_action", "nextAction"], task.status === "blocked" ? "Resolve the blocker so the workflow can continue." : task.status === "done" ? "Review attached outputs and evidence." : "Inspect task context, sources, outputs, and evidence before the next worker proceeds."),
+    progress: Math.max(0, Math.min(100, getNumber(summary, ["progress_percent", "progress", "progressPercent"], fallbackProgress))),
+    needsHuman: Boolean(summary.needs_human || summary.needsHuman || task.status === "blocked" || task.status === "error"),
+    sources,
+    outputs,
+    evidence: rawEvidence,
+    settings: Object.keys(settings).length ? settings : {
+      workflow_type: workflowType,
+      approval_policy: task.status === "queued" || task.status === "blocked" ? "human review / intervention may be required" : "internal execution; approvals only for external or irreversible actions",
+      citation_required: sources.length > 0 ? "track citation health per source" : "not specified",
+      model_policy: task.model_override || "default Mission Control routing",
+    },
+    stages: derivedStages,
+  };
+}
+
+function WorkflowStageList({ stages }: { stages: ProjectDrawerData["stages"] }) {
+  return (
+    <section className="task-section workflow-stage-list">
+      <h3>Workflow timeline</h3>
+      <div className="workflow-stage-grid">
+        {stages.map((stage) => <div className={`workflow-stage-item stage-${stage.status}`} key={stage.id}><span>{stage.status}</span><b>{stage.label}</b><small>{stage.owner}{stage.evidence ? ` · ${stage.evidence}` : ""}</small></div>)}
+      </div>
+    </section>
+  );
+}
+
+function SourcesTab({ sources }: { sources: DrawerRecord[] }) {
+  return (
+    <section className="task-section project-drawer-tab">
+      <div className="task-result-heading"><span className="stub-tag">Sources</span><h3>Project source materials</h3></div>
+      {sources.length === 0 && <div className="empty big">No project sources are attached yet. Uploaded files, URLs, videos, transcripts, and extracted text records will appear here with processing and citation health.</div>}
+      <div className="project-source-list">{sources.map((source, index) => <RecordCard key={getString(source, ["source_id", "id", "uri"], `source_${index}`)} title={getString(source, ["title", "name", "uri"], `Source ${index + 1}`)} eyebrow={getString(source, ["kind", "type", "origin"], "source")} meta={[getString(asRecord(source.processing), ["status"], getString(source, ["status"], "pending")), getString(asRecord(source.citation), ["health", "coverage"], "citation pending"), getString(asRecord(source.security), ["sensitivity"], "internal")]} record={source} />)}</div>
+    </section>
+  );
+}
+
+function OutputsTab({ outputs }: { outputs: DrawerRecord[] }) {
+  return (
+    <section className="task-section project-drawer-tab">
+      <div className="task-result-heading"><span className="stub-tag">Outputs</span><h3>Deliverables and artifacts</h3></div>
+      {outputs.length === 0 && <div className="empty big">No outputs have been generated yet. PPTX, DOCX, PDF, Markdown, citation maps, QA status, and version actions will appear here.</div>}
+      <div className="project-output-grid">{outputs.map((output, index) => <RecordCard key={getString(output, ["output_id", "artifact_id", "id", "uri", "path"], `output_${index}`)} title={getString(output, ["title", "filename", "type"], `Output ${index + 1}`)} eyebrow={getString(output, ["type", "kind", "mime"], "artifact")} meta={[getString(output, ["status", "qa_status", "approval_state"], "draft"), getString(output, ["version"], "v1"), getString(output, ["uri", "path", "url"], "stored in project")]} record={output} />)}</div>
+    </section>
+  );
+}
+
+function WorkflowTasksTab({ task, comment, setComment, onAddComment }: { task: BoardTask; comment: string; setComment: (value: string) => void; onAddComment: () => void }) {
+  return (
+    <>
+      <section className="task-section"><h3>Task graph</h3><div className="task-chip-cloud">{task.parents.map((id) => <em key={id}>parent: {id}</em>)}<span>current: {task.id}</span>{task.children.map((id) => <em key={id}>child: {id}</em>)}{task.parents.length === 0 && task.children.length === 0 && <span>No dependency links yet</span>}</div></section>
+      <section className="task-section"><h3>Skills / Links</h3><div className="task-chip-cloud">{(task.skills.length ? task.skills : ["No skills attached"]).map((skill) => <span key={skill}>{skill}</span>)}{task.session_id && <em>session: {task.session_id}</em>}</div></section>
+      <section className="task-section"><h3>Run trace</h3>{task.runs.length === 0 && <div className="empty">No worker runs yet.</div>}{task.runs.map((run) => <div className="task-run" key={run.id}><b>{run.profile || "worker"} · {run.status}</b><small>{formatSingaporeTime(run.started_at)} {run.outcome ? `· ${run.outcome}` : ""}</small><p>{run.summary || run.error || "No summary recorded."}</p></div>)}</section>
+      <section className="task-section"><h3>Comments</h3>{task.comments.length === 0 && <div className="empty">No comments yet.</div>}{task.comments.map((c) => <div className="task-comment" key={c.id ?? c.created_at}><b>{c.author}</b><small>{formatSingaporeTime(c.created_at)}</small><p>{c.body}</p></div>)}<textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Add an operator note…" /><button className="ghost tiny" onClick={() => void onAddComment()}>Add comment</button></section>
+      <section className="task-section"><h3>Events</h3>{task.events.length === 0 && <div className="empty">No events recorded.</div>}{task.events.map((event) => <div className="task-event" key={event.id ?? event.created_at}><b>{event.kind}</b><small>{formatSingaporeTime(event.created_at)}</small></div>)}</section>
+    </>
+  );
+}
+
+function SettingsTab({ settings, task }: { settings: DrawerRecord; task: BoardTask }) {
+  const entries = recordEntries(settings);
+  return (
+    <section className="task-section project-drawer-tab">
+      <div className="task-result-heading"><span className="stub-tag">Settings</span><h3>Workflow controls</h3></div>
+      <div className="settings-summary-card"><b>Approval policy</b><p>Agents may prepare internal drafts and evidence. External publishing, irreversible actions, sensitive-provider use, and destructive changes require Approval Gates.</p></div>
+      <div className="task-kv project-task-kv"><Info label="Status" value={pendingTag(task.status)} /><Info label="Assignee" value={task.assignee || "unassigned"} /><Info label="Model" value={task.model_override || "default"} /><Info label="Tenant" value={task.tenant || "—"} /></div>
+      {entries.length > 0 && <div className="settings-record-list">{entries.map(([key, value]) => <div key={key}><span>{key.replace(/_/g, " ")}</span><b>{formatRecordValue(value)}</b></div>)}</div>}
+    </section>
+  );
+}
+
+function RecordCard({ title, eyebrow, meta, record }: { title: string; eyebrow: string; meta: string[]; record: DrawerRecord }) {
+  const entries = recordEntries(record).slice(0, 4);
+  return (
+    <article className="project-record-card">
+      <span className="stub-tag">{eyebrow}</span>
+      <h4>{title}</h4>
+      <div className="project-record-meta">{meta.filter(Boolean).map((item) => <span key={item}>{item}</span>)}</div>
+      {entries.length > 0 && <dl>{entries.map(([key, value]) => <div key={key}><dt>{key.replace(/_/g, " ")}</dt><dd>{formatRecordValue(value)}</dd></div>)}</dl>}
+    </article>
+  );
+}
+
+function formatRecordValue(value: unknown): string {
+  if (Array.isArray(value)) return value.map((item) => formatRecordValue(item)).join(", ");
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as DrawerRecord).slice(0, 3).map(([key, item]) => `${key}: ${formatRecordValue(item)}`);
+    return entries.join("; ") || "—";
+  }
+  if (value === undefined || value === null || value === "") return "—";
+  return String(value);
 }
 
 function Metric({ label, value, sub, tone }: { label: string; value: number | string; sub: string; tone?: "good" | "bad" }) {

@@ -78,10 +78,10 @@ const adminConsoleGroups: NavGroup[] = [
   {
     label: "Platform",
     items: [
-      { key: "settings", label: "Hermes Desktop", icon: "dashboard" },
-      { key: "users-workspaces", label: "User Access", icon: "profile" },
+      { key: "settings", label: "Admin Overview", icon: "dashboard" },
+      { key: "users-workspaces", label: "Users & Workspaces", icon: "profile" },
       { key: "workspace-runtime-console", label: "Workspace Runtime Console", icon: "runtimes" },
-      { key: "agent-platform-admin", label: "Agent Platform Admin", icon: "agentOrg" },
+      { key: "agent-platform-admin", label: "Platform Agent Org", icon: "agentOrg" },
       { key: "shared-agent-templates", label: "Shared Agent Templates", icon: "agents" },
     ],
   },

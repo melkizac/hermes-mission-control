@@ -1,4 +1,4 @@
-import type { Agent, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, CreateResearchRunRequest, CreateResearchRunResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse, WorkspaceRunDetailResponse, WorkspaceRunHistoryResponse } from "../types";
+import type { Agent, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, CapabilityAssignmentMutationResponse, CapabilityMatrixResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, CreateResearchRunRequest, CreateResearchRunResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse, WorkspaceRunDetailResponse, WorkspaceRunHistoryResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
 import { seedAgents, seedApprovals } from "../data/mockData";
 
@@ -547,6 +547,46 @@ export class MockHermesClient implements HermesClient {
       used_by_count: 1,
     })));
     return { skills, summary: { total: skills.length, editable: 0, plugin: 0, user: skills.length, assigned: skills.length }, categories: ["mock"], sources: ["mock"] };
+  }
+
+  async getCapabilityMatrix(filters?: { agent?: string; agentId?: string }): Promise<CapabilityMatrixResponse> {
+    await delay(80);
+    const requestedAgent = filters?.agent || filters?.agentId;
+    const agents = this.agents.filter((agent) => !requestedAgent || agent.id === requestedAgent);
+    const matrix = agents.map((agent) => {
+      const runtimeCapabilities = [
+        ...agent.skills.map((skill) => ({ id: `skill:${skill.id}`, type: "skill", displayName: skill.name, source: skill.source || "profile-skill", sourceLabel: "Profile skill", status: "enabled", enabled: true, assigned: true, assignmentUnit: "procedure", riskLevels: ["read-only"], approvalRequired: false, approvalStatus: "not-required", healthState: "passing" })),
+        ...(agent.tools ?? []).map((tool) => ({ id: `tool:${tool.id}`, type: tool.kind || "cli-tool", displayName: tool.name, description: tool.description, source: "profile-config", sourceLabel: "Profile tools", status: tool.enabled === false ? "disabled" : "enabled", enabled: tool.enabled !== false, assigned: true, assignmentUnit: tool.assignmentUnit || "tool", toolCount: tool.toolCount, sampleTools: tool.sampleTools, riskLevels: ["local-write"], approvalRequired: false, approvalStatus: "not-required", healthState: "passing" })),
+      ];
+      const registryCapabilities = [
+        { id: "mock-browser-automation", type: "mcp-server", displayName: "Browser automation", description: "Governed browser operations with approval gates for submit/post/send actions.", source: "registry", sourceLabel: "Registry", status: "available", enabled: true, assigned: false, assignmentUnit: "mcp-server", riskLevels: ["browser", "external-action"], approvalRequired: true, approvalStatus: "pending", actionableBlocker: { message: "Approval policy must be approved before assignment." }, healthState: "unknown" },
+        { id: "mock-github-cli", type: "cli-tool", displayName: "GitHub CLI wrapper", description: "Workspace-safe GitHub operations wrapper.", source: "registry", sourceLabel: "Registry", status: "assigned", enabled: true, assigned: true, assignmentUnit: "cli-wrapper", riskLevels: ["repo-write"], approvalRequired: false, approvalStatus: "not-required", healthState: "passing" },
+      ];
+      const capabilities = [...runtimeCapabilities, ...registryCapabilities];
+      const assigned = capabilities.filter((capability) => capability.assigned);
+      const blocked = capabilities.filter((capability) => Boolean((capability as { actionableBlocker?: unknown }).actionableBlocker) || (capability.approvalRequired && capability.approvalStatus !== "approved"));
+      const available = capabilities.filter((capability) => !capability.assigned);
+      return {
+        agent: { id: agent.id, name: agent.name, squad: agent.squad, status: agent.status, profileId: agent.profile_details?.profile_id || agent.id, profilePath: agent.profilePath },
+        capabilities,
+        assigned,
+        available,
+        blocked,
+        summary: { total: capabilities.length, assigned: assigned.length, available: available.length, blocked: blocked.length, skills: agent.skills.length, tools: agent.tools?.length ?? 0, registry: registryCapabilities.length },
+      };
+    });
+    return { ok: true, matrix, agents: matrix.map((row) => row.agent), summary: { agents: matrix.length, capabilities: matrix.reduce((sum, row) => sum + row.summary.total, 0), assigned: matrix.reduce((sum, row) => sum + row.summary.assigned, 0), blocked: matrix.reduce((sum, row) => sum + row.summary.blocked, 0), registry: matrix.reduce((sum, row) => sum + row.summary.registry, 0), skills: matrix.reduce((sum, row) => sum + row.summary.skills, 0), tools: matrix.reduce((sum, row) => sum + row.summary.tools, 0) } };
+  }
+
+  async assignCapability(capabilityId: string): Promise<CapabilityAssignmentMutationResponse> {
+    await delay(80);
+    if (capabilityId === "mock-browser-automation") return { ok: false, status: "blocked", error: "Approval policy must be approved before assignment." };
+    return { ok: true, action: "assign" };
+  }
+
+  async unassignCapability(): Promise<CapabilityAssignmentMutationResponse> {
+    await delay(80);
+    return { ok: true, action: "unassign" };
   }
 
   async getSkillFile(id: string) {

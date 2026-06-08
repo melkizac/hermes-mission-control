@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "../services/store";
 import { Icon } from "./Icon";
-import type { Agent, ConfigFile } from "../types";
+import type { Agent, CapabilityMatrixCapability, CapabilityMatrixRow, ConfigFile } from "../types";
 import { FileEditorDrawer } from "./FileEditorDrawer";
 
 type Tab = "overview" | "profile" | "identity" | "tools" | "skills" | "output" | "tasks";
@@ -33,7 +33,11 @@ export function ContextPanel({
 }) {
   const [tab, setTab] = useState<Tab>("overview");
   const [editing, setEditing] = useState<ConfigFile | null>(null);
-  const { addSkill, removeSkill, deleteAgent, permissions } = useStore();
+  const [capabilityRow, setCapabilityRow] = useState<CapabilityMatrixRow | null>(null);
+  const [capabilityLoading, setCapabilityLoading] = useState(false);
+  const [capabilityMessage, setCapabilityMessage] = useState<string | null>(null);
+  const [capabilityError, setCapabilityError] = useState<string | null>(null);
+  const { addSkill, removeSkill, deleteAgent, permissions, getCapabilityMatrix, assignCapability, unassignCapability } = useStore();
   const canEditAgent = permissions.canEditGlobalAgents;
   const canEditAgentIdentity = permissions.canEditAgentIdentity;
   const canEditFile = (file: ConfigFile) => canEditAgent || Boolean(file.editable) || (canEditAgentIdentity && file.kind === "soul");
@@ -43,6 +47,44 @@ export function ContextPanel({
     const name = window.prompt("Skill to install (from Hub or your repo):");
     if (name) void addSkill({ id: Math.random().toString(36).slice(2), name, source: "hub" });
   };
+
+  const loadCapabilityMatrix = async () => {
+    setCapabilityLoading(true);
+    setCapabilityError(null);
+    try {
+      const result = await getCapabilityMatrix({ agent: agent.id });
+      setCapabilityRow(result.matrix?.[0] ?? null);
+    } catch (err) {
+      setCapabilityError(err instanceof Error ? err.message : "Unable to load capability matrix");
+    } finally {
+      setCapabilityLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (tab === "profile" || tab === "tools") void loadCapabilityMatrix();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent.id, tab]);
+
+  const onCapabilityAction = async (capability: CapabilityMatrixCapability) => {
+    if (!capability.id || !canEditAgent || capability.source !== "registry") return;
+    setCapabilityMessage(null);
+    setCapabilityError(null);
+    try {
+      if (capability.assigned) {
+        await unassignCapability(capability.id, { agentId: agent.id, agent: { id: agent.id, name: agent.name }, reason: "Unassigned from Agent/Profile capability surface" });
+        setCapabilityMessage(`Unassigned ${capability.displayName || capability.name || capability.id}`);
+      } else {
+        await assignCapability(capability.id, { agentId: agent.id, agent: { id: agent.id, name: agent.name }, reason: "Assigned from Agent/Profile capability surface" });
+        setCapabilityMessage(`Assigned ${capability.displayName || capability.name || capability.id}`);
+      }
+      await loadCapabilityMatrix();
+    } catch (err) {
+      setCapabilityError(err instanceof Error ? err.message : "Capability assignment failed");
+    }
+  };
+
+  const workspaceCapabilities = capabilityRow?.capabilities ?? [];
 
   if (collapsed) {
     return (
@@ -197,6 +239,9 @@ export function ContextPanel({
             <Info k="Gateway channels" v={`${(agent.profile_details?.gateway?.channels ?? []).filter((c) => c.enabled).length}/${agent.profile_details?.gateway?.channels?.length ?? 0} enabled`} />
             <Info k="Credential scope" v={(agent.profile_details?.environment?.env_files?.length ?? 0) ? `${agent.profile_details?.environment?.env_files?.length} env file(s), values hidden` : "No env file reported"} />
 
+            <div className="sec-l">Workspace capability matrix</div>
+            <CapabilityMatrixSummary row={capabilityRow} loading={capabilityLoading} error={capabilityError} message={capabilityMessage} />
+
             <div className="sec-l">Gateway / channels</div>
             <div className="skills detail-skills">
               {(agent.profile_details?.gateway?.channels ?? []).map((channel) => <span className="skill" key={channel.id}>{channel.id}<em>{channel.enabled ? "enabled" : "disabled"}</em></span>)}
@@ -266,6 +311,13 @@ export function ContextPanel({
               </div>
             ))}
             {(!agent.tools || agent.tools.length === 0) && <div className="empty">No tool capabilities reported for this profile.</div>}
+
+            <div className="sec-l">Assignable registry capabilities · {workspaceCapabilities.length}</div>
+            <CapabilityMatrixSummary row={capabilityRow} loading={capabilityLoading} error={capabilityError} message={capabilityMessage} />
+            {workspaceCapabilities.filter((capability) => capability.source === "registry").map((capability) => (
+              <CapabilityMatrixCard key={capability.id} capability={capability} canEdit={canEditAgent} onAction={() => void onCapabilityAction(capability)} />
+            ))}
+            {!capabilityLoading && workspaceCapabilities.filter((capability) => capability.source === "registry").length === 0 && <div className="empty">No assignable registry capabilities found for this profile.</div>}
           </>
         )}
 
@@ -351,6 +403,61 @@ export function ContextPanel({
 
       {editing && <FileEditorDrawer file={editing} onClose={() => setEditing(null)} />}
     </aside>
+  );
+}
+
+function CapabilityMatrixSummary({ row, loading, error, message }: { row: CapabilityMatrixRow | null; loading: boolean; error: string | null; message: string | null }) {
+  if (loading && !row) return <div className="empty">Loading capability matrix…</div>;
+  return (
+    <div className="tool-card">
+      <div className="tool-card-head">
+        <div>
+          <div className="fn">Capability assignment governance</div>
+          <div className="fd">Agent/Profile surface · no Admin redirect required</div>
+        </div>
+        {row && <span className="badge b-info">{row.summary.assigned}/{row.summary.total} assigned</span>}
+      </div>
+      {row ? (
+        <div className="tool-cats">
+          <span className="tool-chip">Assigned {row.summary.assigned}</span>
+          <span className="tool-chip">Available {row.summary.available}</span>
+          <span className="tool-chip">Blocked {row.summary.blocked}</span>
+          <span className="tool-chip">Registry {row.summary.registry}</span>
+        </div>
+      ) : (
+        !loading && <p className="tool-desc">No capability matrix row is available for this profile yet.</p>
+      )}
+      {message && <p className="mini-note hi">{message}</p>}
+      {error && <p className="mini-note err">{error}</p>}
+    </div>
+  );
+}
+
+function CapabilityMatrixCard({ capability, canEdit, onAction }: { capability: CapabilityMatrixCapability; canEdit: boolean; onAction: () => void }) {
+  const blocked = Boolean(capability.actionableBlocker || (capability.approvalRequired && capability.approvalStatus !== "approved"));
+  const label = capability.displayName || capability.name || capability.id;
+  return (
+    <div className="tool-card">
+      <div className="tool-card-head">
+        <div>
+          <div className="fn">{label}</div>
+          <div className="fd">{capability.type || "capability"} · {capability.status || "registered"} · {capability.healthState || "unknown"}</div>
+        </div>
+        <span className={"badge " + (blocked ? "b-wait" : capability.assigned ? "b-work" : "b-idle")}>{blocked ? "governed" : capability.assigned ? "assigned" : "available"}</span>
+      </div>
+      {capability.description && <p className="tool-desc">{capability.description}</p>}
+      <div className="tool-cats">
+        {(capability.riskLevels ?? []).map((risk) => <span className="tool-chip" key={risk}>{risk}</span>)}
+        {capability.approvalRequired && <span className="tool-chip">approval {capability.approvalStatus || "required"}</span>}
+        {capability.assignmentUnit && <span className="tool-chip">unit {capability.assignmentUnit}</span>}
+      </div>
+      {blocked && <p className="mini-note">{String((capability.actionableBlocker as { message?: unknown } | null)?.message || capability.policyGate || "Governance approval is required before assignment changes.")}</p>}
+      {canEdit && capability.source === "registry" ? (
+        <button className="btn full" disabled={blocked} onClick={onAction}>{capability.assigned ? "Unassign from this profile" : "Assign to this profile"}</button>
+      ) : (
+        <div className="mini-note">{capability.source === "registry" ? "Read-only workspace selection." : "Runtime capability reported from profile config."}</div>
+      )}
+    </div>
   );
 }
 

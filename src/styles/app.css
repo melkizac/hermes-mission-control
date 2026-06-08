@@ -1452,6 +1452,13 @@ input, select, textarea { font-family: inherit; }
 .capability-agent-chip b { display: block; font-size: 12px; }
 .capability-agent-chip small { display: block; margin-top: 3px; color: #3b5ea7; font-size: 10.5px; }
 .capability-detail-sections h3 { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: #64748b; margin: 4px 0 10px; }
+.capability-detail-drawer .mc-drawer-tabs { overflow-x: auto; justify-content: flex-start; scrollbar-width: thin; }
+.capability-detail-drawer .mc-drawer-tabs button { white-space: nowrap; }
+.capability-detail-copy { color: #536277; font-size: 13px; line-height: 1.55; margin: 0 0 12px; }
+.capability-ref-list { display: grid; gap: 8px; margin-top: 12px; }
+.capability-ref-list h4 { margin: 0; color: #8a99b2; font-size: 11px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
+.capability-source-link { display: inline-flex; width: fit-content; align-items: center; border: 1px solid #dbeafe; background: #eff6ff; color: #1e3a8a; border-radius: 11px; padding: 9px 11px; margin-top: 10px; font-size: 12px; font-weight: 850; text-decoration: none; }
+.capability-evidence-list .kv b { line-height: 1.45; }
 .capability-intake-wizard {
   border: 1px solid #dbeafe;
   background: linear-gradient(180deg, #f8fbff 0%, #fff 58%);

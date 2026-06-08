@@ -128,7 +128,7 @@ Goal → Workflow → Routine → Runs
 - **Connector**: Integration that gives Hermes access to an external system or account.
 - **Runtime**: Environment where work executes, such as the Hermes server, browser runtime, cron scheduler, or desktop gateway.
 - **Agent**: AI worker or logical role responsible for work.
-- **AI Workforce**: User-facing view of agents and responsibilities.
+- **Org Chart**: User-facing view of agents and responsibilities.
 - **Approval Gate**: Human approve/reject checkpoint before sensitive external, irreversible, costly, policy-sensitive, or authority-bound action.
 - **Blocker**: Missing access, context, permission, capability, or human decision preventing progress.
 - **Output / Artifact**: Deliverable Hermes produced, such as a draft, report, file, checklist, deck, or code change.
@@ -256,21 +256,28 @@ Do not document or print real passwords, API keys, gateway tokens, or cookie val
 
 Mission Control has two UI modes.
 
-**User mode** is the day-to-day operator workspace:
+**User mode** is the day-to-day operator workspace. The primary rail now keeps
+the cockpit compact and operator-facing:
 
-- Mission Control
-- Delegate Work
-- Workflow Library
-- My Projects
-- My Task Board
-- Needs Attention
-- My Agents
-- My Agent Org
-- Routines
-- Browser Activity
-- Workspace Knowledge
-- My Audit / Evidence
-- Profile
+- Chat
+- Workspace
+  - Dashboard
+  - Projects
+  - Task Board
+- Operations
+  - Routines
+  - Workflows
+- Workforce
+  - Agents
+  - Org Chart
+  - Capabilities / Memory / Tools / Plugins resource selector
+  - Approvals
+- Bottom Settings menu
+  - Profile
+  - Settings
+  - Usage remaining
+  - Docs
+  - Log out
 
 **Admin mode** is setup/governance:
 

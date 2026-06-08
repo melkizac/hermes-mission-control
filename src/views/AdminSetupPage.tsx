@@ -372,15 +372,24 @@ const pageConfigs: Record<string, AdminSetupConfig> = {
     blurb:
       "Define which actions need human-in-the-loop review before agents publish, spend, delete, message externally, or cross workspace boundaries.",
     metrics: [
-      { label: "Policy mode", value: "HITL", detail: "Human-in-the-loop guardrails", tone: "good" },
+      { label: "Risk taxonomy", value: "7", detail: "read · write · network · secrets · publish · prod · destructive", tone: "good" },
       { label: "Review queue", value: "Needs Attention", detail: "Workspace-visible interventions" },
       { label: "Audit", value: "Global", detail: "Policy outcomes need evidence" },
-      { label: "Scope", value: "Draft", detail: "No global mutation controls yet", tone: "warn" },
+      { label: "Scope", value: "API-linked", detail: "Capability blockers expose next action", tone: "good" },
     ],
     sections: [
       {
+        heading: "Capability risk taxonomy",
+        body: "Capability Registry classifies each source as read-only, local-write, network, secret-access, external-publish, production-control, or destructive. Read-only can proceed; local-write/network/secret-access require Admin approval; external publishing, production control, DNS changes, live secret rotation, and destructive actions require Melverick approval.",
+        cards: [
+          { title: "Admin-approval risks", body: "local-write, network, and secret-access capabilities are blocked from install, enable, or assignment until an Admin approves the capability record.", target: "approvals", action: "Open Needs Attention" },
+          { title: "Melverick-approval risks", body: "external-publish, production-control, destructive, DNS, and live secret rotation actions stay blocked until Melverick approves; API blockers include the exact next approval action.", target: "audit", action: "Open Global Audit Log" },
+          { title: "Actionable blockers", body: "Blocked capability API responses include blockedCapability.blocker.message, requiredApprover, riskLevels, and nextAction so UI surfaces can show a precise operator fix instead of a generic failure.", target: "tools", action: "Review Tools" },
+        ],
+      },
+      {
         heading: "Default protected actions",
-        body: "Agents can draft and prepare work autonomously, but these categories should remain approval-gated or routed to Task Board until an admin policy API is live.",
+        body: "Agents can draft and prepare work autonomously, but these categories remain approval-gated or routed to Task Board until a policy decision is recorded.",
         cards: [
           { title: "Outbound messages and posts", body: "External Telegram, LinkedIn, email, website, or client-facing publication should require approve/edit/reject.", target: "approvals", action: "Open Needs Attention" },
           { title: "Destructive or costly operations", body: "Database changes, deletion, credential rotation, DNS/cloud mutations, and high-cost runs need policy gates.", target: "audit", action: "Open Global Audit Log" },
