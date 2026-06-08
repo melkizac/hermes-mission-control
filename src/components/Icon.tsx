@@ -16,6 +16,7 @@ type Name =
   | "automations"
   | "audit"
   | "costs"
+  | "usage"
   | "settings"
   | "admin"
   | "dashboard"
@@ -32,6 +33,7 @@ type Name =
   | "edit"
   | "close"
   | "more"
+  | "chevronDown"
   | "file"
   | "check"
   | "arrowDown"
@@ -57,6 +59,7 @@ const paths: Record<Name, string> = {
   automations: "M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2M15 12a3 3 0 11-6 0 3 3 0 016 0z",
   audit: "M4 5h16M4 12h16M4 19h10",
   costs: "M12 3v18M17 7.5c0-1.9-1.8-3-5-3s-5 1.1-5 3 1.5 3 5 3 5 1.1 5 3-1.8 3-5 3-3.9-.4-5-2.1",
+  usage: "M4 14a8 8 0 1116 0M12 14l4-4M8 18h8",
   settings: "M19.4 13a7 7 0 000-2l2-1.6-2-3.4-2.4 1a7 7 0 00-1.7-1L14.9 3h-4l-.4 2.4a7 7 0 00-1.7 1l-2.4-1-2 3.4L4.6 11a7 7 0 000 2l-2 1.6 2 3.4 2.4-1a7 7 0 001.7 1l.4 2.4h4l.4-2.4a7 7 0 001.7-1l2.4 1 2-3.4z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
   admin: "M12 3l8 4v5c0 5-3.4 8.5-8 10-4.6-1.5-8-5-8-10V7zM12 8v6M12 17h.01",
   dashboard: "M4 4h7v7H4zM15 4h5v5h-5zM15 13h5v7h-5zM4 15h7v5H4z",
@@ -73,6 +76,7 @@ const paths: Record<Name, string> = {
   edit: "M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z",
   close: "M18 6L6 18M6 6l12 12",
   more: "M12 6h.01M12 12h.01M12 18h.01",
+  chevronDown: "M5 8l7 7 7-7",
   file: "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6",
   check: "M20 6L9 17l-5-5",
   arrowDown: "M12 5v14M5 12l7 7 7-7",
