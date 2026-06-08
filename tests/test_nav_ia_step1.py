@@ -13,7 +13,7 @@ def test_step1_user_mode_nav_groups_and_labels_are_canonical():
 
     # Product IA evidence: docs/HERMES_MISSION_CONTROL.md documents the compact
     # workspace rail with a Workforce resource selector and bottom Settings menu.
-    for documented_label in ['Org Chart', 'Capabilities / Memory / Tools / Plugins resource selector', 'Bottom Settings menu', 'Log out']:
+    for documented_label in ['Org Chart', 'Skills / Memory / Tools / Plugins resource selector', 'Bottom Settings menu', 'Log out']:
         assert documented_label in docs
 
     expected = [
@@ -29,7 +29,7 @@ def test_step1_user_mode_nav_groups_and_labels_are_canonical():
         'label: "Workforce"',
         'label: "Agents"',
         'label: "Org Chart"',
-        'label: "Capabilities"',
+        'label: "Skills"',
         'label: "Memory"',
         'label: "Tools"',
         'label: "Plugins"',

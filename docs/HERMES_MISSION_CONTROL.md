@@ -270,7 +270,7 @@ the cockpit compact and operator-facing:
 - Workforce
   - Agents
   - Org Chart
-  - Capabilities / Memory / Tools / Plugins resource selector
+  - Skills / Memory / Tools / Plugins resource selector
   - Approvals
 - Bottom Settings menu
   - Profile
