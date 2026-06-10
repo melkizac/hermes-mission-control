@@ -57,12 +57,20 @@ export interface Artifact {
   sizeBytes: number;
   preview?: string;
   createdAt: string;
+  url?: string;
+  downloadUrl?: string;
+  previewUrl?: string;
+  version?: string;
+  qaStatus?: string;
+  driveUrl?: string;
 }
 
 export type WorkItemKind = "task" | "goal" | "run" | "approval" | "intake" | "workflow";
 export type RiskLevel = "safe" | "approval-required" | "external-facing" | "destructive" | "account-sensitive";
 export type MissionArtifactKind = "file" | "link" | "screenshot" | "report" | "diff" | "message" | "dataset" | "note";
-export type EvidenceKind = "source" | "tool-call" | "session" | "screenshot" | "file" | "log" | "approval" | "human-note";
+export type EvidenceKind = "source" | "tool-call" | "session" | "screenshot" | "file" | "log" | "approval" | "human-note" | "api-response" | "qa-result" | "render-preview";
+export type EvidenceGateType = "command_output" | "build_test_log" | "api_response" | "screenshot" | "file_artifact" | "approval_note" | "session_link" | string;
+export type EvidenceGateStatus = "not-required" | "passed" | "blocked" | string;
 export type PhaseCheckpointStatus = "pending" | "in_progress" | "passed" | "blocked" | "failed";
 
 export interface WorkItemRef {
@@ -80,6 +88,7 @@ export interface WorkItemRef {
 export interface EvidenceRecord {
   id: string;
   kind: EvidenceKind;
+  type?: string;
   title: string;
   summary?: string;
   source: string;
@@ -87,8 +96,16 @@ export interface EvidenceRecord {
   path?: string | null;
   url?: string | null;
   createdAt: string;
+  created_at?: string;
   redacted?: boolean;
+  redactionStatus?: string;
   confidence?: "low" | "medium" | "high" | string;
+  reference?: string | null;
+  taskId?: string | null;
+  runId?: string | null;
+  artifactId?: string | null;
+  verificationStatus?: string | null;
+  checks?: string[];
 }
 
 export interface MissionArtifact {
@@ -99,9 +116,15 @@ export interface MissionArtifact {
   filename?: string;
   path?: string | null;
   url?: string | null;
+  downloadUrl?: string | null;
+  previewUrl?: string | null;
+  driveUrl?: string | null;
   mime?: string;
   sizeBytes?: number;
   preview?: string;
+  version?: string;
+  qaStatus?: "not-run" | "pending" | "passed" | "failed" | "blocked" | string;
+  format?: "pptx" | "docx" | "pdf" | "markdown" | "drive" | string;
   createdAt: string;
   createdBy?: string;
   evidenceIds?: string[];
@@ -119,6 +142,24 @@ export interface ApprovalGate {
   sourceRef?: WorkItemRef;
 }
 
+export interface EvidenceGateChecklistItem {
+  type: EvidenceGateType;
+  label: string;
+  satisfied: boolean;
+}
+
+export interface EvidenceGateState {
+  required: boolean;
+  requiredTypes: EvidenceGateType[];
+  satisfiedTypes: EvidenceGateType[];
+  missingTypes: EvidenceGateType[];
+  status: EvidenceGateStatus;
+  completionBlocked: boolean;
+  checklist: EvidenceGateChecklistItem[];
+  acceptedTypes: EvidenceGateType[];
+  summary: string;
+}
+
 export interface MissionResult {
   id: string;
   workItem: WorkItemRef;
@@ -127,6 +168,7 @@ export interface MissionResult {
   artifacts: MissionArtifact[];
   evidence: EvidenceRecord[];
   approvalGates: ApprovalGate[];
+  evidenceGate: EvidenceGateState;
   nextActions: string[];
   model?: string;
   costUsd?: number | null;
@@ -540,6 +582,43 @@ export interface ProfileRuntimeDetails {
   config_files?: Array<{ name: string; kind?: string; updated_at?: string }>;
 }
 
+export interface AgentHandoff {
+  id: string;
+  from_agent: string;
+  to_agent: string;
+  task_id?: string | null;
+  objective: string;
+  context?: string | null;
+  requested_output: string;
+  risk: "low" | "medium" | "high" | "critical" | string;
+  status: "requested" | "accepted" | "in_progress" | "blocked" | "completed" | "failed" | "cancelled" | string;
+  evidence?: Array<Record<string, unknown>>;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentHandoffSummary {
+  sent: number;
+  received: number;
+  open: number;
+  blocked: number;
+}
+
+export interface AgentHandoffResponse {
+  ok: boolean;
+  handoffs: AgentHandoff[];
+  summary?: { total: number; open: number; completed: number; blocked: number; high_risk: number };
+  statuses?: string[];
+  error?: string;
+}
+
+export interface AgentHandoffMutationResponse {
+  ok: boolean;
+  handoff?: AgentHandoff;
+  error?: string;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -566,9 +645,14 @@ export interface Agent {
   processingRequestDetails?: Array<{ id: string; agent_id?: string; started_at?: number }>;
   artifacts: Artifact[];
   tasks: Task[];
+  detailLoaded?: boolean;
+  detailEndpoint?: string;
+  transcriptEndpoint?: string;
   insightSummary?: string;
   insightStatus?: string;
   profile_details?: ProfileRuntimeDetails;
+  handoffs?: AgentHandoff[];
+  handoff_summary?: AgentHandoffSummary;
 }
 
 export interface Approval {
@@ -839,7 +923,7 @@ export interface FunnelTargetMutationResponse {
   error?: string;
 }
 
-export type BoardStatus = "todo" | "queued" | "scheduled" | "running" | "blocked" | "done" | "error";
+export type BoardStatus = "triage" | "todo" | "scheduled" | "ready" | "running" | "blocked" | "error" | "review" | "done";
 
 export interface BoardComment {
   id: number | null;
@@ -868,23 +952,95 @@ export interface BoardRun {
   error?: string;
 }
 
+export interface RunTreeVerification {
+  status: "pending" | "running" | "passed" | "failed" | "blocked" | string;
+  blocked: boolean;
+  blockers?: string[];
+  reason?: string;
+  required_for_completion?: boolean;
+}
+
+export interface RunTreeRunNode {
+  id: string;
+  run_id?: number | string | null;
+  task_id?: string;
+  parent_id?: string;
+  agent?: string | null;
+  model?: string | null;
+  toolsets?: string[];
+  step_key?: string | null;
+  status: string;
+  outcome?: string | null;
+  started_at?: string | null;
+  ended_at?: string | null;
+  output?: string;
+  verification?: RunTreeVerification;
+}
+
+export interface RunTreeTaskNode {
+  id: string;
+  task_id: string;
+  title: string;
+  subtask?: boolean;
+  agent?: string | null;
+  parent_task_ids?: string[];
+  child_task_ids?: string[];
+  model?: string | null;
+  toolsets?: string[];
+  step_key?: string | null;
+  status: string;
+  output?: string;
+  verification: RunTreeVerification;
+  runs: RunTreeRunNode[];
+  children: RunTreeTaskNode[];
+}
+
+export interface RunTreePayload {
+  root?: RunTreeTaskNode | null;
+  summary: {
+    total_tasks: number;
+    total_runs: number;
+    blocked_nodes: number;
+    status: string;
+    completion_blocked: boolean;
+    blocking_reasons?: string[];
+  };
+  verification?: RunTreeVerification;
+}
+
 export interface BoardTaskResultDetails {
   status?: string | null;
-  summary?: string;
+  summary?: string | Record<string, unknown>;
+  objective?: string;
+  workflow_type?: string;
+  workflowType?: string;
   artifact?: string | null;
   blockers?: string[];
   verification?: Record<string, string>;
   access_needed?: string;
+  sources?: Array<Record<string, unknown>>;
+  outputs?: Array<Record<string, unknown>>;
+  stages?: Array<Record<string, unknown>>;
+  settings?: Record<string, unknown>;
+  requirements?: Record<string, unknown>;
   artifacts?: MissionArtifact[];
   evidence?: EvidenceRecord[];
+  evidence_gate?: EvidenceGateState;
+  evidenceGate?: EvidenceGateState;
   approval_gates?: ApprovalGate[];
   next_actions?: string[];
+  needs_human?: boolean;
+  needsHuman?: boolean;
+  approval_policy?: Record<string, unknown>;
+  approvalPolicy?: Record<string, unknown>;
 }
 
 export interface TaskResultResponse {
   ok: boolean;
   task?: BoardTask;
   mission_result?: MissionResult | null;
+  run_tree?: RunTreePayload | null;
+  agent_handoffs?: AgentHandoff[];
   error?: string;
 }
 
@@ -906,9 +1062,15 @@ export interface BoardTask {
   workspace_path?: string | null;
   branch_name?: string | null;
   tenant?: string | null;
+  board_id?: string;
+  board_slug?: string;
+  board_label?: string;
+  board_is_default?: boolean;
   result: string;
   result_details?: BoardTaskResultDetails | null;
   mission_result?: MissionResult | null;
+  run_tree?: RunTreePayload | null;
+  agent_handoffs?: AgentHandoff[];
   session_id?: string | null;
   current_run_id?: number | null;
   workflow_template_id?: string | null;
@@ -924,23 +1086,42 @@ export interface BoardTask {
   parents: string[];
 }
 
+export interface KanbanBoardInfo {
+  id: string;
+  slug: string;
+  label: string;
+  is_default: boolean;
+}
+
+export interface KanbanBoardWarning {
+  board?: string;
+  status: string;
+  reason: string;
+}
+
 export interface BoardResponse {
   tasks: BoardTask[];
   lanes: Record<BoardStatus, BoardTask[]>;
   summary: {
     total: number;
+    triage: number;
     todo: number;
-    queued: number;
     scheduled: number;
+    ready: number;
     running: number;
     blocked: number;
-    done: number;
     error: number;
+    review: number;
+    done: number;
     assignees: string[];
     projects: string[];
+    boards?: string[];
   };
   statuses: BoardStatus[];
   projects: string[];
+  boards?: KanbanBoardInfo[];
+  board_errors?: KanbanBoardWarning[];
+  warnings?: KanbanBoardWarning[];
 }
 
 export interface BoardTaskMutationResponse {
@@ -1188,6 +1369,34 @@ export interface CostSessionRecord {
   billing_provider?: string | null;
 }
 
+export interface ModelUsageWindow {
+  label: string;
+  used_seconds: number;
+  limit_seconds: number;
+  used_hours: number;
+  limit_hours: number;
+  remaining_seconds: number;
+  remaining_hours: number;
+  percent_used: number;
+  remaining_percent?: number;
+  reset_at: string;
+  reset_label: string;
+}
+
+export interface ModelUsageLimitSummary {
+  daily: ModelUsageWindow;
+  weekly: ModelUsageWindow;
+  selected_model: string;
+  models: string[];
+  source: string;
+  available?: boolean;
+  error?: string;
+  selected?: boolean;
+  aliases?: string[];
+  metered_feature?: string;
+  additional_model_usages?: ModelUsageLimitSummary[];
+}
+
 export interface CostsResponse {
   window_days: number;
   summary: {
@@ -1210,6 +1419,8 @@ export interface CostsResponse {
   browser_usage?: BrowserUsageSummary;
   file_extraction_usage?: FileExtractionUsageSummary;
   quota_dimensions?: string[];
+  model_usage?: ModelUsageLimitSummary;
+  model_usage_models?: ModelUsageLimitSummary[];
   error?: string;
 }
 
@@ -2036,6 +2247,8 @@ export interface CapabilityMatrixCapability {
   status?: string;
   enabled?: boolean;
   assigned?: boolean;
+  inherited?: boolean;
+  assignmentScope?: "assigned" | "inherited" | "available" | string;
   assignmentUnit?: string;
   assignmentRef?: Record<string, unknown>;
   riskLevels?: string[];
@@ -2067,6 +2280,7 @@ export interface CapabilityMatrixRow {
   summary: {
     total: number;
     assigned: number;
+    inherited?: number;
     available: number;
     blocked: number;
     skills: number;
@@ -2083,6 +2297,7 @@ export interface CapabilityMatrixResponse {
     agents: number;
     capabilities: number;
     assigned: number;
+    inherited?: number;
     blocked: number;
     registry: number;
     skills: number;
@@ -2124,6 +2339,7 @@ export type ViewKey =
   | "approvals"
   | "automations"
   | "audit"
+  | "usage"
   | "costs"
   | "models"
   | "users-workspaces"

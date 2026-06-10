@@ -48,6 +48,7 @@ export const workspaceViews = new Set<ViewKey>([
   "automations",
   "browser-ops",
   "audit",
+  "usage",
   "research-runs",
 ]);
 
@@ -97,6 +98,7 @@ export function viewLabelForRole(role: UserRole, view: ViewKey, fallback: string
     plugins: "Plugins",
     "second-brain": "Workspace Knowledge",
     audit: "My Audit / Evidence",
+    usage: "Usage remaining",
   };
   return labels[view] ?? fallback;
 }

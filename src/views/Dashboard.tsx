@@ -119,9 +119,9 @@ export function Dashboard() {
   const inboxSummary = data.inbox?.summary;
   const highRisk = inboxSummary?.high_risk ?? data.inbox?.items.filter((i) => i.risk === "high" || i.risk === "critical").length ?? 0;
   const failedRoutines = data.automations?.summary.error ?? 0;
-  const blockedTasks = (data.board?.summary.blocked ?? 0) + (data.board?.summary.error ?? 0);
+  const blockedTasks = data.board?.summary.blocked ?? 0;
   const runningBoardTasks = boardTasks.filter((task) => task.status === "running").slice(0, 5);
-  const blockedBoardTasks = boardTasks.filter((task) => task.status === "blocked" || task.status === "error").slice(0, 5);
+  const blockedBoardTasks = boardTasks.filter((task) => task.status === "blocked").slice(0, 5);
   const queuedHumanTasks = boardTasks.filter((task) => task.assignee?.toLowerCase().includes("melverick") && task.status !== "done").slice(0, 3);
   const activeAgents = agents.filter((a) => a.status === "active" || a.status === "working" || a.status === "waiting");
   const runningTasks = activeAgents.length;

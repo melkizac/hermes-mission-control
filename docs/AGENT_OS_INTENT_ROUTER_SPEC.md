@@ -24,6 +24,9 @@ The router output is a JSON object with these fields:
 | `agent_id` | string or null | yes | Logical owner/agent to handle the route, for example `melkizac`, `devops`, `content-ops`, `linkedin-growth`, or `nexius-leads`. |
 | `tools_required` | string[] | yes | Toolsets expected for execution, such as `kanban`, `terminal`, `browser`, `cronjob`, `web`, or `session_search`. |
 | `skills_required` | string[] | yes | Skills that should be loaded or attached to follow-up work. |
+| `data_required` | string[] | yes | Project context, source materials, task/evidence records, workflow definitions, or other data the executor needs before acting. |
+| `access_required` | string[] | yes | Workspace permissions, approval gates, workflow launch permission, routine scheduling permission, or external account access needed before execution. |
+| `mission_control_capabilities` | string[] | yes | Mission Control surfaces the route will use, such as Global Command Chat, Task Board, Projects / Context Hub, Workflow Library, Routines, Approval Gates, and Audit Log / Evidence. |
 | `evidence_required` | boolean | yes | True when the route must produce run logs, task IDs, deployment proof, API responses, screenshots, or source links. |
 | `approval_required` | boolean | yes | True when the next action is external-facing, irreversible, destructive, costly, policy-sensitive, or authority-bound. |
 
@@ -89,7 +92,7 @@ Use `intent_type: clarification` when confidence is below 0.6, when a terse pron
 
 ## Acceptance criteria
 
-1. The main chat router can emit every required schema field: `intent_type`, `research_deliverable_intent`, `confidence`, `rationale`, `project_required`, `suggested_project_id`, `create_task`, `create_project`, `launch_workflow`, `recommend_routine`, `one_time_reply`, `agent_id`, `tools_required`, `skills_required`, `evidence_required`, and `approval_required`.
+1. The main chat router can emit every required schema field: `intent_type`, `research_deliverable_intent`, `confidence`, `rationale`, `project_required`, `suggested_project_id`, `create_task`, `create_project`, `launch_workflow`, `recommend_routine`, `one_time_reply`, `agent_id`, `tools_required`, `skills_required`, `data_required`, `access_required`, `mission_control_capabilities`, `evidence_required`, and `approval_required`.
 2. At least 23 representative prompts are captured as fixtures in `tests/fixtures/agent_os_intent_router_cases.json`.
 3. Fixtures cover simple one-time answer, status query, evidence query, Kanban task, missing-project task, project creation, workflow launch, routine recommendation, approval response, external publish approval, ambiguous pronoun clarification, agent handoff, and every research-to-deliverable sub-intent.
 4. Unit/fixture tests validate every fixture includes the complete schema and expected decision booleans.
@@ -104,7 +107,7 @@ Use `intent_type: clarification` when confidence is below 0.6, when a terse pron
 
 ```json
 {
-  "schema": {"fields": ["intent_type", "research_deliverable_intent", "confidence", "rationale", "project_required", "suggested_project_id", "create_task", "create_project", "launch_workflow", "recommend_routine", "one_time_reply", "agent_id", "tools_required", "skills_required", "evidence_required", "approval_required"]},
+  "schema": {"fields": ["intent_type", "research_deliverable_intent", "confidence", "rationale", "project_required", "suggested_project_id", "create_task", "create_project", "launch_workflow", "recommend_routine", "one_time_reply", "agent_id", "tools_required", "skills_required", "data_required", "access_required", "mission_control_capabilities", "evidence_required", "approval_required"]},
   "intent_types": ["one_time_reply", "status_query", "evidence_query", "kanban_task", "project", "workflow", "routine_recommendation", "approval_response", "agent_handoff", "clarification"],
   "research_deliverable_intents": ["learn_topic", "ask_sources", "summarize_sources", "compare_sources", "generate_deck", "generate_report", "generate_proposal", "generate_training_material", "revise_artifact", "add_sources_to_project", "check_project_status"],
   "decision_rules": ["Simple one-time answer", "Kanban task", "Project", "Workflow", "Research-to-deliverable intents", "Routine recommendation", "Approval gate"],

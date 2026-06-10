@@ -23,6 +23,22 @@ This feature must **not** appear primarily as a standalone menu option or separa
 
 Mission Control remains the management, audit, and trust layer; chat remains the user's command layer.
 
+### 2026-06-10 product refinements
+
+Treat Research-to-Deliverable as the general **source-grounded knowledge-work factory**, not only as a research assistant. Research is one input stage; the product pattern is trusted source handling, synthesis, evidence preservation, editable artifact generation, and Mission Control supervision.
+
+Use these defaults unless the user or project policy says otherwise:
+
+- **Positioning:** source-grounded deliverable generation with governed execution.
+- **Default source policy:** user-provided sources and KB pages first; live web research only when requested, when sources are insufficient, or when freshness is required.
+- **Default project threshold:** auto-create or resume a project when the request has sources plus a deliverable, more than one execution step, citation/evidence requirements, human review, long-running processing, or future reuse value.
+- **Default deliverables:** editable PPTX, DOCX, Markdown, citation/evidence notes; add PDF or Google Workspace artifacts when useful or requested.
+- **PPTX quality bar:** editable slides, clear structure, speaker/facilitator notes when relevant, source/evidence pack, and QA pass. Nexius-facing decks should use the practical, operator-led Nexius style.
+- **Approval gates:** external publishing, client sending, public/Drive sharing outside intended scope, deletion, production changes, sensitive client data sent to external providers, high-cost runs, or unusually long processing.
+- **Auto proceed:** internal drafts, summaries, first editable artifact drafts, local QA, local revisions, and evidence capture.
+
+The first flagship workflow should be: **turn source materials into a Nexius Academy training deck + facilitator notes + citation/evidence pack**.
+
 ---
 
 ## Core user intents

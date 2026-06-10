@@ -37,6 +37,12 @@ Related design docs:
 - [`ADMIN_PLATFORM_MULTI_RUNTIME_DESIGN.md`](./ADMIN_PLATFORM_MULTI_RUNTIME_DESIGN.md) — Admin control-plane design for many isolated Hermes user/workspace runtimes, written for both technical and functional stakeholders.
 - [`plans/2026-06-06-admin-runtime-governance-phases-7-11.md`](./plans/2026-06-06-admin-runtime-governance-phases-7-11.md) — proposed later phases for Runtime Connectors, Approval Policy, Workflow Routine Admin, workspace run history, Browser Evidence, Research Runs, Costs / Usage, and Quota.
 - [`RUNTIME_CONNECTOR_V2.md`](./RUNTIME_CONNECTOR_V2.md) — external runtime connector registration, heartbeat, and event ingestion.
+- [`CAPABILITY_REGISTRY_OPERATOR_GUIDE.md`](./CAPABILITY_REGISTRY_OPERATOR_GUIDE.md) — operator SOP for adding OSS capabilities, approval gates, smoke evidence, agent assignment, and rollback/disable procedures.
+- [`OWNED_APP_CAPABILITY_SPEC.md`](./OWNED_APP_CAPABILITY_SPEC.md) — `source_type: owned_app` standard for governed first-party apps such as NetWorth Tracker, Mission Control, Nexius Academy site/funnel, SGQR/PayNow tools, and lead dashboards.
+- [`AI_WORKFORCE_TEAM_MAP.md`](./AI_WORKFORCE_TEAM_MAP.md) — canonical Melkizac/default and specialist-agent role map covering ownership, non-ownership, approval boundaries, handoff triggers, and HMC/Kanban visibility standards.
+- [`RESEARCH_TO_DELIVERABLE_WORKFLOW.md`](./RESEARCH_TO_DELIVERABLE_WORKFLOW.md) — Melkizac operator SOP for chat-detected learning, source Q&A, deck/report/proposal generation, source expansion, revisions, blockers, approvals, and artifact return.
+- [`RESEARCH_TO_DELIVERABLE_PROJECT_CONTRACT.md`](./RESEARCH_TO_DELIVERABLE_PROJECT_CONTRACT.md) — implementation contract for research-to-deliverable Projects, sources, outputs, evidence, approval policy, and task graph shape.
+- [`AGENT_OS_ROLLOUT_OPERATOR_GUIDE.md`](./AGENT_OS_ROLLOUT_OPERATOR_GUIDE.md) — Agent OS rollout status, operator guide, admin verification checklist, rollback plan, DB migration notes, and known limitations.
 
 ## 1. What Mission Control is
 

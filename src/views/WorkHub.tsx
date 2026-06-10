@@ -46,7 +46,7 @@ export function WorkHub() {
 
   const tiles: WorkTile[] = [
     { title: "Start New Work", detail: "Use the manual front door when chat needs structured inputs or routing preview.", target: "delegate-work", metric: "Ask", action: "Delegate work" },
-    { title: "Open Work", detail: "Tasks, blockers, and work that still needs movement.", target: "board", metric: board?.summary.queued ?? board?.tasks?.length ?? "—", action: "Open board" },
+    { title: "Open Work", detail: "Tasks, blockers, and work that still needs movement.", target: "board", metric: board ? (board.summary.triage + board.summary.todo + board.summary.scheduled + board.summary.ready + board.summary.blocked + board.summary.review) : "—", action: "Open board" },
     { title: "Running Work", detail: "Active agent work and live operator-tracked jobs.", target: "board", metric: board?.summary.running ?? 0, action: "Track running" },
     { title: "Completed Work", detail: "Finished work with result drawers, artifacts, and proof.", target: "board", metric: board?.summary.done ?? 0, action: "Review results" },
     { title: "Playbooks", detail: "Reusable SME workflows that chat can recommend and launch.", target: "workflow-library", metric: workflows?.workflows?.length ?? workflows?.summary?.total ?? "—", action: "Browse playbooks" },

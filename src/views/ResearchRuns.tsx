@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CreateResearchRunRequest, ResearchRun, ResearchRunsResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { Icon } from "../components/Icon";
+import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh";
 
 const client = new HttpHermesClient();
 
@@ -46,16 +47,14 @@ export function ResearchRuns() {
   const [creating, setCreating] = useState(false);
   const [createdNotice, setCreatedNotice] = useState<string | null>(null);
 
-  async function load() {
-    try {
-      setError(null);
-      const next = await client.listResearchRuns();
-      setPayload(next);
-      setSelectedId((current) => (current && next.runs.some((run) => run.id === current) ? current : null));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load research runs");
-    }
-  }
+  const load = useCallback(async () => {
+    setError(null);
+    const next = await client.listResearchRuns();
+    setPayload(next);
+    setSelectedId((current) => (current && next.runs.some((run) => run.id === current) ? current : null));
+  }, []);
+
+  const refreshState = useRealtimeRefresh(load, [], { pollMs: 15_000, staleAfterMs: 45_000 });
 
   async function createRun() {
     if (!title.trim() || !objective.trim() || !selectedLanes.length) {
@@ -85,9 +84,6 @@ export function ResearchRuns() {
     }
   }
 
-  useEffect(() => {
-    void load();
-  }, []);
 
   useEffect(() => {
     if (!detailOpen) return;
@@ -113,9 +109,12 @@ export function ResearchRuns() {
           <h1>Research command center</h1>
           <p>Track wide research runs as parallel agent lanes with source coverage, confidence, blockers, synthesis progress, and final recommendation evidence before operators act on findings.</p>
         </div>
-        <button className="task-icon-action dark" aria-label="Refresh research runs" title="Refresh research runs" onClick={() => void load()}>
-          <Icon name="refresh" size={18} />
-        </button>
+        <div className="task-hero-actions">
+          <span className={`realtime-status ${refreshState.stale ? "stale" : refreshState.refreshing ? "refreshing" : "live"}`}>{refreshState.statusLabel}</span>
+          <button className="task-icon-action dark" aria-label="Refresh research runs" title="Refresh research runs" disabled={refreshState.refreshing} onClick={() => void refreshState.refresh("manual")}>
+            <Icon name="refresh" size={18} />
+          </button>
+        </div>
       </header>
 
       <section className="skills-metrics research-metrics" aria-label="Research run metrics">
@@ -126,7 +125,8 @@ export function ResearchRuns() {
         <article className="skills-metric"><span>Evidence</span><b>{summary?.evidence_items ?? 0}</b><small>Citations, screenshots, reports</small></article>
       </section>
 
-      {error && <div className="skills-error">{error}</div>}
+      {(error || refreshState.error) && <div className="skills-error">{error || refreshState.error}</div>}
+      {refreshState.initialLoading && <div className="empty">Loading real research run and artifact data…</div>}
       {createdNotice && <div className="skills-success">{createdNotice}</div>}
 
       <section className="research-create-panel" data-testid="research-create-form" aria-label="Create wide research run">

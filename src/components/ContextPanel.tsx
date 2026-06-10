@@ -3,6 +3,7 @@ import { useStore } from "../services/store";
 import { Icon } from "./Icon";
 import type { Agent, CapabilityMatrixCapability, CapabilityMatrixRow, ConfigFile } from "../types";
 import { FileEditorDrawer } from "./FileEditorDrawer";
+import { AgentDetailDrawerShell, type AgentDrawerTab } from "./AgentDetailDrawerShell";
 
 type Tab = "overview" | "profile" | "identity" | "tools" | "skills" | "output" | "tasks";
 
@@ -107,49 +108,28 @@ export function ContextPanel({
     acc[key] = [...(acc[key] ?? []), skill];
     return acc;
   }, {});
+  const panelTabs: AgentDrawerTab[] = (["overview", "profile", "identity", "tools", "skills", "output", "tasks"] as Tab[]).map((t) => ({
+    id: t,
+    label: t === "identity" ? "Identity" : t[0].toUpperCase() + t.slice(1),
+    count: t === "identity" ? agent.files.length : t === "tools" ? (agent.tools?.length ?? 0) : t === "skills" ? agent.skills.length : t === "output" ? agent.artifacts.length : t === "tasks" ? agent.tasks.length : undefined,
+  }));
 
   return (
-    <aside className={"ctx" + (drawer ? " agent-detail-drawer" : "")} aria-label={`Selected agent details for ${agent.name}`}>
-      <div className="ctx-head agent-drawer-head">
-        <div>
-          <div className="sec-l tight">Selected agent</div>
-          <div className="ctx-title">{agent.name}</div>
-          <div className="ctx-sub">
-            {agentGroupLabel(agent.squad)} · {agent.id}
-          </div>
-        </div>
-        {drawer ? (
-          <button className="agent-drawer-close" onClick={onClose} title="Close selected agent details" aria-label="Close selected agent details">
-            ×
-          </button>
-        ) : (
-          <button className="ctx-toggle" onClick={onToggle} title="Collapse selected agent details">
-            ⟩
-          </button>
-        )}
-      </div>
-
-      <div className="tabs tabs-wrap">
-        {(["overview", "profile", "identity", "tools", "skills", "output", "tasks"] as Tab[]).map((t) => (
-          <button key={t} className={"tab" + (tab === t ? " on" : "")} onClick={() => setTab(t)}>
-            {t === "identity" ? "Identity" : t[0].toUpperCase() + t.slice(1)}
-          </button>
-        ))}
-      </div>
-
-      <div className="ctxbody scroll">
+    <AgentDetailDrawerShell
+      className={"ctx" + (drawer ? " agent-detail-drawer" : "")}
+      title={agent.name}
+      avatar={<span className="agent-detail-avatar" style={{ background: agent.color }}>{agent.initials}</span>}
+      eyebrow="Selected agent"
+      subtitle={`${agentGroupLabel(agent.squad)} · ${agent.id}`}
+      tabs={panelTabs}
+      activeTab={tab}
+      onTabChange={(next) => setTab(next as Tab)}
+      onClose={drawer ? onClose : undefined}
+      ariaLabel={`Selected agent details for ${agent.name}`}
+      bodyClassName="ctxbody scroll"
+    >
         {tab === "overview" && (
           <>
-            <div className="agent-brief">
-              <span className="av" style={{ background: agent.color }}>
-                {agent.initials}
-              </span>
-              <div>
-                <b>{agent.name}</b>
-                <p>{agent.activity}</p>
-              </div>
-            </div>
-
             <div className="sec-l">Runtime</div>
             <Info k="Model" v={<span className="mono">{agent.model}</span>} />
             <Info k="Profile" v={<span className="mono">{agent.profilePath}</span>} />
@@ -399,10 +379,8 @@ export function ContextPanel({
             ))}
           </>
         )}
-      </div>
-
       {editing && <FileEditorDrawer file={editing} onClose={() => setEditing(null)} />}
-    </aside>
+    </AgentDetailDrawerShell>
   );
 }
 
@@ -420,6 +398,7 @@ function CapabilityMatrixSummary({ row, loading, error, message }: { row: Capabi
       {row ? (
         <div className="tool-cats">
           <span className="tool-chip">Assigned {row.summary.assigned}</span>
+          <span className="tool-chip">Inherited {row.summary.inherited ?? 0}</span>
           <span className="tool-chip">Available {row.summary.available}</span>
           <span className="tool-chip">Blocked {row.summary.blocked}</span>
           <span className="tool-chip">Registry {row.summary.registry}</span>
@@ -436,20 +415,22 @@ function CapabilityMatrixSummary({ row, loading, error, message }: { row: Capabi
 function CapabilityMatrixCard({ capability, canEdit, onAction }: { capability: CapabilityMatrixCapability; canEdit: boolean; onAction: () => void }) {
   const blocked = Boolean(capability.actionableBlocker || (capability.approvalRequired && capability.approvalStatus !== "approved"));
   const label = capability.displayName || capability.name || capability.id;
+  const scopeLabel = capability.assignmentScope === "inherited" || capability.inherited ? "inherited" : capability.assigned ? "assigned" : "available";
   return (
     <div className="tool-card">
       <div className="tool-card-head">
         <div>
           <div className="fn">{label}</div>
-          <div className="fd">{capability.type || "capability"} · {capability.status || "registered"} · {capability.healthState || "unknown"}</div>
+          <div className="fd">{capability.type || "capability"} · {capability.sourceLabel || capability.source || "runtime"} · {capability.status || "registered"} · {capability.healthState || "unknown"}</div>
         </div>
-        <span className={"badge " + (blocked ? "b-wait" : capability.assigned ? "b-work" : "b-idle")}>{blocked ? "governed" : capability.assigned ? "assigned" : "available"}</span>
+        <span className={"badge " + (blocked ? "b-wait" : scopeLabel === "assigned" ? "b-work" : scopeLabel === "inherited" ? "b-info" : "b-idle")}>{blocked ? "governed" : scopeLabel}</span>
       </div>
       {capability.description && <p className="tool-desc">{capability.description}</p>}
       <div className="tool-cats">
         {(capability.riskLevels ?? []).map((risk) => <span className="tool-chip" key={risk}>{risk}</span>)}
         {capability.approvalRequired && <span className="tool-chip">approval {capability.approvalStatus || "required"}</span>}
         {capability.assignmentUnit && <span className="tool-chip">unit {capability.assignmentUnit}</span>}
+        {scopeLabel === "inherited" && <span className="tool-chip">profile/runtime inherited</span>}
       </div>
       {blocked && <p className="mini-note">{String((capability.actionableBlocker as { message?: unknown } | null)?.message || capability.policyGate || "Governance approval is required before assignment changes.")}</p>}
       {canEdit && capability.source === "registry" ? (

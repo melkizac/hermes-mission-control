@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { InboxAction, InboxItem, InboxResponse, InboxStatus } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
+import { queryCacheEventName } from "../services/queryCache";
 import { parseMissionControlDeepLink } from "../services/deepLinks";
 import { formatSingaporeTime } from "../utils/time";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
@@ -25,8 +26,10 @@ export function Approvals() {
   const [error, setError] = useState<string | null>(null);
   const deepLinkedApprovalId = useMemo(() => parseMissionControlDeepLink(window.location).approvalId ?? null, []);
 
-  const load = async () => {
+  const load = async (mode: "initial" | "manual" | "event" = "initial") => {
+    const previousRefreshMode = window.__hmcRefreshMode;
     try {
+      window.__hmcRefreshMode = mode;
       setLoading(true);
       const next = await client.listInbox({ q, status });
       setData(next);
@@ -37,6 +40,7 @@ export function Approvals() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load approval gates");
     } finally {
+      window.__hmcRefreshMode = previousRefreshMode;
       setLoading(false);
     }
   };
@@ -44,6 +48,12 @@ export function Approvals() {
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 180);
     return () => window.clearTimeout(timer);
+  }, [q, status]);
+
+  useEffect(() => {
+    const onQueryCacheUpdated = () => void load("event");
+    window.addEventListener(queryCacheEventName(), onQueryCacheUpdated);
+    return () => window.removeEventListener(queryCacheEventName(), onQueryCacheUpdated);
   }, [q, status]);
 
   useEffect(() => {
@@ -108,7 +118,7 @@ export function Approvals() {
           <h1>Approval Gates</h1>
           <p>Approve or reject external-facing and irreversible agent actions. Email alerts, blockers, and “needs attention” items belong on the Task Board instead.</p>
         </div>
-        <button className="task-icon-action dark" aria-label="Refresh approvals" title="Refresh approvals" onClick={() => void load()}>
+        <button className="task-icon-action dark" aria-label="Refresh approvals" title="Refresh approvals" onClick={() => void load("manual")}>
           <Icon name="refresh" size={18} />
         </button>
       </header>

@@ -57,44 +57,86 @@ export function RiskBadges({ risks }: { risks: RiskLevel[] }) {
   );
 }
 
-export function ArtifactCard({ artifact }: { artifact: MissionArtifact }) {
-  const href = artifact.url || artifact.path || undefined;
-  const body = (
-    <>
-      <div className="mc-artifact-icon">{artifact.kind.slice(0, 1).toUpperCase()}</div>
-      <div className="mc-artifact-main">
-        <b>{artifact.title}</b>
-        {artifact.summary && <p>{artifact.summary}</p>}
-        <span>{artifact.kind} · {compactDate(artifact.createdAt)}</span>
-      </div>
-    </>
-  );
+function artifactFormatLabel(artifact: MissionArtifact) {
+  return (artifact.format || artifact.mime || artifact.kind || "artifact").toString().replace(/[-_]/g, " ").toUpperCase();
+}
 
-  if (href) {
-    return (
-      <a className="mc-artifact-card" href={href} target={href.startsWith("http") ? "_blank" : undefined} rel="noreferrer" aria-label="Open artifact">
-        {body}
-      </a>
-    );
-  }
-  return <div className="mc-artifact-card" aria-label="Open artifact">{body}</div>;
+function artifactQaClass(status?: string) {
+  const value = (status || "not-run").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  return `qa-${value || "not-run"}`;
+}
+
+export function ArtifactCard({ artifact }: { artifact: MissionArtifact }) {
+  const previewHref = artifact.previewUrl || artifact.url || undefined;
+  const downloadHref = artifact.downloadUrl || artifact.url || undefined;
+  const driveHref = artifact.driveUrl || (artifact.url?.includes("drive.google.com") ? artifact.url : undefined);
+  const qaStatus = artifact.qaStatus || "not-run";
+  const sizeLabel = artifact.sizeBytes ? `${Math.max(1, Math.round(artifact.sizeBytes / 1024))} KB` : "size unknown";
+
+  return (
+    <article className={`mc-artifact-card ${artifact.format || artifact.kind}`} aria-label={`Artifact ${artifact.title}`}>
+      <div className="mc-artifact-icon">{artifactFormatLabel(artifact).slice(0, 1)}</div>
+      <div className="mc-artifact-main">
+        <div className="mc-artifact-title-row">
+          <b>{artifact.title}</b>
+          <span className={`mc-artifact-qa ${artifactQaClass(qaStatus)}`}>{qaStatus}</span>
+        </div>
+        {artifact.summary && <p>{artifact.summary}</p>}
+        {artifact.preview && <pre className="mc-artifact-preview">{artifact.preview}</pre>}
+        <div className="mc-artifact-meta">
+          <span>{artifactFormatLabel(artifact)}</span>
+          <span>{artifact.version || "v1"}</span>
+          <span>{sizeLabel}</span>
+          <span>{compactDate(artifact.createdAt)}</span>
+        </div>
+        <div className="mc-artifact-actions" aria-label="Artifact actions">
+          {previewHref ? <a href={previewHref} target="_blank" rel="noreferrer">Preview</a> : <button type="button" disabled>Preview</button>}
+          {downloadHref ? <a href={downloadHref} target="_blank" rel="noreferrer" download>Download</a> : <button type="button" disabled>Download</button>}
+          {driveHref && <a href={driveHref} target="_blank" rel="noreferrer">Drive</a>}
+          <button type="button" disabled title="Regenerate is queued through the task workflow">Regenerate</button>
+          <button type="button" disabled title="Revision requests are captured as task comments">Revise</button>
+        </div>
+      </div>
+    </article>
+  );
 }
 
 export function EvidenceTimeline({ evidence }: { evidence: EvidenceRecord[] }) {
+  const counts = evidence.reduce((acc, item) => {
+    const key = item.type || item.kind || "evidence";
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
   return (
-    <ol className="mc-evidence-timeline" aria-label="Evidence timeline">
-      {evidence.length === 0 && <li className="empty">No evidence has been attached yet.</li>}
-      {evidence.map((item) => (
-        <li key={item.id}>
-          <span className="mc-evidence-dot" />
-          <div>
-            <b>{item.title}</b>
-            {item.summary && <p>{item.summary}</p>}
-            <small>{item.kind} · {item.source} · {compactDate(item.createdAt)}{item.redacted ? " · redacted" : ""}</small>
-          </div>
-        </li>
-      ))}
-    </ol>
+    <div className="mc-evidence-wrap">
+      {evidence.length > 0 && (
+        <div className="mc-evidence-summary" aria-label="Evidence summary by type">
+          {Object.entries(counts).slice(0, 6).map(([key, value]) => <span key={key}>{key.replace(/[_-]/g, " ")} · {value}</span>)}
+        </div>
+      )}
+      <ol className="mc-evidence-timeline" aria-label="Evidence timeline">
+        {evidence.length === 0 && <li className="empty">No evidence has been attached yet.</li>}
+        {evidence.map((item) => {
+          const timestamp = item.createdAt || item.created_at;
+          const reference = item.reference || item.runId || item.taskId || item.artifactId || item.sourceId;
+          return (
+            <li key={item.id}>
+              <span className="mc-evidence-dot" />
+              <div>
+                <div className="mc-evidence-title-row">
+                  <b>{item.title}</b>
+                  <span>{item.type || item.kind}</span>
+                </div>
+                {item.summary && <p>{item.summary}</p>}
+                <small>{item.kind} · {item.source} · {compactDate(timestamp)}{reference ? ` · ref: ${reference}` : ""}{item.verificationStatus ? ` · ${item.verificationStatus}` : ""}{item.redacted ? " · redacted" : ""}</small>
+                {item.checks && item.checks.length > 0 && <div className="mc-evidence-checks">{item.checks.map((check) => <em key={check}>{check}</em>)}</div>}
+                {item.url && <a className="mc-evidence-link" href={item.url} target="_blank" rel="noreferrer">Open reference</a>}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
   );
 }
 

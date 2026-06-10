@@ -67,7 +67,7 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
     items: [
       { key: "profile", label: "Profile", icon: "profile" },
       { key: "settings", label: "Settings", icon: "settings" },
-      { key: "costs", label: "Usage remaining", icon: "usage" },
+      { key: "usage", label: "Rate limits", icon: "usage" },
       { href: "/docs#daily-flow", label: "Docs", icon: "file" },
       { action: "logout", label: "Log out", icon: "logout" },
     ],
@@ -93,9 +93,7 @@ const adminConsoleGroups: NavGroup[] = [
       { key: "workflow-library", label: "Workflow Library", icon: "skills" },
       { key: "research-runs", label: "Research Runs", icon: "audit" },
       { key: "models", label: "Model Router", icon: "modelRouter" },
-      { key: "tools", label: "Tools", icon: "setup" },
-      { key: "skills", label: "Skills", icon: "skills" },
-      { key: "capabilities", label: "Capability Registry", icon: "setup" },
+      { key: "capabilities", label: "Capabilities", icon: "setup" },
       { key: "automations", label: "Workflow Routine Admin", icon: "automations" },
     ],
   },
@@ -128,6 +126,12 @@ type RailStatus = {
   gateway?: { running?: boolean };
 };
 
+type UsageWindow = { label?: string; percent_used?: number; remaining_percent?: number; reset_label?: string };
+type UsageRemainingSummary = {
+  daily?: UsageWindow;
+  weekly?: UsageWindow;
+};
+
 async function requestStatus(): Promise<RailStatus> {
   const url = `${window.location.protocol}//${window.location.host}/api/status`;
   const res = await fetch(url, { credentials: "include", headers: { Accept: "application/json" } });
@@ -135,11 +139,45 @@ async function requestStatus(): Promise<RailStatus> {
   return res.json() as Promise<RailStatus>;
 }
 
+async function requestUsageRemaining(): Promise<UsageRemainingSummary | null> {
+  const url = `${window.location.protocol}//${window.location.host}/api/costs?days=30`;
+  const res = await fetch(url, { credentials: "include", headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(res.statusText);
+  const data = await res.json() as { model_usage?: UsageRemainingSummary };
+  return data.model_usage ?? null;
+}
+
+function remainingPercent(window?: UsageWindow) {
+  const explicit = Number(window?.remaining_percent);
+  if (Number.isFinite(explicit)) return `${Math.max(0, Math.min(100, Math.round(explicit)))}%`;
+  if (window?.percent_used === undefined || window?.percent_used === null) return "—";
+  const used = Number(window.percent_used);
+  if (!Number.isFinite(used)) return "—";
+  return `${Math.max(0, Math.min(100, Math.round(100 - used)))}%`;
+}
+
+function UsageRemainingPeek({ usage }: { usage: UsageRemainingSummary | null }) {
+  const rows = [usage?.daily, usage?.weekly].filter(Boolean) as UsageWindow[];
+  return (
+    <div className="settings-usage-peek" aria-label="Rate limits summary">
+      {(rows.length ? rows : [{ label: "5h" }, { label: "Weekly" }]).map((row) => (
+        <div className="settings-usage-row" key={row.label}>
+          <b>{row.label}</b>
+          <span>{remainingPercent(row)}</span>
+          <em>{row.reset_label || "—"}</em>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function NavRail() {
   const { view, setView, uiMode } = useStore();
   const [status, setStatus] = useState<RailStatus | null>(null);
+  const [usageRemaining, setUsageRemaining] = useState<UsageRemainingSummary | null>(null);
   const [workforceMenuOpen, setWorkforceMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [usagePeekOpen, setUsagePeekOpen] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -151,19 +189,35 @@ export function NavRail() {
         if (alive) setStatus(null);
       }
     };
-    void load();
-    const timer = window.setInterval(load, 15000);
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 10000);
+    const interval = window.setInterval(load, 15000);
     return () => {
       alive = false;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
+      window.clearInterval(interval);
     };
   }, []);
+
+  useEffect(() => {
+    if (!settingsOpen || !usagePeekOpen) return;
+    let alive = true;
+    requestUsageRemaining()
+      .then((next) => { if (alive) setUsageRemaining(next); })
+      .catch(() => { if (alive) setUsageRemaining(null); });
+    return () => { alive = false; };
+  }, [settingsOpen, usagePeekOpen]);
+
+  useEffect(() => {
+    if (!settingsOpen) setUsagePeekOpen(false);
+  }, [settingsOpen]);
 
   const gatewayOnline = status?.gateway?.running ?? true;
   const visibleGroups = uiMode === "admin" ? adminConsoleGroups : simplifiedWorkspaceGroups;
   const workspaceSystemGroup = simplifiedWorkspaceGroups.find((group) => group.system);
   const workspaceSystemItems = workspaceSystemGroup?.items ?? [];
-  const settingsActive = view === "profile" || view === "settings" || view === "costs";
+  const settingsActive = view === "profile" || view === "settings" || view === "usage";
   const workforceSelectorItems = simplifiedWorkspaceGroups
     .find((group) => group.label === "Workforce")
     ?.items.filter((item): item is NavRouteItem => isRouteItem(item) && workforceSelectorKeys.includes(item.key)) ?? [];
@@ -295,6 +349,35 @@ export function NavRail() {
                       setSettingsOpen(false);
                       void handleLogout();
                     };
+                if (isRouteItem(it) && it.key === "usage") {
+                  return (
+                    <div key={key}>
+                      {index === 2 && <div className="settings-menu-divider" />}
+                      <div className={"settings-menu-row" + (active ? " on" : "")}>
+                        <button
+                          className="settings-menu-item settings-menu-primary"
+                          onClick={onClick}
+                          role="menuitem"
+                        >
+                          <Icon name={it.icon} size={17} />
+                          {it.label}
+                        </button>
+                        <button
+                          className={"settings-menu-expand" + (usagePeekOpen ? " open" : "")}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setUsagePeekOpen((open) => !open);
+                          }}
+                          aria-label={usagePeekOpen ? "Hide rate limits details" : "Show rate limits details"}
+                          aria-expanded={usagePeekOpen}
+                        >
+                          <Icon name="chevronDown" size={15} />
+                        </button>
+                      </div>
+                      {usagePeekOpen && <UsageRemainingPeek usage={usageRemaining} />}
+                    </div>
+                  );
+                }
                 return (
                   <div key={key}>
                     {index === 2 && <div className="settings-menu-divider" />}

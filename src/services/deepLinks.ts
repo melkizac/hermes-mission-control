@@ -28,6 +28,7 @@ const allowedViews = new Set<ViewKey>([
   "approvals",
   "automations",
   "audit",
+  "usage",
   "costs",
   "models",
   "users-workspaces",
@@ -46,7 +47,12 @@ export function parseMissionControlDeepLink(input: string | URL | Location = win
   const rawView = params.get("view") as ViewKey | null;
   const target: MissionControlDeepLinkTarget = {};
   if (rawView && allowedViews.has(rawView)) target.view = rawView;
-  if (!target.view && url.pathname.replace(/\/$/, "") === "/admin") target.view = "settings";
+  const normalizedPath = url.pathname.replace(/\/$/, "") || "/";
+  if (!target.view) {
+    const appPathView = normalizedPath.startsWith("/app/") ? normalizedPath.slice("/app/".length) as ViewKey : null;
+    if (appPathView && allowedViews.has(appPathView)) target.view = appPathView;
+  }
+  if (!target.view && normalizedPath === "/admin") target.view = "settings";
   const taskId = params.get("task") || params.get("task_id");
   const approvalId = params.get("approval") || params.get("approval_id");
   const agentId = params.get("agent") || params.get("agent_id");

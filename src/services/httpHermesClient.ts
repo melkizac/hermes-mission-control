@@ -1,7 +1,14 @@
-import type { Agent, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, CapabilityAssignmentMutationResponse, CapabilityAssessmentResponse, CapabilityIntakeMutationResponse, CapabilityIntakeResponse, CapabilityMatrixResponse, CapabilityRegistryResponse, CapabilitySandboxResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionPayload, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, ResearchRunCreateRequest, ResearchRunCreateResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillFileResponse, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
+import type { Agent, AgentHandoffMutationResponse, AgentHandoffResponse, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, CapabilityAssignmentMutationResponse, CapabilityAssessmentResponse, CapabilityIntakeMutationResponse, CapabilityIntakeResponse, CapabilityMatrixResponse, CapabilityRegistryResponse, CapabilitySandboxResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionPayload, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, ResearchRunCreateRequest, ResearchRunCreateResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillFileResponse, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
+import { cachedJsonRequest, invalidateQueryCache } from "./queryCache";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+declare global {
+  interface Window {
+    __hmcRefreshMode?: string;
+  }
+}
+
+async function rawJsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${window.location.protocol}//${window.location.host}${path}`;
   const res = await fetch(url, {
     credentials: "include",
@@ -17,6 +24,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(detail);
   }
   return data as T;
+}
+
+function isCacheableRequest(init?: RequestInit) {
+  const method = String(init?.method ?? "GET").toUpperCase();
+  return method === "GET" && !init?.signal;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if (!isCacheableRequest(init)) {
+    const data = await rawJsonRequest<T>(path, init);
+    if (String(init?.method ?? "GET").toUpperCase() !== "GET") invalidateQueryCache(/^GET /);
+    return data;
+  }
+  const force = ["manual", "poll", "focus", "event"].includes(window.__hmcRefreshMode || "");
+  return cachedJsonRequest<T>(`GET ${path}`, () => rawJsonRequest<T>(path, init), { force });
 }
 
 const sleep = (ms: number, signal?: AbortSignal) =>
@@ -93,23 +115,22 @@ export class HttpHermesClient implements HermesClient {
     while (Date.now() < deadline) {
       await sleep(pollDelays[Math.min(pollIndex, pollDelays.length - 1)], options.signal);
       pollIndex += 1;
-      const agent = await this.getAgent(agentId);
-      const requestMessages = (agent?.messages ?? []).filter((m) => m.requestId === requestId);
-      const errorMessage = requestMessages.find((m) => m.role === "system" && /failed|interrupted|stopped/i.test(m.text ?? ""));
-      if (errorMessage) throw new Error(errorMessage.text || "Message processing failed");
+      // Use the lightweight request-status endpoint for send polling. Full
+      // /api/agents/<id> detail loads are intentionally expensive and can be
+      // competing with background dashboard refreshes; tying the composer to
+      // those reads is what made a trivial “Hi” wait ~20s in the UI.
+      const status = await rawJsonRequest<{ messages?: Message[]; processingRequests?: string[] }>(
+        `/api/agents/${encodeURIComponent(agentId)}/messages/status?requestId=${encodeURIComponent(requestId)}`,
+      );
+      const requestMessages = (status?.messages ?? []).filter((m) => m.requestId === requestId);
       const reply = requestMessages.find((m) => m.role === "agent");
       const requestedUser = requestMessages.find((m) => m.role === "user");
       if (reply) {
         return [requestedUser, reply].filter(Boolean) as Message[];
       }
-      const replyAnchorTs = requestedUser?.ts ?? startedAt;
-      const profileBackedReply = (agent?.messages ?? []).find(
-        (m) => m.role === "agent" && m.source === "cli" && !m.requestId && (m.ts ?? 0) >= replyAnchorTs - 2,
-      );
-      if (profileBackedReply) return [requestedUser, profileBackedReply].filter(Boolean) as Message[];
-      const lateReply = (agent?.messages ?? []).find((m) => m.role === "agent" && (m.ts ?? 0) >= startedAt);
-      if (lateReply) return [lateReply];
-      const activeRequests = new Set(agent?.processingRequests ?? []);
+      const errorMessage = requestMessages.find((m) => m.role === "system" && /failed|interrupted|stopped/i.test(m.text ?? ""));
+      if (errorMessage) throw new Error(errorMessage.text || "Message processing failed");
+      const activeRequests = new Set(status?.processingRequests ?? []);
       const requestKnown = requestMessages.length > 0;
       const backendNoLongerRunning = requestKnown && !activeRequests.has(requestId) && Date.now() - startedAt * 1000 > 10000;
       if (backendNoLongerRunning) {
@@ -275,7 +296,7 @@ export class HttpHermesClient implements HermesClient {
     return this.automationAction(id, "enable_funnel_routine", payload);
   }
 
-  async listCapabilities(filters?: { q?: string; type?: string; status?: string; risk?: string; health?: string; assigned?: string }): Promise<CapabilityRegistryResponse> {
+  async listCapabilities(filters?: { q?: string; type?: string; status?: string; risk?: string; health?: string; assigned?: string; category?: string }): Promise<CapabilityRegistryResponse> {
     const params = new URLSearchParams();
     if (filters?.q) params.set("q", filters.q);
     if (filters?.type) params.set("type", filters.type);
@@ -283,6 +304,7 @@ export class HttpHermesClient implements HermesClient {
     if (filters?.risk) params.set("risk", filters.risk);
     if (filters?.health) params.set("health", filters.health);
     if (filters?.assigned) params.set("assigned", filters.assigned);
+    if (filters?.category) params.set("category", filters.category);
     const suffix = params.toString() ? `?${params.toString()}` : "";
     return request<CapabilityRegistryResponse>(`/api/capabilities${suffix}`);
   }
@@ -407,9 +429,10 @@ export class HttpHermesClient implements HermesClient {
     return request<WindowsGatewayConfigResponse>("/api/windows-gateway/config", { method: "POST", body: JSON.stringify(input) });
   }
 
-  async getCosts(filters?: { days?: number }): Promise<CostsResponse> {
+  async getCosts(filters?: { days?: number; model?: string }): Promise<CostsResponse> {
     const params = new URLSearchParams();
     if (filters?.days) params.set("days", String(filters.days));
+    if (filters?.model) params.set("model", filters.model);
     const suffix = params.toString() ? `?${params.toString()}` : "";
     return request<CostsResponse>(`/api/costs${suffix}`);
   }
@@ -531,18 +554,36 @@ export class HttpHermesClient implements HermesClient {
     return request<MemoryContextResponse>(`/api/memory${suffix}`);
   }
 
-  async listBoard(filters?: { q?: string; status?: BoardStatus | ""; assignee?: string; project?: string }): Promise<BoardResponse> {
+  async listBoard(filters?: { q?: string; status?: BoardStatus | ""; assignee?: string; project?: string; board?: string }): Promise<BoardResponse> {
     const params = new URLSearchParams();
     if (filters?.q) params.set("q", filters.q);
     if (filters?.status) params.set("status", filters.status);
     if (filters?.assignee) params.set("assignee", filters.assignee);
     if (filters?.project) params.set("project", filters.project);
+    if (filters?.board) params.set("board", filters.board);
     const suffix = params.toString() ? `?${params.toString()}` : "";
     return request<BoardResponse>(`/api/tasks${suffix}`);
   }
 
   async getTaskResult(id: string): Promise<TaskResultResponse> {
     return request<TaskResultResponse>(`/api/tasks/${encodeURIComponent(id)}/result`);
+  }
+
+  async listAgentHandoffs(filters?: { agent?: string; task_id?: string; status?: string }): Promise<AgentHandoffResponse> {
+    const params = new URLSearchParams();
+    if (filters?.agent) params.set("agent", filters.agent);
+    if (filters?.task_id) params.set("task_id", filters.task_id);
+    if (filters?.status) params.set("status", filters.status);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request<AgentHandoffResponse>(`/api/agent-handoffs${suffix}`);
+  }
+
+  async createAgentHandoff(input: Partial<{ from_agent: string; to_agent: string; task_id: string; objective: string; context: string; requested_output: string; risk: string; status: string; evidence: Array<Record<string, unknown>> }>): Promise<AgentHandoffMutationResponse> {
+    return request<AgentHandoffMutationResponse>("/api/agent-handoffs", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  async updateAgentHandoff(id: string, input: Partial<{ objective: string; context: string; requested_output: string; risk: string; status: string; evidence: Array<Record<string, unknown>> }>): Promise<AgentHandoffMutationResponse> {
+    return request<AgentHandoffMutationResponse>(`/api/agent-handoffs/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(input) });
   }
 
   async getOperatorLinkPreview(filters?: { task?: string; approval?: string; agent?: string }): Promise<OperatorLinkPreviewResponse> {

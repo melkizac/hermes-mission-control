@@ -1,4 +1,4 @@
-import type { Agent, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, CapabilityAssignmentMutationResponse, CapabilityMatrixResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, CreateResearchRunRequest, CreateResearchRunResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse, WorkspaceRunDetailResponse, WorkspaceRunHistoryResponse } from "../types";
+import type { Agent, AgentHandoffMutationResponse, AgentHandoffResponse, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, CapabilityAssignmentMutationResponse, CapabilityMatrixResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, CreateResearchRunRequest, CreateResearchRunResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse, WorkspaceRunDetailResponse, WorkspaceRunHistoryResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
 import { seedAgents, seedApprovals } from "../data/mockData";
 
@@ -7,6 +7,64 @@ const delay = (ms = 180) => new Promise((r) => setTimeout(r, ms));
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 const colors = ["#0e8f84", "#3b6fe0", "#e8941b", "#7b8494", "#dc4040", "#8b5cf6"];
+
+function mockResearchSourceTask(id = "mock-r2d-sources") {
+  const now = "2026-06-08T16:20:00+08:00";
+  return {
+    id,
+    title: "Research-to-deliverable source cockpit fixture",
+    body: "Mock project-aware drawer payload with file, URL, video, and audio source states.",
+    assignee: "Melkizac",
+    status: "queued",
+    raw_status: "queued",
+    priority: 70,
+    priority_label: "high",
+    created_by: "mock",
+    created_at: now,
+    updated_at: now,
+    started_at: null,
+    completed_at: null,
+    workspace_kind: "scratch",
+    workspace_path: null,
+    branch_name: null,
+    tenant: "project:mock-research-to-deliverable",
+    result: JSON.stringify({ summary: { current_stage_label: "Sources processing", progress_percent: 42, next_action: "Review source health and reprocess any partial extraction." } }),
+    result_details: {
+      status: "queued",
+      objective: "Generate editable training materials from mixed source types.",
+      workflow_type: "research_to_deliverable",
+      summary: { current_stage_label: "Sources processing", progress_percent: 42, next_action: "Review source health and reprocess any partial extraction." },
+      sources: [
+        { id: "src-file-brief", type: "file", title: "SME AI Workforce briefing.pdf", uri: "/uploads/mock/sme-ai-workforce.pdf", processing: { status: "ready", pages: 18 }, citation: { health: "good coverage" }, extractedTextPreview: "The briefing defines AI coworkers, governance controls, and SME adoption patterns.", extractedTextUrl: "/api/mock/sources/src-file-brief/text" },
+        { id: "src-url-gov", type: "url", title: "AI governance reference", url: "https://example.com/ai-governance", status: "processing", citationHealth: "pending" },
+        { id: "src-video-class", type: "video", title: "Training class recording", uri: "https://video.example/mock-class.mp4", processingStatus: "partial", citation: { health: "partial transcript" }, extracted_text_preview: "Transcript available for the first 24 minutes; speaker labels need cleanup." },
+        { id: "src-audio-qna", type: "audio", title: "Customer Q&A audio", uri: "/uploads/mock/customer-qna.m4a", processing: { status: "failed", duration: "31m" }, citation_health: "missing", preview: "Transcription failed: unsupported codec." },
+      ],
+      outputs: [],
+      stages: [
+        { id: "intent", label: "Intent understood", status: "done", owner: "Melkizac" },
+        { id: "sources", label: "Sources collected", status: "running", owner: "Mission Control" },
+        { id: "notes", label: "Research notes", status: "pending", owner: "Content Ops" },
+      ],
+      settings: { citation_required: true, approval_policy: "internal drafts auto-proceed; external sharing approval-gated" },
+      blockers: [], verification: {}, artifacts: [], evidence: [], approval_gates: [], next_actions: ["Reprocess failed audio source", "Confirm URL extraction completes"],
+    },
+    mission_result: null,
+    session_id: null,
+    current_run_id: null,
+    workflow_template_id: "research_to_deliverable",
+    current_step_key: "sources",
+    skills: ["agent-mission-control-ui"],
+    model_override: null,
+    consecutive_failures: 0,
+    last_failure_error: "",
+    comments: [],
+    events: [],
+    runs: [],
+    children: [],
+    parents: [],
+  } as any;
+}
 
 /**
  * MockHermesClient keeps an in-memory copy of the seed data and mutates it.
@@ -555,15 +613,16 @@ export class MockHermesClient implements HermesClient {
     const agents = this.agents.filter((agent) => !requestedAgent || agent.id === requestedAgent);
     const matrix = agents.map((agent) => {
       const runtimeCapabilities = [
-        ...agent.skills.map((skill) => ({ id: `skill:${skill.id}`, type: "skill", displayName: skill.name, source: skill.source || "profile-skill", sourceLabel: "Profile skill", status: "enabled", enabled: true, assigned: true, assignmentUnit: "procedure", riskLevels: ["read-only"], approvalRequired: false, approvalStatus: "not-required", healthState: "passing" })),
-        ...(agent.tools ?? []).map((tool) => ({ id: `tool:${tool.id}`, type: tool.kind || "cli-tool", displayName: tool.name, description: tool.description, source: "profile-config", sourceLabel: "Profile tools", status: tool.enabled === false ? "disabled" : "enabled", enabled: tool.enabled !== false, assigned: true, assignmentUnit: tool.assignmentUnit || "tool", toolCount: tool.toolCount, sampleTools: tool.sampleTools, riskLevels: ["local-write"], approvalRequired: false, approvalStatus: "not-required", healthState: "passing" })),
+        ...agent.skills.map((skill) => ({ id: `skill:${skill.id}`, type: "skill", displayName: skill.name, source: skill.source || "profile-skill", sourceLabel: "Profile skill", status: "enabled", enabled: true, assigned: true, inherited: true, assignmentScope: "inherited", assignmentUnit: "procedure", riskLevels: ["read-only"], approvalRequired: false, approvalStatus: "not-required", healthState: "passing" })),
+        ...(agent.tools ?? []).map((tool) => ({ id: `tool:${tool.id}`, type: tool.kind || "cli-tool", displayName: tool.name, description: tool.description, source: "profile-config", sourceLabel: "Profile tools", status: tool.enabled === false ? "disabled" : "enabled", enabled: tool.enabled !== false, assigned: true, inherited: true, assignmentScope: "inherited", assignmentUnit: tool.assignmentUnit || "tool", toolCount: tool.toolCount, sampleTools: tool.sampleTools, riskLevels: ["local-write"], approvalRequired: false, approvalStatus: "not-required", healthState: "passing" })),
       ];
       const registryCapabilities = [
-        { id: "mock-browser-automation", type: "mcp-server", displayName: "Browser automation", description: "Governed browser operations with approval gates for submit/post/send actions.", source: "registry", sourceLabel: "Registry", status: "available", enabled: true, assigned: false, assignmentUnit: "mcp-server", riskLevels: ["browser", "external-action"], approvalRequired: true, approvalStatus: "pending", actionableBlocker: { message: "Approval policy must be approved before assignment." }, healthState: "unknown" },
-        { id: "mock-github-cli", type: "cli-tool", displayName: "GitHub CLI wrapper", description: "Workspace-safe GitHub operations wrapper.", source: "registry", sourceLabel: "Registry", status: "assigned", enabled: true, assigned: true, assignmentUnit: "cli-wrapper", riskLevels: ["repo-write"], approvalRequired: false, approvalStatus: "not-required", healthState: "passing" },
+        { id: "mock-browser-automation", type: "mcp-server", displayName: "Browser automation", description: "Governed browser operations with approval gates for submit/post/send actions.", source: "registry", sourceLabel: "Registry", status: "available", enabled: true, assigned: false, inherited: false, assignmentScope: "available", assignmentUnit: "mcp-server", riskLevels: ["browser", "external-action"], approvalRequired: true, approvalStatus: "pending", actionableBlocker: { message: "Approval policy must be approved before assignment." }, healthState: "unknown" },
+        { id: "mock-github-cli", type: "cli-tool", displayName: "GitHub CLI wrapper", description: "Workspace-safe GitHub operations wrapper.", source: "registry", sourceLabel: "Registry", status: "assigned", enabled: true, assigned: true, inherited: false, assignmentScope: "assigned", assignmentUnit: "cli-wrapper", riskLevels: ["repo-write"], approvalRequired: false, approvalStatus: "not-required", healthState: "passing" },
       ];
       const capabilities = [...runtimeCapabilities, ...registryCapabilities];
       const assigned = capabilities.filter((capability) => capability.assigned);
+      const inherited = capabilities.filter((capability) => capability.inherited || capability.assignmentScope === "inherited");
       const blocked = capabilities.filter((capability) => Boolean((capability as { actionableBlocker?: unknown }).actionableBlocker) || (capability.approvalRequired && capability.approvalStatus !== "approved"));
       const available = capabilities.filter((capability) => !capability.assigned);
       return {
@@ -572,10 +631,10 @@ export class MockHermesClient implements HermesClient {
         assigned,
         available,
         blocked,
-        summary: { total: capabilities.length, assigned: assigned.length, available: available.length, blocked: blocked.length, skills: agent.skills.length, tools: agent.tools?.length ?? 0, registry: registryCapabilities.length },
+        summary: { total: capabilities.length, assigned: assigned.length, inherited: inherited.length, available: available.length, blocked: blocked.length, skills: agent.skills.length, tools: agent.tools?.length ?? 0, registry: registryCapabilities.length },
       };
     });
-    return { ok: true, matrix, agents: matrix.map((row) => row.agent), summary: { agents: matrix.length, capabilities: matrix.reduce((sum, row) => sum + row.summary.total, 0), assigned: matrix.reduce((sum, row) => sum + row.summary.assigned, 0), blocked: matrix.reduce((sum, row) => sum + row.summary.blocked, 0), registry: matrix.reduce((sum, row) => sum + row.summary.registry, 0), skills: matrix.reduce((sum, row) => sum + row.summary.skills, 0), tools: matrix.reduce((sum, row) => sum + row.summary.tools, 0) } };
+    return { ok: true, matrix, agents: matrix.map((row) => row.agent), summary: { agents: matrix.length, capabilities: matrix.reduce((sum, row) => sum + row.summary.total, 0), assigned: matrix.reduce((sum, row) => sum + row.summary.assigned, 0), inherited: matrix.reduce((sum, row) => sum + (row.summary.inherited ?? 0), 0), blocked: matrix.reduce((sum, row) => sum + row.summary.blocked, 0), registry: matrix.reduce((sum, row) => sum + row.summary.registry, 0), skills: matrix.reduce((sum, row) => sum + row.summary.skills, 0), tools: matrix.reduce((sum, row) => sum + row.summary.tools, 0) } };
   }
 
   async assignCapability(capabilityId: string): Promise<CapabilityAssignmentMutationResponse> {
@@ -693,10 +752,25 @@ export class MockHermesClient implements HermesClient {
     return { ok: true, windows: { ...status.windows, configured: Boolean(input.url), url: input.url || "", approvedFolders: input.approvedFolders || status.windows.approvedFolders } };
   }
 
-  async getCosts(): Promise<CostsResponse> {
+  async getCosts(filters?: { days?: number; model?: string }): Promise<CostsResponse> {
     await delay(90);
     const period = { sessions: 0, cost: 0, tokens: 0, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, reasoning_tokens: 0, tool_calls: 0, api_calls: 0 };
-    return { window_days: 30, summary: { last_24h: period, last_7d: period, last_30d: period, selected: period, all_time: period }, by_model: [], by_source: [], daily: [], expensive_sessions: [] };
+    const selectedModel = filters?.model || "gpt-5.5";
+    return {
+      window_days: filters?.days ?? 30,
+      summary: { last_24h: period, last_7d: period, last_30d: period, selected: period, all_time: period },
+      by_model: [],
+      by_source: [],
+      daily: [],
+      expensive_sessions: [],
+      model_usage: {
+        selected_model: selectedModel,
+        models: ["gpt-5.5", "claude-sonnet-4", "gpt-4.1-mini"],
+        source: "Demo model duration telemetry",
+        daily: { label: "5h", used_seconds: 0, limit_seconds: 18000, used_hours: 0, limit_hours: 5, remaining_seconds: 18000, remaining_hours: 5, percent_used: 0, reset_at: "", reset_label: "9:19 AM" },
+        weekly: { label: "Weekly", used_seconds: 0, limit_seconds: 126000, used_hours: 0, limit_hours: 35, remaining_seconds: 126000, remaining_hours: 35, percent_used: 0, reset_at: "", reset_label: "Jun 11" },
+      },
+    };
   }
 
   async listProjects(): Promise<ProjectsResponse> {
@@ -832,12 +906,33 @@ export class MockHermesClient implements HermesClient {
 
   async listBoard(): Promise<BoardResponse> {
     await delay(90);
-    return { tasks: [], lanes: { todo: [], queued: [], scheduled: [], running: [], blocked: [], done: [], error: [] }, summary: { total: 0, todo: 0, queued: 0, scheduled: 0, running: 0, blocked: 0, done: 0, error: 0, assignees: [], projects: [] }, statuses: ["todo", "queued", "scheduled", "running", "blocked", "done", "error"], projects: [] };
+    const task = mockResearchSourceTask();
+    task.board_id = "default";
+    task.board_slug = "default";
+    task.board_label = "Default board";
+    task.board_is_default = true;
+    return { tasks: [task], lanes: { triage: [], todo: [task], scheduled: [], ready: [], running: [], blocked: [], error: [], review: [], done: [] }, summary: { total: 1, triage: 0, todo: 1, scheduled: 0, ready: 0, running: 0, blocked: 0, error: 0, review: 0, done: 0, assignees: ["Melkizac"], projects: ["project:mock-research-to-deliverable"], boards: ["default"] }, statuses: ["triage", "todo", "scheduled", "ready", "running", "blocked", "error", "review", "done"], projects: ["project:mock-research-to-deliverable"], boards: [{ id: "default", slug: "default", label: "Default board", is_default: true }], warnings: [] };
   }
 
   async getTaskResult(id: string): Promise<TaskResultResponse> {
     await delay(90);
-    return { ok: true, mission_result: null, task: undefined, error: `Mock task ${id} has no result yet` };
+    const task = mockResearchSourceTask(id);
+    return { ok: true, mission_result: null, task };
+  }
+
+  async listAgentHandoffs(): Promise<AgentHandoffResponse> {
+    await delay(40);
+    return { ok: true, handoffs: [], summary: { total: 0, open: 0, completed: 0, blocked: 0, high_risk: 0 }, statuses: ["requested", "accepted", "in_progress", "blocked", "completed", "failed", "cancelled"] };
+  }
+
+  async createAgentHandoff(): Promise<AgentHandoffMutationResponse> {
+    await delay(40);
+    return { ok: false, error: "Mock handoff ledger is read-only" };
+  }
+
+  async updateAgentHandoff(): Promise<AgentHandoffMutationResponse> {
+    await delay(40);
+    return { ok: false, error: "Mock handoff ledger is read-only" };
   }
 
   async getOperatorLinkPreview(): Promise<OperatorLinkPreviewResponse> {

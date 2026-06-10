@@ -56,10 +56,12 @@ def test_capability_matrix_combines_skills_plugins_tools_and_registry_records(tm
     assert any(cap['source'] == 'profile-plugin' and cap['displayName'] == 'Telegram gateway' for cap in row['capabilities'])
     assert any(cap['source'] == 'registry' and cap['assigned'] is True and cap['id'] == cap_id for cap in row['capabilities'])
     assert row['summary']['skills'] >= 1
-    assert row['summary']['tools'] >= 3
+    assert row['summary']['tools'] >= 2
     assert row['summary']['registry'] >= 1
-
-
+    assert row['summary']['inherited'] >= 3
+    assert any(c['source'] == 'profile-plugin' and c['displayName'] == 'Telegram gateway' for c in row['capabilities'])
+    assert any(c['source'] == 'profile-plugin' and c['assignmentScope'] == 'inherited' for c in row['capabilities'])
+    assert any(c['source'] == 'registry' and c['assigned'] is True for c in row['capabilities'])
 def test_capability_assignment_flow_enforces_governance_then_assigns_and_unassigns(tmp_path, monkeypatch):
     app = load_app(tmp_path, monkeypatch)
     admin = app.authenticate_user('melverick', 'admin-secret')
@@ -98,7 +100,8 @@ def test_capability_assignment_flow_enforces_governance_then_assigns_and_unassig
 
 def test_agent_profile_surface_exposes_capability_matrix_without_admin_redirect():
     panel = (SRC / 'components' / 'ContextPanel.tsx').read_text(encoding='utf-8')
-    perms = (SRC / 'services' / 'uiPermissions.ts').read_text(encoding='utf-8')
+    org = (SRC / 'views' / 'AgentOrg.tsx').read_text(encoding='utf-8')
+    permissions = (SRC / 'services' / 'uiPermissions.ts').read_text(encoding='utf-8')
 
     assert 'getCapabilityMatrix({ agent: agent.id })' in panel
     assert 'Workspace capability matrix' in panel
@@ -106,4 +109,11 @@ def test_agent_profile_surface_exposes_capability_matrix_without_admin_redirect(
     assert 'Assignable registry capabilities' in panel
     assert 'assignCapability(capability.id' in panel
     assert 'unassignCapability(capability.id' in panel
-    assert 'Capability Registry' in perms  # Admin registry can stay admin-only while Agent/Profile shows the matrix.
+    assert 'Capability assignments' in org
+    assert 'Assigned registry capabilities' in org
+    assert 'Inherited profile/runtime capabilities' in org
+    assert 'Admin-only safe edit' in org
+    assert 'assignCapability(capability.id' in org
+    assert 'unassignCapability(capability.id' in org
+    assert '"capabilities"' in permissions
+    assert 'Capability Registry' in permissions

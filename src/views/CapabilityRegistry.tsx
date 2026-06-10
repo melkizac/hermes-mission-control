@@ -68,6 +68,7 @@ export function CapabilityRegistry() {
   const [intakeSummary, setIntakeSummary] = useState({ total: 0, awaitingApproval: 0, requiringSecrets: 0 });
   const [q, setQ] = useState("");
   const [type, setType] = useState("");
+  const [category, setCategory] = useState("");
   const [status, setStatus] = useState("");
   const [tab, setTab] = useState<CapabilityRegistryTab>("installed");
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
@@ -80,7 +81,7 @@ export function CapabilityRegistry() {
       setLoading(true);
       setError(null);
       const [next, nextIntake] = await Promise.all([
-        client.listCapabilities({ q, type, status }),
+        client.listCapabilities({ q, type, category, status }),
         client.listCapabilityIntake({ q, type, status }),
       ]);
       setRecords(next.capabilities ?? []);
@@ -97,7 +98,11 @@ export function CapabilityRegistry() {
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 180);
     return () => window.clearTimeout(timer);
-  }, [q, type, status]);
+  }, [q, type, category, status]);
+
+  useEffect(() => {
+    if (type && type !== "skill" && category) setCategory("");
+  }, [type, category]);
 
   useEffect(() => {
     const close = (event: KeyboardEvent) => {
@@ -108,6 +113,10 @@ export function CapabilityRegistry() {
   }, []);
 
   const types = useMemo(() => Array.from(new Set(records.map((item) => item.type).filter(Boolean))).sort(), [records]);
+  const skillCategories = useMemo(
+    () => Array.from(new Set(records.filter((item) => item.type === "skill").map((item) => item.category).filter(Boolean) as string[])).sort(),
+    [records],
+  );
   const statuses = useMemo(() => Array.from(new Set([...records.map((item) => item.status || "unknown"), ...intake.map((item) => item.status || "intake")])).sort(), [records, intake]);
 
   const tabRecords = useMemo(() => {
@@ -128,7 +137,7 @@ export function CapabilityRegistry() {
           <span className="stub-tag">CAPABILITY REGISTRY</span>
           <h1>Capability Registry</h1>
           <p>
-            Unified control plane for skills, tools, plugins, pilots, and intake requests. Existing Skills, Tools, and Plugins hubs remain intact; this page layers registry status, health, governance, and agent assignment across them.
+            Admin registry surface for governing, assigning, and auditing skills, tools, plugins, pilots, and intake requests across workspaces. User-mode Skills, Tools, and Plugins remain workspace resource views; Admin manages them here as capabilities.
           </p>
         </div>
         <div className="task-hero-actions">
@@ -173,13 +182,25 @@ export function CapabilityRegistry() {
           </select>
         </label>
         <label>
+          <span>Skill category</span>
+          <select
+            value={category}
+            onChange={(event) => setCategory(event.target.value)}
+            disabled={Boolean(type && type !== "skill")}
+            title={type && type !== "skill" ? "Categories apply to Skills only" : "Filter skill capabilities by category"}
+          >
+            <option value="">All skill categories</option>
+            {skillCategories.map((item) => <option key={item} value={item}>{titleCase(item)}</option>)}
+          </select>
+        </label>
+        <label>
           <span>Status</span>
           <select value={status} onChange={(event) => setStatus(event.target.value)}>
             <option value="">All statuses</option>
             {statuses.map((item) => <option key={item} value={item}>{titleCase(item)}</option>)}
           </select>
         </label>
-        <div className="skills-filter-note">{activeTab.hint} Non-admin workspaces only see records allowed by the backend visibility boundary; admin-only hub imports stay restricted.</div>
+        <div className="skills-filter-note">{activeTab.hint} Type filters cover Skills, Tools, Plugins, and other capability classes; the Category filter is intentionally skill-only because Tools and Plugins do not use skill categories. Non-admin workspaces only see records allowed by the backend visibility boundary.</div>
       </section>
 
       {error && <div className="skills-error">{error}</div>}

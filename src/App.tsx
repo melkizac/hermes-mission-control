@@ -23,6 +23,7 @@ import { ToolsHub } from "./views/ToolsHub";
 import { CapabilityRegistry } from "./views/CapabilityRegistry";
 import { PluginsHub } from "./views/PluginsHub";
 import { CostDashboard } from "./views/CostDashboard";
+import { UsageRemaining } from "./views/UsageRemaining";
 import { ModelRouter } from "./views/ModelRouter";
 import { HermesDesktopAdmin } from "./views/HermesDesktopAdmin";
 import { MissionControlDocs } from "./views/MissionControlDocs";
@@ -33,6 +34,7 @@ import { BrowserOperations } from "./views/BrowserOperations";
 import { ResearchRuns } from "./views/ResearchRuns";
 import { Placeholder } from "./views/Placeholder";
 import { parseMissionControlDeepLink } from "./services/deepLinks";
+import { recordRouteTelemetry } from "./services/performanceTelemetry";
 
 const docsPaths = new Set(["/mission-control-docs", "/mission-control-guide", "/docs"]);
 const publicPaths = new Set(["/", "/login"]);
@@ -74,6 +76,10 @@ function Shell() {
     mediaQuery.addEventListener("change", syncMobileChatOnly);
     return () => mediaQuery.removeEventListener("change", syncMobileChatOnly);
   }, []);
+
+  useEffect(() => {
+    recordRouteTelemetry(view);
+  }, [view]);
 
   if (docsPaths.has(pathname)) {
     return <MissionControlDocs />;
@@ -124,6 +130,7 @@ function Shell() {
         {canRenderView && view === "plugins" && <PluginsHub />}
         {canRenderView && view === "automations" && <Automations />}
         {canRenderView && view === "audit" && <AuditLog />}
+        {canRenderView && view === "usage" && <UsageRemaining />}
         {canRenderView && view === "costs" && <CostDashboard />}
         {canRenderView && view === "models" && <ModelRouter />}
         {canRenderView && view === "settings" && <HermesDesktopAdmin />}
@@ -194,11 +201,14 @@ function NeedsAttentionBell() {
       const nextCount = summary ? pendingFromSummary : pendingFromItems;
       if (alive) setApprovalCount(nextCount);
     }
-    void loadApprovalCount();
-    const timer = window.setInterval(loadApprovalCount, 15000);
+    const timer = window.setTimeout(() => {
+      void loadApprovalCount();
+    }, 11000);
+    const interval = window.setInterval(loadApprovalCount, 15000);
     return () => {
       alive = false;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
+      window.clearInterval(interval);
     };
   }, [approvals.length]);
 

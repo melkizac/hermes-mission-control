@@ -28,11 +28,13 @@ type Name =
   | "plus"
   | "refresh"
   | "search"
+  | "filterPlus"
   | "send"
   | "download"
   | "edit"
   | "close"
   | "more"
+  | "trash"
   | "chevronDown"
   | "file"
   | "check"
@@ -71,11 +73,13 @@ const paths: Record<Name, string> = {
   plus: "M12 5v14M5 12h14",
   refresh: "M20 6v5h-5M4 18v-5h5M18.4 9A7 7 0 006.8 6.8L4 11M5.6 15a7 7 0 0011.6 2.2L20 13",
   search: "M21 21l-4.3-4.3M11 18a7 7 0 100-14 7 7 0 000 14z",
+  filterPlus: "M4 5h16l-6.5 7.2V18l-3 1.6v-7.4zM18 15v6M15 18h6",
   send: "M12 19V5M5 12l7-7 7 7",
   download: "M12 3v12M7 11l5 5 5-5M5 21h14",
   edit: "M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z",
   close: "M18 6L6 18M6 6l12 12",
   more: "M12 6h.01M12 12h.01M12 18h.01",
+  trash: "M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3",
   chevronDown: "M5 8l7 7 7-7",
   file: "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6",
   check: "M20 6L9 17l-5-5",

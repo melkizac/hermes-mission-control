@@ -736,5 +736,121 @@
       "evidence_required": false,
       "approval_required": false
     }
+  },
+  {
+    "id": "approval-internal-draft-proposal",
+    "prompt": "Draft a client proposal for the Nexius Academy AI workshop using the uploaded sources.",
+    "context": {
+      "selected_project_id": "project:nexius-academy-funnel"
+    },
+    "expected_route": {
+      "intent_type": "workflow",
+      "research_deliverable_intent": "generate_proposal",
+      "confidence": 0.84,
+      "rationale": "Proposal generation is deliverable work and requires review before external sharing.",
+      "project_required": true,
+      "suggested_project_id": "project:nexius-academy-funnel",
+      "create_task": false,
+      "create_project": false,
+      "launch_workflow": true,
+      "recommend_routine": false,
+      "one_time_reply": false,
+      "agent_id": "melkizac",
+      "tools_required": [
+        "kanban",
+        "docx"
+      ],
+      "skills_required": [
+        "agent-mission-control-ui",
+        "docx"
+      ],
+      "evidence_required": true,
+      "approval_required": false
+    }
+  },
+  {
+    "id": "approval-external-publish",
+    "prompt": "Generate a LinkedIn post from the Academy source notes and publish it publicly.",
+    "context": {
+      "selected_project_id": "project:nexius-academy-funnel"
+    },
+    "expected_route": {
+      "intent_type": "kanban_task",
+      "research_deliverable_intent": null,
+      "confidence": 0.88,
+      "rationale": "The user requests trackable implementation work inside an existing project.",
+      "project_required": true,
+      "suggested_project_id": "project:nexius-academy-funnel",
+      "create_task": true,
+      "create_project": false,
+      "launch_workflow": false,
+      "recommend_routine": false,
+      "one_time_reply": false,
+      "agent_id": "melkizac",
+      "tools_required": [
+        "kanban"
+      ],
+      "skills_required": [],
+      "evidence_required": true,
+      "approval_required": true
+    }
+  },
+  {
+    "id": "approval-destructive-delete",
+    "prompt": "Delete the obsolete production database table after exporting evidence.",
+    "context": {
+      "selected_project_id": "project:mission-control-admin"
+    },
+    "expected_route": {
+      "intent_type": "kanban_task",
+      "research_deliverable_intent": null,
+      "confidence": 0.88,
+      "rationale": "The user requests trackable implementation work inside an existing project.",
+      "project_required": true,
+      "suggested_project_id": "project:mission-control-admin",
+      "create_task": true,
+      "create_project": false,
+      "launch_workflow": false,
+      "recommend_routine": false,
+      "one_time_reply": false,
+      "agent_id": "devops",
+      "tools_required": [
+        "kanban"
+      ],
+      "skills_required": [
+        "agent-mission-control-ui"
+      ],
+      "evidence_required": true,
+      "approval_required": true
+    }
+  },
+  {
+    "id": "approval-sensitive-provider",
+    "prompt": "Use the live LinkedIn account provider to send this outreach message.",
+    "context": {
+      "selected_project_id": "project:linkedin-growth"
+    },
+    "expected_route": {
+      "intent_type": "workflow",
+      "research_deliverable_intent": null,
+      "confidence": 0.78,
+      "rationale": "The request matches launch/send/publish workflow language and should queue a workflow with approval gates.",
+      "project_required": true,
+      "suggested_project_id": "project:linkedin-growth",
+      "create_task": false,
+      "create_project": false,
+      "launch_workflow": true,
+      "recommend_routine": false,
+      "one_time_reply": false,
+      "agent_id": "melkizac",
+      "tools_required": [
+        "kanban"
+      ],
+      "skills_required": [
+        "agent-mission-control-ui"
+      ],
+      "evidence_required": true,
+      "approval_required": true
+    }
   }
 ]

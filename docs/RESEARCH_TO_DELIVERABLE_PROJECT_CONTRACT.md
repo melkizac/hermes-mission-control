@@ -7,6 +7,8 @@ The contract is intentionally implementation-facing. It gives backend, frontend,
 Related specs:
 
 - `docs/AGENT_OS_INTENT_ROUTER_SPEC.md`
+- `docs/RESEARCH_TO_DELIVERABLE_WORKFLOW.md`
+- `docs/OPEN_NOTEBOOK_WRAPPER.md`
 - `docs/plans/2026-06-08-research-to-deliverable-chat-workflow.md`
 
 ## Product boundary
@@ -270,6 +272,28 @@ Every generated artifact should include:
 - safe UI actions.
 
 Never expose raw local paths, signed URLs, secret-bearing query strings, or private provider payloads to normal user APIs unless the user is authorized and the path is intentionally downloadable through Mission Control.
+
+### Local editable PPTX/DOCX generation wrapper
+
+Mission Control includes a local, stdlib-first wrapper for the editable draft stage:
+
+```bash
+python3 scripts/document_artifact_generator.py generate \
+  --notes tests/fixtures/research_deliverable_notes.md \
+  --out /tmp/hmc-docgen-sample \
+  --title "AI Workforce for SMEs" \
+  --brand "Nexius Academy" \
+  --audience "Singapore SME leaders"
+```
+
+The wrapper emits an editable `.pptx`, editable `.docx`, a PNG deck preview/contact sheet, a DOCX text preview, and an artifact manifest with validation evidence. If no Nexius/Melverick Office template file is present in the repository, the wrapper uses a clean Nexius-styled default rather than blocking draft generation.
+
+Validation-only mode is available for artifact QA and worker readbacks:
+
+```bash
+python3 scripts/document_artifact_generator.py validate /path/to/deck.pptx --kind pptx
+python3 scripts/document_artifact_generator.py validate /path/to/briefing.docx --kind docx
+```
 
 ## Evidence schema
 

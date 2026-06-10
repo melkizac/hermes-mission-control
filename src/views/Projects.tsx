@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ProjectOperatingLink, ProjectRecord, ProjectRiskItem } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
+import { queryCacheEventName } from "../services/queryCache";
 import { formatSingaporeTime } from "../utils/time";
 import { Icon } from "../components/Icon";
 
@@ -40,6 +41,17 @@ function Metric({ label, value, sub, tone }: { label: string; value: string | nu
 
 function ProjectStat({ label, value }: { label: string; value: string | number }) {
   return <div><b>{value}</b><span>{label}</span></div>;
+}
+
+function ProjectActionCounts({ project }: { project: ProjectRecord }) {
+  return (
+    <div className="project-action-counts" aria-label={`${project.name} action counts`}>
+      <ProjectStat label="Open" value={project.actions?.open || 0} />
+      <ProjectStat label="Running" value={project.actions?.running || 0} />
+      <ProjectStat label="Blocked" value={project.actions?.blocked || 0} />
+      <ProjectStat label="Done" value={project.actions?.done || 0} />
+    </div>
+  );
 }
 
 function linkLabel(item: ProjectOperatingLink) {
@@ -88,6 +100,7 @@ function ProjectCard({ project, onOpen }: { project: ProjectRecord; onOpen: (pro
         <ProjectStat label="Routines" value={routines} />
         <ProjectStat label="Evidence" value={(project.knowledge?.length || 0) + (project.artifacts?.length || 0)} />
       </div>
+      <ProjectActionCounts project={project} />
 
       <div className="project-card-detail-strip">
         <div>
@@ -112,9 +125,7 @@ function ProjectCard({ project, onOpen }: { project: ProjectRecord; onOpen: (pro
 export function Projects() {
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [summary, setSummary] = useState({ total: 0, active: 0, open_actions: 0, blocked: 0, knowledge: 0, workspaces: 0 });
-  const [projectAreas, setProjectAreas] = useState<string[]>([]);
   const [q, setQ] = useState("");
-  const [area, setArea] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
@@ -123,17 +134,19 @@ export function Projects() {
   const [brief, setBrief] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = async (mode: "initial" | "manual" | "event" = "initial") => {
+    const previousRefreshMode = window.__hmcRefreshMode;
     try {
+      window.__hmcRefreshMode = mode;
       setLoading(true);
-      const data = await client.listProjects({ q, area });
+      const data = await client.listProjects({ q });
       setProjects(data.projects);
       setSummary(data.summary);
-      setProjectAreas(data.project_areas || []);
       setError(data.error || null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load projects");
     } finally {
+      window.__hmcRefreshMode = previousRefreshMode;
       setLoading(false);
     }
   };
@@ -141,7 +154,13 @@ export function Projects() {
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 180);
     return () => window.clearTimeout(timer);
-  }, [q, area]);
+  }, [q]);
+
+  useEffect(() => {
+    const onQueryCacheUpdated = () => void load("event");
+    window.addEventListener(queryCacheEventName(), onQueryCacheUpdated);
+    return () => window.removeEventListener(queryCacheEventName(), onQueryCacheUpdated);
+  }, [q]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setSelectedId(null); };
@@ -200,7 +219,7 @@ export function Projects() {
           <p>Operator view for each initiative: what it is, what needs attention, who is working on it, and what Melkizac should do next.</p>
         </div>
         <div className="projects-control projects-control-refresh-only">
-          <button className="task-icon-action dark" aria-label="Refresh projects" title="Refresh projects" onClick={() => void load()}>
+          <button className="task-icon-action dark" aria-label="Refresh projects" title="Refresh projects" onClick={() => void load("manual")}>
             <Icon name="refresh" size={18} />
           </button>
         </div>
@@ -217,10 +236,6 @@ export function Projects() {
 
       <section className="projects-filters">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search projects, paths, tags, summaries…" />
-        <select value={area} onChange={(e) => setArea(e.target.value)} aria-label="Filter by project area">
-          <option value="">All project areas</option>
-          {projectAreas.map((item) => <option key={item} value={item}>{item}</option>)}
-        </select>
         <span>{loading ? "Loading…" : `${projects.length} project${projects.length === 1 ? "" : "s"} shown`}</span>
       </section>
       {error && <div className="task-error">{error}</div>}
@@ -247,8 +262,7 @@ export function Projects() {
 
             <div className="project-detail-kv">
               <div><span>Status</span><b>{selected.status}</b></div>
-              <div><span>Project Area</span><b>{selected.portfolio_group || "Operations"}</b></div>
-              <div><span>Source type</span><b>{selected.source}</b></div>
+              <div><span>Type</span><b>{selected.kind || "Project"}</b></div>
               <div><span>Updated</span><b>{formatSingaporeTime(selected.updated_at)}</b></div>
             </div>
 
@@ -274,8 +288,8 @@ export function Projects() {
               <div className="quick-access professional">
                 <ProjectStat label="Open" value={selected.actions.open} />
                 <ProjectStat label="Running" value={selected.actions.running} />
+                <ProjectStat label="Blocked" value={selected.actions.blocked} />
                 <ProjectStat label="Done" value={selected.actions.done} />
-                <ProjectStat label="Risks" value={selected.risks.length} />
               </div>
               <div className="project-important-details">
                 <div><span>Next best action</span><b>{primaryNextAction(selected)}</b></div>
@@ -283,11 +297,7 @@ export function Projects() {
                 <div><span>Evidence / notes</span><b>{selected.knowledge.length} notes · {selected.artifacts.length} artifacts</b></div>
                 <div><span>Latest activity</span><b>{recency(selected)}</b></div>
               </div>
-              <label>Workspace / source</label><code>{selected.path || "—"}</code>
-              <label>Source contexts</label>
-              <div className="project-source-contexts">
-                {(selected.source_contexts?.length ? selected.source_contexts : [{ kind: selected.kind, source: selected.source, name: selected.name, path: selected.path }]).map((ctx, index) => <div key={`${ctx.id || ctx.path || ctx.name}-${index}`}><b>{ctx.kind || "context"}</b><span>{ctx.source || "unknown"}</span><small>{ctx.path || ctx.name || "—"}</small></div>)}
-              </div>
+              <label>Workspace</label><code>{selected.path || "—"}</code>
               <label>Tags</label><div className="project-chips">{(selected.tags.length ? selected.tags : ["untagged"]).map((tag) => <span key={tag}>{tag}</span>)}</div>
             </div>}
 

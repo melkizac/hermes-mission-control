@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { formatSingaporeShort } from "../utils/time";
 import { useStore } from "../services/store";
 import type { Agent, AgentStatus, ProjectChatResponse, ProjectChatSession } from "../types";
 
@@ -15,8 +16,11 @@ const statusMeta: Record<AgentStatus, { label: string; cls: string; dot: string 
 type Filter = "all" | "active" | "idle" | "offline";
 
 function sessionLabel(session?: ProjectChatSession) {
-  if (!session) return "All sessions";
-  return session.title.replace(/\s+/g, " ").trim().slice(0, 54) || session.id.slice(0, 12);
+  if (!session) return "All chat history";
+  const title = session.title.replace(/\s+/g, " ").trim() || session.id.slice(0, 12);
+  const when = formatSingaporeShort(session.started_at);
+  const source = session.source ? session.source.replace(/_/g, " ") : "chat";
+  return `${title.slice(0, 46)} · ${source} · ${when}`;
 }
 
 function agentGroupLabel(name: string) {
@@ -30,6 +34,7 @@ interface RosterProps {
   onProjectChange?: (id: string) => void;
   onSessionChange?: (id: string) => void;
   projectChatError?: string | null;
+  projectChatsHydrating?: boolean;
 }
 
 export function Roster({
@@ -39,6 +44,7 @@ export function Roster({
   onProjectChange,
   onSessionChange,
   projectChatError,
+  projectChatsHydrating = false,
 }: RosterProps) {
   const { agents, selectedId, select } = useStore();
   const [filter, setFilter] = useState<Filter>("all");
@@ -77,29 +83,56 @@ export function Roster({
     return status === filter;
   });
 
+  const filterOptions: Array<{ value: Filter; label: string; count: number }> = [
+    { value: "all", label: "All", count: counts.all },
+    { value: "active", label: "Active", count: counts.active },
+    { value: "idle", label: "Idle", count: counts.idle },
+    { value: "offline", label: "Offline", count: counts.offline },
+  ];
+
   return (
     <div className="roster">
       <div className="rhead">
         <h2>Agent</h2>
+        <label className="agent-status-filter">
+          <span className="sr-only">Filter agents by status</span>
+          <select value={filter} onChange={(e) => setFilter(e.target.value as Filter)} aria-label="Filter agents by status">
+            {filterOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label} {option.count}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div className="left-chat-scope" aria-label="Project chat organization controls">
-        <div className="glabel">Chat sessions</div>
+        <div className="glabel">Chat history</div>
         <label>
-          <span>Project</span>
-          <select value={selectedProjectId} onChange={(e) => onProjectChange?.(e.target.value)}>
-            <option value="all">Global Command Chat</option>
+          <span>Context</span>
+          <select
+            value={selectedProjectId}
+            onChange={(e) => onProjectChange?.(e.target.value)}
+            disabled={projectChatsHydrating && !projectChats}
+            aria-busy={projectChatsHydrating && !projectChats}
+          >
+            <option value="all">General chat · all contexts</option>
             {(projectChats?.projects ?? []).map((project) => (
               <option key={project.id} value={project.id}>
-                {project.name} · {project.sessions}
+                {project.name} · {project.sessions ? `${project.sessions} ${project.sessions === 1 ? "chat" : "chats"}` : "no chats yet"}
               </option>
             ))}
           </select>
         </label>
         <label>
-          <span>Session</span>
-          <select value={selectedSessionId} onChange={(e) => onSessionChange?.(e.target.value)}>
-            <option value="all">All sessions</option>
+          <span>Conversation</span>
+          <select
+            value={selectedSessionId}
+            onChange={(e) => onSessionChange?.(e.target.value)}
+            disabled={projectChatsHydrating && !projectChats}
+            aria-busy={projectChatsHydrating && !projectChats}
+          >
+            <option value="all">{projectChatsHydrating && !projectChats ? "Loading saved conversations…" : "All chat history"}</option>
             {projectSessions.slice(0, 80).map((session) => (
               <option key={session.id} value={session.id}>
                 {sessionLabel(session)}
@@ -110,25 +143,14 @@ export function Roster({
         <div className="left-chat-summary">
           {projectChatError
             ? projectChatError
+            : projectChatsHydrating && !projectChats
+              ? "Chat context controls are loading in the background — composer is ready now."
             : selectedSession
-              ? `${selectedSession.project_name} · ${selectedSession.source}`
+              ? `${selectedSession.project_name} · ${selectedSession.source.replace(/_/g, " ")} · ${formatSingaporeShort(selectedSession.started_at)}`
               : selectedProjectId === "all"
-                ? `${projectChats?.summary.sessions ?? 0} sessions across projects`
-                : `${activeProject?.name ?? "Project"} · ${projectSessions.length} sessions`}
+                ? `${projectChats?.summary.sessions ?? 0} saved conversations across ${projectChats?.summary.projects ?? 0} contexts`
+                : `${activeProject?.name ?? "Context"} · ${projectSessions.length} saved conversations`}
         </div>
-      </div>
-
-      <div className="seg">
-        {(["all", "active", "idle", "offline"] as Filter[]).map((f) => (
-          <button
-            key={f}
-            className={"chip" + (filter === f ? " on" : "")}
-            onClick={() => setFilter(f)}
-          >
-            {f === "all" ? "All" : statusMeta[f].label.split(" ")[0]}{" "}
-            <span className="n">{counts[f]}</span>
-          </button>
-        ))}
       </div>
 
       <div className="group">
