@@ -43,3 +43,14 @@ def test_high_confidence_research_deliverable_can_auto_start_as_safe_internal_dr
     assert 'decision.intentType === "research_to_deliverable"' in mission
     assert 'decision.matchedContext.approvalRequired !== true' in mission
     assert 'High confidence: can create/link Project and queue internal draft work' in router
+
+
+def test_research_deliverable_typed_send_can_autostart_new_project_without_selected_project():
+    mission = MISSION_PATH.read_text(encoding='utf-8')
+    router = (ROOT / 'src/services/chatIntentRouter.ts').read_text(encoding='utf-8')
+    assert 'const canCreateResearchProject = decisionValue.intentType === "research_to_deliverable" && decisionValue.nextAction === "show_mission_proposal"' in router
+    assert 'const canProceed = decisionValue.confidence === "high" && (Boolean(matched.projectName || matched.projectId) || canCreateResearchProject);' in router
+    assert 'const isCreatingResearchProject = isResearchDeliverable && Boolean(route.create_project || route.intent_type === "project");' in mission
+    assert 'if (routeNeedsProject && !isCreatingResearchProject && !suggestedProjectId && !suggestedProjectName)' in mission
+    assert '"research-to-deliverable"' in mission
+    assert '"training material"' in mission

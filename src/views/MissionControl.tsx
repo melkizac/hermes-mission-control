@@ -202,7 +202,10 @@ function shouldUseMissionControlRouter(instruction: string, hasAttachments: bool
     "start workflow",
     "run workflow",
     "research deliverable",
+    "research-to-deliverable",
     "start research",
+    "training material",
+    "training materials",
     "create deck",
     "generate deck",
     "create pptx",
@@ -1119,13 +1122,14 @@ export function MissionControl() {
     // while the frontend preview needs the user's visible create/generate intent.
     const researchSubtype = (localDecision.matchedContext.researchSubtype || route.research_deliverable_intent) as ChatIntentDecision["matchedContext"]["researchSubtype"];
     const isResearchDeliverable = Boolean(researchSubtype);
+    const isCreatingResearchProject = isResearchDeliverable && Boolean(route.create_project || route.intent_type === "project");
     const suggestedProjectId = route.suggested_project_id || selectedProject?.id || localDecision.matchedContext.projectId || null;
     const suggestedProjectName = selectedProject && selectedProject.id === suggestedProjectId
       ? projectLabel(selectedProject)
       : localDecision.matchedContext.projectName ?? null;
     let confidence = confidenceFromScore(route.confidence);
     const routeNeedsProject = Boolean(route.project_required || isResearchDeliverable);
-    if (routeNeedsProject && !suggestedProjectId && !suggestedProjectName) {
+    if (routeNeedsProject && !isCreatingResearchProject && !suggestedProjectId && !suggestedProjectName) {
       confidence = confidence === "low" ? "low" : "medium";
     }
     return {

@@ -552,10 +552,11 @@ export function buildChatIntentPreview(decisionValue: ChatIntentDecision): ChatI
   const contextLabel = matched.taskTitle || matched.missionTitle || matched.approvalTitle || matched.routineTitle || matched.workflowTitle || matched.projectName || matched.taskId || matched.missionId || matched.approvalId || matched.routineId || matched.workflowId || matched.projectId;
 
   if (decisionValue.intentType === "research_to_deliverable" || Boolean(matched.researchSubtype)) {
-    const project = matched.projectName || matched.projectId || "Needs project confirmation";
+    const canCreateResearchProject = decisionValue.intentType === "research_to_deliverable" && decisionValue.nextAction === "show_mission_proposal";
+    const project = matched.projectName || matched.projectId || (canCreateResearchProject ? "New Project from chat request" : "Needs project confirmation");
     const outputs = matched.requestedOutputs?.length ? matched.requestedOutputs : ["Research notes"];
     const sources = matched.sourceSummary || "Needs source confirmation";
-    const canProceed = decisionValue.confidence === "high" && Boolean(matched.projectName || matched.projectId);
+    const canProceed = decisionValue.confidence === "high" && (Boolean(matched.projectName || matched.projectId) || canCreateResearchProject);
     return withPlanner({
       kind: "research_to_deliverable_project",
       title: "Research-to-Deliverable Project",
