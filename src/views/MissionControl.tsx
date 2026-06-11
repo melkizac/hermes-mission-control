@@ -5,7 +5,7 @@ import { useStore } from "../services/store";
 import { cachedJsonRequest } from "../services/queryCache";
 import { buildChatIntentPreview, confidenceFromScore, routeChatIntent, serializeChatIntentDecision } from "../services/chatIntentRouter";
 import type { ChatIntentDecision, ChatIntentPreview, ChatIntentNextAction, ChatIntentType, ChatMissionContext, ChatRoutineContext, ChatWorkflowContext } from "../services/chatIntentRouter";
-import type { AutomationsResponse, BoardResponse, BoardTask, Message, ProjectRecord, ProjectsResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
+import type { Attachment, AutomationsResponse, BoardResponse, BoardTask, Message, ProjectRecord, ProjectsResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
 
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
@@ -29,6 +29,8 @@ type ChatAttachment = {
   name: string;
   size: number;
   type: string;
+  file?: File;
+  uploaded?: Attachment;
 };
 
 type MainChatPendingMessage = {
@@ -310,7 +312,7 @@ function formatRunDuration(ms: number) {
 }
 
 export function MissionControl() {
-  const { agents, approvals, sendToAgent, setView, stopProcessingForAgent, refreshAgent } = useStore();
+  const { agents, approvals, sendToAgent, uploadAttachmentToAgent, setView, stopProcessingForAgent, refreshAgent } = useStore();
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -360,6 +362,7 @@ export function MissionControl() {
   const mainChatHistoryRef = useRef<HTMLElement | null>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const activeMainRequestRef = useRef<{ id: string; controller: AbortController } | null>(null);
+  const activeMainUploadedAttachmentsRef = useRef<Attachment[]>([]);
 
   function resizeComposerTextarea() {
     const textarea = composerTextareaRef.current;
@@ -1047,9 +1050,24 @@ export function MissionControl() {
         setError(`${file.name} is larger than Max 50MB.`);
         continue;
       }
-      next.push({ id: `${file.name}-${file.size}-${file.lastModified}`, name: file.name, size: file.size, type: file.type || "file" });
+      next.push({ id: `${file.name}-${file.size}-${file.lastModified}`, name: file.name, size: file.size, type: file.type || "file", file });
     }
     if (next.length) setAttachments((current) => [...current, ...next]);
+  }
+
+  async function uploadMainChatAttachments(items: ChatAttachment[]) {
+    const uploaded: Attachment[] = [];
+    for (const item of items) {
+      if (item.uploaded) {
+        uploaded.push(item.uploaded);
+        continue;
+      }
+      if (!item.file) {
+        throw new Error(`${item.name} was selected in the browser but is no longer available to upload. Please attach it again.`);
+      }
+      uploaded.push(await uploadAttachmentToAgent("default", item.file));
+    }
+    return uploaded;
   }
 
   function routerTaskTitle(prefix: string, instruction: string) {
@@ -1082,6 +1100,13 @@ export function MissionControl() {
       context: {
         selected_project_id: selectedProject?.id ?? decision.matchedContext.projectId ?? null,
         selected_project_name: selectedProject ? projectLabel(selectedProject) : decision.matchedContext.projectName ?? null,
+        attachments: activeMainUploadedAttachmentsRef.current.map((attachment) => ({
+          filename: attachment.filename,
+          path: attachment.path,
+          mime: attachment.mime,
+          sizeBytes: attachment.sizeBytes,
+          url: attachment.url,
+        })),
       },
     };
   }
@@ -1265,7 +1290,7 @@ export function MissionControl() {
     if (action === "clarify") {
       setRoutingActionMessage(null);
       setRoutingActionError(null);
-      const newMessages = await sendToAgent("default", composeClarificationContext(current.instruction, current.decision, current.preview), [], sendOptions);
+      const newMessages = await sendToAgent("default", composeClarificationContext(current.instruction, current.decision, current.preview), activeMainUploadedAttachmentsRef.current, sendOptions);
       const directReply = [...newMessages].reverse().find((message) => message.role === "agent" && visibleChatText(message).trim());
       if (speakReply && directReply) speakAgentReply(directReply);
       updateDraft("");
@@ -1278,7 +1303,7 @@ export function MissionControl() {
     setRoutingActionError(null);
     try {
       if (action === "send_to_agent") {
-        const newMessages = await sendToAgent("default", composeInstructionContext(current.instruction, current.decision), [], sendOptions);
+        const newMessages = await sendToAgent("default", composeInstructionContext(current.instruction, current.decision), activeMainUploadedAttachmentsRef.current, sendOptions);
         const directReply = [...newMessages].reverse().find((message) => message.role === "agent" && visibleChatText(message).trim());
         if (speakReply && directReply) speakAgentReply(directReply);
         updateDraft("");
@@ -1425,15 +1450,23 @@ export function MissionControl() {
     const requestId = `main-chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     activeMainRequestRef.current = { id: requestId, controller };
     setHasStartedMainChat(true);
-    updateDraft("");
-    setAttachments([]);
     setPendingMainMessage({ text: instruction, attachments: sentAttachments });
     const startedAt = Date.now();
     setProcessingStartedAt(startedAt);
     setProcessingNow(startedAt);
     setSending(true);
     setError(null);
+    activeMainUploadedAttachmentsRef.current = [];
     try {
+      const uploadedAttachments = sentAttachments.length ? await uploadMainChatAttachments(sentAttachments) : [];
+      if (controller.signal.aborted) return;
+      activeMainUploadedAttachmentsRef.current = uploadedAttachments;
+      setAttachments((current) => current.map((item) => {
+        const uploaded = uploadedAttachments.find((attachment) => attachment.filename === item.name && attachment.sizeBytes === item.size);
+        return uploaded ? { ...item, uploaded } : item;
+      }));
+      updateDraft("");
+      setAttachments([]);
       const intentDecision = await routeInstruction(instruction, controller.signal);
       if (controller.signal.aborted) return;
       const preview = buildChatIntentPreview(intentDecision);
@@ -1470,6 +1503,7 @@ export function MissionControl() {
       }
     } finally {
       if (activeMainRequestRef.current?.id === requestId) activeMainRequestRef.current = null;
+      activeMainUploadedAttachmentsRef.current = [];
       setPendingMainMessage(null);
       setProcessingStartedAt(null);
       setSending(false);
@@ -1662,7 +1696,13 @@ export function MissionControl() {
                         {message.attachments?.length ? (
                           <div className="main-chat-message-attachments">
                             {message.attachments.map((attachment) => (
-                              <span key={attachment.id || attachment.filename}>{attachment.filename}</span>
+                              attachment.url ? (
+                                <a key={attachment.id || attachment.filename} href={attachment.url} download={attachment.filename} target="_blank" rel="noreferrer">
+                                  {attachment.filename}
+                                </a>
+                              ) : (
+                                <span key={attachment.id || attachment.filename}>{attachment.filename}</span>
+                              )
                             ))}
                           </div>
                         ) : null}

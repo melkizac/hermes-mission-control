@@ -15,12 +15,19 @@ const statusMeta: Record<AgentStatus, { label: string; cls: string; dot: string 
 
 type Filter = "all" | "active" | "idle" | "offline";
 
+function relationshipLabel(value?: string) {
+  const raw = (value || "discussion").replace(/[_-]+/g, " ").trim();
+  return raw ? raw.replace(/\b\w/g, (letter) => letter.toUpperCase()) : "Discussion";
+}
+
 function sessionLabel(session?: ProjectChatSession) {
   if (!session) return "All chat history";
   const title = session.title.replace(/\s+/g, " ").trim() || session.id.slice(0, 12);
   const when = formatSingaporeShort(session.started_at);
   const source = session.source ? session.source.replace(/_/g, " ") : "chat";
-  return `${title.slice(0, 46)} · ${source} · ${when}`;
+  const relation = relationshipLabel(session.relationship_type);
+  const linked = session.link_source === "canonical" ? relation : `${relation} · suggested`;
+  return `${title.slice(0, 40)} · ${linked} · ${source} · ${when}`;
 }
 
 function agentGroupLabel(name: string) {
@@ -146,10 +153,10 @@ export function Roster({
             : projectChatsHydrating && !projectChats
               ? "Chat context controls are loading in the background — composer is ready now."
             : selectedSession
-              ? `${selectedSession.project_name} · ${selectedSession.source.replace(/_/g, " ")} · ${formatSingaporeShort(selectedSession.started_at)}`
+              ? `${selectedSession.project_name} · ${relationshipLabel(selectedSession.relationship_type)}${selectedSession.summary ? ` · ${selectedSession.summary.slice(0, 90)}` : ""}${selectedSession.linked_by ? ` · linked by ${selectedSession.linked_by}` : ""}`
               : selectedProjectId === "all"
-                ? `${projectChats?.summary.sessions ?? 0} saved conversations across ${projectChats?.summary.projects ?? 0} contexts`
-                : `${activeProject?.name ?? "Context"} · ${projectSessions.length} saved conversations`}
+                ? `${projectChats?.summary.sessions ?? 0} saved conversations · ${projectChats?.summary.canonical_links ?? 0} canonical links${projectChats?.summary.heuristic_links ? ` · ${projectChats.summary.heuristic_links} suggested` : ""}`
+                : `${activeProject?.name ?? "Context"} · ${projectSessions.length} visible conversations · ${activeProject?.kanban_tenant ? `tenant ${activeProject.kanban_tenant}` : "canonical context"}`}
         </div>
       </div>
 

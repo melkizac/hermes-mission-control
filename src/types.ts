@@ -549,12 +549,22 @@ export interface ProjectChatSession {
   messages: number;
   tools: number;
   tokens: number;
+  relationship_type?: string;
+  summary?: string;
+  linked_by?: string;
+  linked_at?: string;
+  link_source?: "canonical" | "heuristic" | string;
+  project_owner?: string;
+  project_status?: string;
+  kanban_tenant?: string;
+  kanban_board?: string;
+  project_score?: number;
 }
 
 export interface ProjectChatResponse {
-  projects: Array<{ id: string; name: string; sessions: number }>;
+  projects: Array<{ id: string; name: string; sessions: number; owner?: string; status?: string; kanban_tenant?: string; kanban_board?: string }>;
   sessions: ProjectChatSession[];
-  summary: { projects: number; sessions: number };
+  summary: { projects: number; sessions: number; canonical_links?: number; heuristic_links?: number };
   error?: string;
 }
 
@@ -1454,6 +1464,13 @@ export interface ProjectSessionItem {
   messages: number;
   tools: number;
   tokens: number;
+  project_id?: string;
+  project_name?: string;
+  relationship_type?: string;
+  summary?: string;
+  linked_by?: string;
+  linked_at?: string;
+  link_source?: string;
 }
 
 export interface ProjectActivityItem {
@@ -2332,6 +2349,7 @@ export type ViewKey =
   | "capabilities"
   | "plugins"
   | "projects"
+  | "files"
   | "second-brain"
   | "board"
   | "skills"

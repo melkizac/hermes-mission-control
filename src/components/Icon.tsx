@@ -36,7 +36,10 @@ type Name =
   | "more"
   | "trash"
   | "chevronDown"
+  | "chevronLeft"
   | "file"
+  | "folder"
+  | "image"
   | "check"
   | "arrowDown"
   | "copy"
@@ -81,7 +84,10 @@ const paths: Record<Name, string> = {
   more: "M12 6h.01M12 12h.01M12 18h.01",
   trash: "M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3",
   chevronDown: "M5 8l7 7 7-7",
+  chevronLeft: "M15 5l-7 7 7 7",
   file: "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6",
+  folder: "M3 7h7l2 2h9v10a2 2 0 01-2 2H5a2 2 0 01-2-2zM3 7V5a2 2 0 012-2h4l2 2h8a2 2 0 012 2v2",
+  image: "M4 5h16v14H4zM8 14l2.5-3 3 4 2-2.5L20 18M8 9h.01",
   check: "M20 6L9 17l-5-5",
   arrowDown: "M12 5v14M5 12l7 7 7-7",
   copy: "M8 8h10a2 2 0 012 2v10a2 2 0 01-2 2H8a2 2 0 01-2-2V10a2 2 0 012-2zM4 16H3a2 2 0 01-2-2V4a2 2 0 012-2h10a2 2 0 012 2v1",

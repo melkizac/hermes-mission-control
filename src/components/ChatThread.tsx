@@ -159,10 +159,11 @@ export function ChatThread({
     () => projectChats?.projects.find((project) => project.id === selectedProjectId)?.name,
     [projectChats, selectedProjectId],
   );
-  const activeSessionTitle = useMemo(
-    () => projectSessions.find((session) => session.id === selectedSessionId)?.title,
+  const activeSession = useMemo(
+    () => projectSessions.find((session) => session.id === selectedSessionId),
     [projectSessions, selectedSessionId],
   );
+  const activeSessionTitle = activeSession?.title;
   const sortedMessages = useMemo(
     () =>
       [...scopedMessages].sort(
@@ -549,7 +550,7 @@ export function ChatThread({
       <div className="thread scroll" ref={threadRef} onScroll={updateJumpButton}>
         <div className="divider">
           {selectedSessionId !== "all"
-            ? `Session view · ${activeSessionTitle ?? selectedSessionId}`
+            ? `Session view · ${activeSessionTitle ?? selectedSessionId}${activeSession?.relationship_type ? ` · ${activeSession.relationship_type.replace(/[_-]+/g, " ")}` : ""}`
             : selectedProjectId !== "all"
               ? `Project view · ${activeProjectName ?? selectedProjectId}`
               : "Global Command Chat · sorted into projects and sessions"}

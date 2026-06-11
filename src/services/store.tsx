@@ -46,6 +46,7 @@ interface StoreValue {
   setUiMode: (mode: UiMode) => void;
   select: (id: string) => void;
   uploadAttachment: (file: File) => Promise<Attachment>;
+  uploadAttachmentToAgent: (agentId: string, file: File) => Promise<Attachment>;
   send: (text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection }) => Promise<Message[]>;
   sendToAgent: (agentId: string, text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection }) => Promise<Message[]>;
   getModelRouter: () => Promise<RouterConfig>;
@@ -165,12 +166,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // Popstate navigation is still handled by Shell.
   }, []);
 
+  const uploadAttachmentToAgent = useCallback(
+    async (agentId: string, file: File) => {
+      if (!agentId) throw new Error("No agent selected");
+      return client.uploadAttachment(agentId, file);
+    },
+    [],
+  );
+
   const uploadAttachment = useCallback(
     async (file: File) => {
       if (!selectedId) throw new Error("No agent selected");
-      return client.uploadAttachment(selectedId, file);
+      return uploadAttachmentToAgent(selectedId, file);
     },
-    [selectedId],
+    [selectedId, uploadAttachmentToAgent],
   );
 
   const sendToAgent = useCallback(
@@ -387,6 +396,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setUiMode,
     select,
     uploadAttachment,
+    uploadAttachmentToAgent,
     send,
     sendToAgent,
     getModelRouter,

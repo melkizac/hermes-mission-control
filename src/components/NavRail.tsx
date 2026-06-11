@@ -39,6 +39,7 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
     items: [
       { key: "dashboard", label: "Dashboard", icon: "dashboard" },
       { key: "projects", label: "Projects", icon: "projects" },
+      { key: "files", label: "Files", icon: "folder" },
       { key: "board", label: "Task Board", icon: "board" },
     ],
   },
@@ -78,7 +79,7 @@ const adminConsoleGroups: NavGroup[] = [
   {
     label: "Platform",
     items: [
-      { key: "settings", label: "Admin Overview", icon: "dashboard" },
+      { key: "settings", label: "Admin Console", icon: "dashboard" },
       { key: "users-workspaces", label: "Users & Workspaces", icon: "profile" },
       { key: "workspace-runtime-console", label: "Workspace Runtime Console", icon: "runtimes" },
       { key: "agent-platform-admin", label: "Platform Agent Org", icon: "agentOrg" },
@@ -89,12 +90,11 @@ const adminConsoleGroups: NavGroup[] = [
     label: "Runtime",
     items: [
       { key: "runtimes", label: "Runtime Connectors", icon: "runtimes" },
-      { key: "desktop-gateway", label: "Desktop Gateway", icon: "setup" },
-      { key: "workflow-library", label: "Workflow Library", icon: "skills" },
-      { key: "research-runs", label: "Research Runs", icon: "audit" },
+      { key: "workflow-library", label: "Workflow Templates Admin", icon: "skills" },
+      { key: "research-runs", label: "Research Run Monitor", icon: "audit" },
       { key: "models", label: "Model Router", icon: "modelRouter" },
       { key: "capabilities", label: "Capabilities", icon: "setup" },
-      { key: "automations", label: "Workflow Routine Admin", icon: "automations" },
+      { key: "automations", label: "Routine Governance", icon: "automations" },
     ],
   },
   {
@@ -102,8 +102,7 @@ const adminConsoleGroups: NavGroup[] = [
     items: [
       { key: "audit", label: "Global Audit Log", icon: "audit" },
       { key: "costs", label: "Costs / Usage", icon: "costs" },
-      { key: "approval-policy", label: "Approval Policy", icon: "approvals" },
-      { key: "quota", label: "Quota", icon: "dashboard" },
+      { key: "approval-policy", label: "Approval Rules", icon: "approvals" },
     ],
   },
 ];

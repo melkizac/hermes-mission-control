@@ -10,6 +10,7 @@ import { AgentVoice } from "./views/AgentVoice";
 import { AgentOrg } from "./views/AgentOrg";
 import { Runtimes } from "./views/Runtimes";
 import { Projects } from "./views/Projects";
+import { FileSystem } from "./views/FileSystem";
 import { DelegateWork } from "./views/DelegateWork";
 import { WorkflowLibrary } from "./views/WorkflowLibrary";
 import { SecondBrain } from "./views/SecondBrain";
@@ -120,6 +121,7 @@ function Shell() {
         {canRenderView && view === "agent-org" && <AgentOrg />}
         {canRenderView && view === "runtimes" && <Runtimes />}
         {canRenderView && view === "projects" && <Projects />}
+        {canRenderView && view === "files" && <FileSystem />}
         {canRenderView && view === "second-brain" && <SecondBrain />}
         {canRenderView && view === "approvals" && <Approvals />}
         {canRenderView && view === "board" && <TaskBoard />}
