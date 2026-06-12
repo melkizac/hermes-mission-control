@@ -172,7 +172,6 @@ export function Reflections() {
         </div>
         <div className="reflections-hero-actions">
           <button className="task-icon-action dark" aria-label="Refresh reflections" title="Refresh reflections" onClick={() => void load()}>↻</button>
-          <button className="btn" onClick={() => setView("approvals")}>Open Approvals</button>
         </div>
       </header>
 
@@ -217,7 +216,7 @@ export function Reflections() {
                 </button>
                 <div className="reflection-agent-row-actions">
                   <button className="ghost tiny" type="button" onClick={() => openAgent(agent, "Overview")}>Review</button>
-                  <button className="btn tiny" type="button" onClick={() => openAgent(agent, "Approval")}>Approval</button>
+                  <button className="btn tiny" type="button" onClick={() => openAgent(agent, "Approval")}>Review approval</button>
                 </div>
               </article>
             ))}
