@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { SlideOverDrawer } from "../components/SlideOverDrawer";
 import { useStore } from "../services/store";
 
 type ReflectionAgent = {
@@ -36,7 +37,9 @@ type ReflectionsResponse = {
   workforceAlignment: WorkforceReflection;
 };
 
-type TabKey = "agent" | "workforce" | "approval";
+type DrawerTab = "Overview" | "Memory" | "Skills" | "Authority" | "Evidence" | "Approval";
+
+const DRAWER_TABS: DrawerTab[] = ["Overview", "Memory", "Skills", "Authority", "Evidence", "Approval"];
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${window.location.protocol}//${window.location.host}${path}`, {
@@ -58,25 +61,15 @@ function Metric({ label, value, sub }: { label: string; value: string | number; 
   );
 }
 
-function StepItem({ number, title, body }: { number: string; title: string; body: string }) {
-  return (
-    <li className="reflection-step-item">
-      <span>{number}</span>
-      <div>
-        <strong>{title}</strong>
-        <p>{body}</p>
-      </div>
-    </li>
-  );
-}
-
-function BulletList({ title, items }: { title: string; items: string[] }) {
+function BulletList({ title, items, empty = "No proposal yet." }: { title: string; items: string[]; empty?: string }) {
   return (
     <div className="reflection-list-block">
       <h3>{title}</h3>
-      <ul>
-        {items.map((item) => <li key={item}>{item}</li>)}
-      </ul>
+      {items.length ? (
+        <ul>
+          {items.map((item) => <li key={item}>{item}</li>)}
+        </ul>
+      ) : <p>{empty}</p>}
     </div>
   );
 }
@@ -102,30 +95,15 @@ function approvalBodyForAgent(agent: ReflectionAgent) {
   ].join("\n");
 }
 
-function approvalBodyForWorkforce(workforce: WorkforceReflection, agents: ReflectionAgent[]) {
-  return [
-    workforce.title,
-    "",
-    workforce.summary,
-    "",
-    "Agent Sharpening lanes included:",
-    ...agents.map((agent) => `- ${agent.agentName}: ${agent.focus}`),
-    "",
-    "Workforce Alignment outputs:",
-    ...workforce.outputs.map((item) => `- ${item}`),
-    "",
-    "Governance rules:",
-    ...workforce.governanceRules.map((item) => `- ${item}`),
-    "",
-    "Review questions:",
-    ...workforce.reviewQuestions.map((item) => `- ${item}`),
-  ].join("\n");
+function initials(name: string) {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "A";
 }
 
 export function Reflections() {
   const { setView } = useStore();
   const [data, setData] = useState<ReflectionsResponse | null>(null);
-  const [tab, setTab] = useState<TabKey>("agent");
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [drawerTab, setDrawerTab] = useState<DrawerTab>("Overview");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -146,36 +124,14 @@ export function Reflections() {
 
   useEffect(() => { void load(); }, []);
 
-  const approvalPreview = useMemo(() => {
-    if (!data) return "";
-    return approvalBodyForWorkforce(data.workforceAlignment, data.agentSharpening);
-  }, [data]);
+  const selectedAgent = useMemo(() => {
+    if (!data || !selectedAgentId) return null;
+    return data.agentSharpening.find((agent) => agent.agentId === selectedAgentId) || null;
+  }, [data, selectedAgentId]);
 
-  async function requestWorkforceApproval() {
-    if (!data) return;
-    setBusy("workforce");
-    setNotice(null);
-    setError(null);
-    try {
-      await requestJson("/api/reflections/approval", {
-        method: "POST",
-        body: JSON.stringify({
-          proposalId: data.workforceAlignment.id,
-          kind: "workforce_alignment",
-          title: "Approve Agent Reflection & Workforce Review operating model",
-          target: "AI Workforce",
-          effect: "Melkizac may run cross-agent reflection reviews and create approval-gated proposals for memory, skills, and workforce-map updates. Individual agents may sharpen inside their lane, but authority does not expand without a separate approval.",
-          reason: "This changes how future agents learn and coordinate, so the approval record must be explicit and reviewable.",
-          body: approvalPreview,
-        }),
-      });
-      setNotice("Created an approval card for Agent Reflection & Workforce Review.");
-      setTab("approval");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to create approval");
-    } finally {
-      setBusy(null);
-    }
+  function openAgent(agent: ReflectionAgent, tab: DrawerTab = "Overview") {
+    setSelectedAgentId(agent.agentId);
+    setDrawerTab(tab);
   }
 
   async function requestAgentApproval(agent: ReflectionAgent) {
@@ -196,6 +152,7 @@ export function Reflections() {
         }),
       });
       setNotice(`Created approval card for ${agent.agentName}.`);
+      setDrawerTab("Approval");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create approval");
     } finally {
@@ -204,138 +161,174 @@ export function Reflections() {
   }
 
   return (
-    <div className="reflections-page scroll">
-      <header className="reflections-hero">
+    <div className="reflections-page scroll reflections-agent-list-page">
+      <header className="reflections-hero reflection-list-hero">
         <div>
-          <span className="stub-tag">AI WORKFORCE GOVERNANCE</span>
-          <h1>Decide what agents are allowed to learn</h1>
+          <span className="stub-tag">AI WORKFORCE REFLECTIONS</span>
+          <h1>Review each agent’s learning proposal</h1>
           <p>
-            This page does not change memory or authority by itself. It shows reviewable proposals for making agents sharper, then creates approval cards so Melkizac can decide what becomes permanent.
+            Click an agent to open its reflection drawer. Review memory, skills, authority, evidence, and approval from one place. Nothing is applied until an approval card is created and reviewed.
           </p>
         </div>
         <div className="reflections-hero-actions">
           <button className="task-icon-action dark" aria-label="Refresh reflections" title="Refresh reflections" onClick={() => void load()}>↻</button>
-          <button className="btn" disabled={!data} onClick={() => setTab("agent")}>Review agents</button>
-          <button className="btn primary" disabled={!data || busy === "workforce"} onClick={() => setTab("approval")}>
-            Review approval
-          </button>
+          <button className="btn" onClick={() => setView("approvals")}>Open Approvals</button>
         </div>
       </header>
 
       {error && <div className="task-error">{error}</div>}
       {notice && <div className="task-notice">{notice} <button className="ghost tiny" onClick={() => setView("approvals")}>Open Approvals</button></div>}
 
-      {loading && <div className="empty big">Loading reflection model…</div>}
+      {loading && <div className="empty big">Loading agent reflections…</div>}
       {data && !loading && (
         <>
-          <section className="reflection-metrics">
-            <Metric label="Agent proposals" value={data.summary.agent_sharpening} sub="role-specific improvement cards" />
-            <Metric label="System review" value={data.summary.workforce_alignment} sub="cross-agent alignment model" />
-            <Metric label="Safety mode" value={data.summary.application_mode} sub="no silent memory or authority changes" />
+          <section className="reflection-metrics reflection-list-metrics">
+            <Metric label="Agents" value={data.summary.agents} sub="available for review" />
+            <Metric label="Approval mode" value={data.summary.application_mode} sub="changes stay review-gated" />
+            <Metric label="Workflow" value="drawer" sub="review and approve per agent" />
           </section>
 
-          <section className="reflection-next-card">
+          <section className="reflection-list-guidance" aria-label="How to use reflections">
             <div>
-              <span className="stub-tag">RECOMMENDED NEXT STEP</span>
-              <h2>Review the model, then create an approval card</h2>
-              <p>
-                Treat reflection like a change request. First check whether the agent lanes and workforce rules make sense. If they do, create an approval card; the actual memory, skill, or authority updates still require a later reviewed action.
-              </p>
-              <ol className="reflection-steps">
-                <StepItem number="1" title="Review agent lanes" body="Check that each agent is improving inside its existing role, not taking over another agent’s work." />
-                <StepItem number="2" title="Review workforce rules" body="Confirm the cross-agent rules for ownership, handoffs, approvals, and evidence." />
-                <StepItem number="3" title="Create approval" body="Draft a visible approval card so the decision is recorded before anything becomes durable." />
-              </ol>
+              <strong>How to use this page</strong>
+              <p>Select an agent. Review its proposal in the drawer tabs. If it makes sense, create an approval card from the drawer.</p>
             </div>
-            <aside className="reflection-decision-box">
-              <strong>Nothing happens automatically</strong>
-              <p>Creating an approval card is the safe next action. It records the proposal; it does not rewrite memories or expand agent authority.</p>
-              <button className="btn primary" disabled={busy === "workforce"} onClick={() => setTab("approval")}>
-                Review approval detail
-              </button>
-            </aside>
+            <div>
+              <strong>Safety rule</strong>
+              <p>Reflections propose learning. They do not automatically write memory, create skills, or expand authority.</p>
+            </div>
           </section>
 
-          <section className="reflection-principles">
-            {data.principles.map((principle) => <span key={principle}>{principle}</span>)}
-          </section>
-
-          <div className="reflection-tabs" role="tablist" aria-label="Reflection views">
-            <button className={tab === "agent" ? "on" : ""} onClick={() => setTab("agent")}>1. Review agents</button>
-            <button className={tab === "workforce" ? "on" : ""} onClick={() => setTab("workforce")}>2. Review workforce rules</button>
-            <button className={tab === "approval" ? "on" : ""} onClick={() => setTab("approval")}>3. Create approval</button>
-          </div>
-
-          {tab === "agent" && (
-            <section className="reflection-agent-grid">
-              {data.agentSharpening.map((agent) => (
-                <article className="reflection-agent-card" key={agent.agentId}>
-                  <div className="reflection-card-head">
-                    <div>
-                      <span>{agent.role}</span>
-                      <h2>{agent.agentName}</h2>
-                    </div>
-                    <em>Sharpening</em>
-                  </div>
-                  <h3>{agent.focus}</h3>
-                  <p>{agent.summary}</p>
-                  <div className="reflection-card-guidance">
-                    Proposed updates only. Use approval if this should become durable memory or a reusable playbook.
-                  </div>
-                  <div className="reflection-card-columns">
-                    <BulletList title="Memory candidates" items={agent.memoryCandidates} />
-                    <BulletList title="Skill candidates" items={agent.skillCandidates} />
-                    <BulletList title="Authority boundary" items={agent.authorityBoundaries} />
-                  </div>
-                  <div className="reflection-evidence-row">
-                    {agent.evidence.map((item) => <span key={item}>{item}</span>)}
-                  </div>
-                  <footer>
-                    <button className="ghost tiny" disabled={busy === agent.agentId} onClick={() => void requestAgentApproval(agent)}>
-                      {busy === agent.agentId ? "Creating…" : "Draft approval for this agent"}
-                    </button>
-                  </footer>
-                </article>
-              ))}
-            </section>
-          )}
-
-          {tab === "workforce" && (
-            <section className="reflection-workforce-panel">
-              <div className="reflection-workforce-main">
-                <span className="stub-tag">WORKFORCE ALIGNMENT</span>
-                <h2>{data.workforceAlignment.title}</h2>
-                <p>{data.workforceAlignment.summary}</p>
-                <div className="reflection-workforce-grid">
-                  <BulletList title="Outputs" items={data.workforceAlignment.outputs} />
-                  <BulletList title="Governance rules" items={data.workforceAlignment.governanceRules} />
-                  <BulletList title="Review questions" items={data.workforceAlignment.reviewQuestions} />
+          <section className="reflection-agent-list" aria-label="Agent reflection list">
+            {data.agentSharpening.map((agent) => (
+              <article className="reflection-agent-row" key={agent.agentId}>
+                <button className="reflection-agent-row-main" type="button" onClick={() => openAgent(agent)}>
+                  <span className="reflection-agent-avatar" aria-hidden="true">{initials(agent.agentName)}</span>
+                  <span className="reflection-agent-row-text">
+                    <span className="reflection-agent-role">{agent.role}</span>
+                    <strong>{agent.agentName}</strong>
+                    <em>{agent.focus}</em>
+                  </span>
+                  <span className="reflection-agent-row-counts" aria-label="Reflection proposal counts">
+                    <b>{agent.memoryCandidates.length}</b> memory
+                    <b>{agent.skillCandidates.length}</b> skills
+                    <b>{agent.authorityBoundaries.length}</b> boundaries
+                  </span>
+                </button>
+                <div className="reflection-agent-row-actions">
+                  <button className="ghost tiny" type="button" onClick={() => openAgent(agent, "Overview")}>Review</button>
+                  <button className="btn tiny" type="button" onClick={() => openAgent(agent, "Approval")}>Approval</button>
                 </div>
+              </article>
+            ))}
+          </section>
+
+          <section className="reflection-workforce-summary-card">
+            <span className="stub-tag">WORKFORCE ALIGNMENT</span>
+            <h2>{data.workforceAlignment.title}</h2>
+            <p>{data.workforceAlignment.summary}</p>
+            <div className="reflection-workforce-summary-grid">
+              <BulletList title="Governance rules" items={data.workforceAlignment.governanceRules} />
+              <BulletList title="Review questions" items={data.workforceAlignment.reviewQuestions} />
+            </div>
+          </section>
+        </>
+      )}
+
+      {selectedAgent && (
+        <SlideOverDrawer<DrawerTab>
+          title={selectedAgent.agentName}
+          subtitle={selectedAgent.focus}
+          eyebrow={selectedAgent.role}
+          closeLabel={`Close ${selectedAgent.agentName} reflection`}
+          tabs={DRAWER_TABS}
+          activeTab={drawerTab}
+          onTabChange={setDrawerTab}
+          onClose={() => setSelectedAgentId(null)}
+          width="wide"
+          className="reflection-detail-drawer"
+          contentClassName="reflection-drawer-body"
+          actions={(
+            <>
+              <button className="ghost tiny" type="button" onClick={() => setDrawerTab("Approval")}>Review approval</button>
+              <button className="btn primary tiny" type="button" disabled={busy === selectedAgent.agentId} onClick={() => void requestAgentApproval(selectedAgent)}>
+                {busy === selectedAgent.agentId ? "Creating…" : "Create approval card"}
+              </button>
+            </>
+          )}
+        >
+          {drawerTab === "Overview" && (
+            <section className="reflection-drawer-section">
+              <div className="reflection-drawer-callout">
+                <strong>What this reflection is asking</strong>
+                <p>{selectedAgent.summary}</p>
               </div>
-              <aside className="reflection-scope-card">
-                <h3>Separation of scope</h3>
-                <p><strong>Agent Sharpening</strong> improves each agent’s competence inside its own lane.</p>
-                <p><strong>Workforce Alignment</strong> lets Melkizac detect contradictions, ownership drift, and handoff gaps across agents.</p>
-                <p><strong>Approval gate</strong> prevents silent changes to memory, skills, workforce map, or authority.</p>
-              </aside>
+              <div className="reflection-drawer-overview-grid">
+                <BulletList title="Memory candidates" items={selectedAgent.memoryCandidates} />
+                <BulletList title="Skill candidates" items={selectedAgent.skillCandidates} />
+                <BulletList title="Authority boundary" items={selectedAgent.authorityBoundaries} />
+              </div>
             </section>
           )}
 
-          {tab === "approval" && (
-            <section className="reflection-approval-panel">
-              <div className="approval-decision-summary">
-                <h3>What exactly am I approving?</h3>
-                <p><strong>You are approving:</strong> the operating model where individual agents sharpen their own memory/skills and Melkizac performs cross-agent workforce alignment.</p>
-                <p><strong>If approved:</strong> HMC can create reviewable reflection proposals for memory, skills, role ownership, and approval-policy improvements. Nothing is applied silently.</p>
-                <p><strong>Boundary:</strong> smarter agents do not gain more authority unless a separate approval grants it.</p>
+          {drawerTab === "Memory" && (
+            <section className="reflection-drawer-section">
+              <div className="reflection-drawer-callout amber">
+                <strong>Review before saving memory</strong>
+                <p>Only durable facts should become memory. Temporary progress, PR numbers, and stale operational notes should not be saved.</p>
               </div>
-              <pre>{approvalPreview}</pre>
-              <button className="btn primary" disabled={busy === "workforce"} onClick={() => void requestWorkforceApproval()}>
-                {busy === "workforce" ? "Creating approval…" : "Create approval card in Approvals"}
-              </button>
+              <BulletList title="Proposed memory candidates" items={selectedAgent.memoryCandidates} />
             </section>
           )}
-        </>
+
+          {drawerTab === "Skills" && (
+            <section className="reflection-drawer-section">
+              <div className="reflection-drawer-callout">
+                <strong>Review repeatable workflows</strong>
+                <p>Skill candidates should capture repeatable procedures, verification steps, pitfalls, and rollback notes.</p>
+              </div>
+              <BulletList title="Proposed skill/playbook candidates" items={selectedAgent.skillCandidates} />
+            </section>
+          )}
+
+          {drawerTab === "Authority" && (
+            <section className="reflection-drawer-section">
+              <div className="reflection-drawer-callout danger">
+                <strong>Authority does not expand automatically</strong>
+                <p>This tab defines the safe operating boundary for the agent. Any expansion needs a separate explicit approval.</p>
+              </div>
+              <BulletList title="Authority boundaries" items={selectedAgent.authorityBoundaries} />
+            </section>
+          )}
+
+          {drawerTab === "Evidence" && (
+            <section className="reflection-drawer-section">
+              <BulletList title="Evidence used for this reflection" items={selectedAgent.evidence} />
+              <div className="reflection-drawer-callout">
+                <strong>Evidence standard</strong>
+                <p>Apply the proposal only if the evidence matches the agent’s actual work and role. If the evidence is weak, leave it as a proposal.</p>
+              </div>
+            </section>
+          )}
+
+          {drawerTab === "Approval" && (
+            <section className="reflection-drawer-section">
+              <div className="approval-decision-summary">
+                <h3>Approve reflection proposal for {selectedAgent.agentName}</h3>
+                <p><strong>You are approving:</strong> a reviewable proposal that this agent may use these memory/skill improvements inside its current role boundary.</p>
+                <p><strong>Not approving:</strong> automatic memory writes, automatic skill creation, external posting, production changes, or expanded authority.</p>
+                <p><strong>Next step:</strong> create an approval card, then review it in Approvals before applying any durable change.</p>
+              </div>
+              <pre>{approvalBodyForAgent(selectedAgent)}</pre>
+              <div className="reflection-drawer-footer-actions">
+                <button className="btn primary" type="button" disabled={busy === selectedAgent.agentId} onClick={() => void requestAgentApproval(selectedAgent)}>
+                  {busy === selectedAgent.agentId ? "Creating approval…" : "Create approval card in Approvals"}
+                </button>
+                <button className="ghost" type="button" onClick={() => setView("approvals")}>Open Approvals</button>
+              </div>
+            </section>
+          )}
+        </SlideOverDrawer>
       )}
     </div>
   );
