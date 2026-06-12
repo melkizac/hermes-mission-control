@@ -58,6 +58,18 @@ function Metric({ label, value, sub }: { label: string; value: string | number; 
   );
 }
 
+function StepItem({ number, title, body }: { number: string; title: string; body: string }) {
+  return (
+    <li className="reflection-step-item">
+      <span>{number}</span>
+      <div>
+        <strong>{title}</strong>
+        <p>{body}</p>
+      </div>
+    </li>
+  );
+}
+
 function BulletList({ title, items }: { title: string; items: string[] }) {
   return (
     <div className="reflection-list-block">
@@ -195,16 +207,17 @@ export function Reflections() {
     <div className="reflections-page scroll">
       <header className="reflections-hero">
         <div>
-          <span className="stub-tag">AGENT REFLECTION</span>
-          <h1>Agent Sharpening & Workforce Alignment</h1>
+          <span className="stub-tag">AI WORKFORCE GOVERNANCE</span>
+          <h1>Decide what agents are allowed to learn</h1>
           <p>
-            Reflection turns past sessions and current memory into reviewable proposals. Agents become sharper inside their own lanes while Melkizac keeps the whole AI Workforce aligned, approval-gated, and auditable.
+            This page does not change memory or authority by itself. It shows reviewable proposals for making agents sharper, then creates approval cards so Melkizac can decide what becomes permanent.
           </p>
         </div>
         <div className="reflections-hero-actions">
           <button className="task-icon-action dark" aria-label="Refresh reflections" title="Refresh reflections" onClick={() => void load()}>↻</button>
-          <button className="btn primary" disabled={!data || busy === "workforce"} onClick={() => void requestWorkforceApproval()}>
-            {busy === "workforce" ? "Creating approval…" : "Create approval to adopt"}
+          <button className="btn" disabled={!data} onClick={() => setTab("agent")}>Review agents</button>
+          <button className="btn primary" disabled={!data || busy === "workforce"} onClick={() => setTab("approval")}>
+            Review approval
           </button>
         </div>
       </header>
@@ -216,9 +229,31 @@ export function Reflections() {
       {data && !loading && (
         <>
           <section className="reflection-metrics">
-            <Metric label="Agents sharpened" value={data.summary.agent_sharpening} sub="role-specific lanes" />
-            <Metric label="Workforce review" value={data.summary.workforce_alignment} sub="cross-agent alignment loop" />
-            <Metric label="Apply mode" value={data.summary.application_mode} sub="no silent memory or authority changes" />
+            <Metric label="Agent proposals" value={data.summary.agent_sharpening} sub="role-specific improvement cards" />
+            <Metric label="System review" value={data.summary.workforce_alignment} sub="cross-agent alignment model" />
+            <Metric label="Safety mode" value={data.summary.application_mode} sub="no silent memory or authority changes" />
+          </section>
+
+          <section className="reflection-next-card">
+            <div>
+              <span className="stub-tag">RECOMMENDED NEXT STEP</span>
+              <h2>Review the model, then create an approval card</h2>
+              <p>
+                Treat reflection like a change request. First check whether the agent lanes and workforce rules make sense. If they do, create an approval card; the actual memory, skill, or authority updates still require a later reviewed action.
+              </p>
+              <ol className="reflection-steps">
+                <StepItem number="1" title="Review agent lanes" body="Check that each agent is improving inside its existing role, not taking over another agent’s work." />
+                <StepItem number="2" title="Review workforce rules" body="Confirm the cross-agent rules for ownership, handoffs, approvals, and evidence." />
+                <StepItem number="3" title="Create approval" body="Draft a visible approval card so the decision is recorded before anything becomes durable." />
+              </ol>
+            </div>
+            <aside className="reflection-decision-box">
+              <strong>Nothing happens automatically</strong>
+              <p>Creating an approval card is the safe next action. It records the proposal; it does not rewrite memories or expand agent authority.</p>
+              <button className="btn primary" disabled={busy === "workforce"} onClick={() => setTab("approval")}>
+                Review approval detail
+              </button>
+            </aside>
           </section>
 
           <section className="reflection-principles">
@@ -226,9 +261,9 @@ export function Reflections() {
           </section>
 
           <div className="reflection-tabs" role="tablist" aria-label="Reflection views">
-            <button className={tab === "agent" ? "on" : ""} onClick={() => setTab("agent")}>Agent Sharpening</button>
-            <button className={tab === "workforce" ? "on" : ""} onClick={() => setTab("workforce")}>Workforce Alignment</button>
-            <button className={tab === "approval" ? "on" : ""} onClick={() => setTab("approval")}>Approval Detail</button>
+            <button className={tab === "agent" ? "on" : ""} onClick={() => setTab("agent")}>1. Review agents</button>
+            <button className={tab === "workforce" ? "on" : ""} onClick={() => setTab("workforce")}>2. Review workforce rules</button>
+            <button className={tab === "approval" ? "on" : ""} onClick={() => setTab("approval")}>3. Create approval</button>
           </div>
 
           {tab === "agent" && (
@@ -244,6 +279,9 @@ export function Reflections() {
                   </div>
                   <h3>{agent.focus}</h3>
                   <p>{agent.summary}</p>
+                  <div className="reflection-card-guidance">
+                    Proposed updates only. Use approval if this should become durable memory or a reusable playbook.
+                  </div>
                   <div className="reflection-card-columns">
                     <BulletList title="Memory candidates" items={agent.memoryCandidates} />
                     <BulletList title="Skill candidates" items={agent.skillCandidates} />
@@ -254,7 +292,7 @@ export function Reflections() {
                   </div>
                   <footer>
                     <button className="ghost tiny" disabled={busy === agent.agentId} onClick={() => void requestAgentApproval(agent)}>
-                      {busy === agent.agentId ? "Creating…" : "Create approval for this agent"}
+                      {busy === agent.agentId ? "Creating…" : "Draft approval for this agent"}
                     </button>
                   </footer>
                 </article>
@@ -293,7 +331,7 @@ export function Reflections() {
               </div>
               <pre>{approvalPreview}</pre>
               <button className="btn primary" disabled={busy === "workforce"} onClick={() => void requestWorkforceApproval()}>
-                {busy === "workforce" ? "Creating approval…" : "Create approval card"}
+                {busy === "workforce" ? "Creating approval…" : "Create approval card in Approvals"}
               </button>
             </section>
           )}
