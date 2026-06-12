@@ -57,6 +57,7 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
       { key: "agent-org", label: "Org Chart", icon: "agentOrg" },
       { key: "skills", label: "Skills", icon: "skills" },
       { key: "memory", label: "Memory", icon: "memory" },
+      { key: "reflections", label: "Reflections", icon: "memory" },
       { key: "tools", label: "Tools", icon: "setup" },
       { key: "plugins", label: "Plugins", icon: "setup" },
       { key: "approvals", label: "Approvals", icon: "approvals" },
@@ -177,6 +178,7 @@ export function NavRail() {
   const [workforceMenuOpen, setWorkforceMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [usagePeekOpen, setUsagePeekOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem("hmc-nav-collapsed") === "true");
 
   useEffect(() => {
     let alive = true;
@@ -212,6 +214,15 @@ export function NavRail() {
     if (!settingsOpen) setUsagePeekOpen(false);
   }, [settingsOpen]);
 
+  useEffect(() => {
+    window.localStorage.setItem("hmc-nav-collapsed", String(collapsed));
+    if (collapsed) {
+      setSettingsOpen(false);
+      setUsagePeekOpen(false);
+      setWorkforceMenuOpen(false);
+    }
+  }, [collapsed]);
+
   const gatewayOnline = status?.gateway?.running ?? true;
   const visibleGroups = uiMode === "admin" ? adminConsoleGroups : simplifiedWorkspaceGroups;
   const workspaceSystemGroup = simplifiedWorkspaceGroups.find((group) => group.system);
@@ -235,18 +246,39 @@ export function NavRail() {
   }
 
   return (
-    <nav className="rail">
+    <nav className={"rail" + (collapsed ? " collapsed" : "")} aria-label={collapsed ? "Mission Control navigation collapsed" : "Mission Control navigation"}>
       <div className="ws">
-        <span className="mark">
-          <img src={logoUrl} alt="Melverick_OS logo" />
-        </span>
-        <b>Melverick_OS</b>
+        <button
+          className="rail-brand-toggle"
+          onClick={() => setCollapsed((next) => !next)}
+          aria-label={collapsed ? "Open sidebar" : "Close sidebar"}
+          aria-expanded={!collapsed}
+          data-tooltip={collapsed ? "Open sidebar" : "Close sidebar"}
+        >
+          <span className="mark">
+            <img src={logoUrl} alt="Melverick_OS logo" />
+          </span>
+          <span className="rail-toggle-icon" aria-hidden="true">
+            <Icon name="sidebar" size={18} />
+          </span>
+        </button>
+        <b className="brand-name">Melverick_OS</b>
         <span
           className="brand-status-dot"
           style={{ background: gatewayOnline ? "var(--good)" : "var(--bad)" }}
           aria-label={gatewayOnline ? "System online" : "System offline"}
           title={gatewayOnline ? "System online" : "System offline"}
         />
+        {!collapsed && (
+          <button
+            className="rail-collapse-button"
+            onClick={() => setCollapsed(true)}
+            aria-label="Close sidebar"
+            data-tooltip="Close sidebar"
+          >
+            <Icon name="sidebar" size={18} />
+          </button>
+        )}
       </div>
 
       <div className="nav scroll">
@@ -264,14 +296,16 @@ export function NavRail() {
                       onClick={() => setWorkforceMenuOpen((open) => !open)}
                       aria-haspopup="menu"
                       aria-expanded={workforceMenuOpen}
+                      data-tooltip={selectedItem.label}
+                      title={collapsed ? selectedItem.label : undefined}
                     >
                       <Icon name={selectedItem.icon} size={17} />
-                      {selectedItem.label}
+                      <span className="nav-text">{selectedItem.label}</span>
                       <span className={"nav-right-icon workforce-chevron" + (workforceMenuOpen ? " open" : "")}>
                         <Icon name="chevronDown" size={15} />
                       </span>
                     </button>
-                    {workforceMenuOpen && (
+                    {workforceMenuOpen && !collapsed && (
                       <div className="workforce-menu" role="menu" aria-label="Workforce resources">
                         {workforceSelectorItems.map((item) => {
                           const active = view === item.key;
@@ -299,9 +333,9 @@ export function NavRail() {
               const key = navItemKey(it);
               if (isLinkItem(it)) {
                 return (
-                  <a key={key} className="nitem" href={it.href}>
+                  <a key={key} className="nitem" href={it.href} data-tooltip={it.label} title={collapsed ? it.label : undefined}>
                     <Icon name={it.icon} size={17} />
-                    {it.label}
+                    <span className="nav-text">{it.label}</span>
                   </a>
                 );
               }
@@ -311,9 +345,11 @@ export function NavRail() {
                   key={key}
                   className={"nitem" + (active ? " on" : "")}
                   onClick={onClick}
+                  data-tooltip={it.label}
+                  title={collapsed ? it.label : undefined}
                 >
                   <Icon name={it.icon} size={17} />
-                  {it.label}
+                  <span className="nav-text">{it.label}</span>
                 </button>
               );
             })}
@@ -321,7 +357,7 @@ export function NavRail() {
         ))}
       </div>
 
-      {uiMode !== "admin" && (
+      {uiMode !== "admin" && !collapsed && (
         <div className="settings-dock">
           {settingsOpen && (
             <div className="settings-menu" role="menu" aria-label="System menu">

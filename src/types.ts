@@ -72,6 +72,93 @@ export type EvidenceKind = "source" | "tool-call" | "session" | "screenshot" | "
 export type EvidenceGateType = "command_output" | "build_test_log" | "api_response" | "screenshot" | "file_artifact" | "approval_note" | "session_link" | string;
 export type EvidenceGateStatus = "not-required" | "passed" | "blocked" | string;
 export type PhaseCheckpointStatus = "pending" | "in_progress" | "passed" | "blocked" | "failed";
+export type HmcWorkflowPhase = "hmc-plan" | "hmc-build" | "hmc-review" | "hmc-qa" | "hmc-ship" | "hmc-canary" | "hmc-retro";
+export type HmcWorkflowEvidenceStatus = "pending" | "running" | "passed" | "blocked" | "failed" | "skipped" | string;
+
+export interface HmcWorkflowEvidenceCommand {
+  command: string;
+  status: HmcWorkflowEvidenceStatus;
+  summary?: string;
+  log_path?: string | null;
+  logPath?: string | null;
+}
+
+export interface HmcWorkflowEvidenceCheck {
+  type: string;
+  status: HmcWorkflowEvidenceStatus;
+  summary: string;
+  url?: string | null;
+  path?: string | null;
+}
+
+export interface HmcWorkflowEvidenceApproval {
+  required: boolean;
+  status: "not-required" | "pending" | "approved" | "rejected" | "changes-requested" | HmcWorkflowEvidenceStatus;
+  reason?: string;
+  source?: string | null;
+}
+
+export interface HmcWorkflowEvidence {
+  schema: "hmc.workflow_evidence.v1" | string;
+  project_id?: string;
+  projectId?: string;
+  tenant?: string;
+  task_id?: string;
+  taskId?: string;
+  phase: HmcWorkflowPhase | string;
+  status: HmcWorkflowEvidenceStatus;
+  summary: string;
+  created_at?: string;
+  createdAt?: string;
+  created_by?: string;
+  createdBy?: string;
+  branch?: string | null;
+  commit?: string | null;
+  workspace_path?: string | null;
+  workspacePath?: string | null;
+  deploy_target?: string | null;
+  deployTarget?: string | null;
+  health_check?: string | null;
+  healthCheck?: string | null;
+  browser_proof?: string | null;
+  browserProof?: string | null;
+  docs_impact?: string | null;
+  docsImpact?: string | null;
+  rollback?: string | null;
+  rollback_note?: string | null;
+  rollbackNote?: string | null;
+  review?: string | Record<string, unknown> | null;
+  build?: string | Record<string, unknown> | null;
+  tests?: Array<string | Record<string, unknown>> | Record<string, unknown> | null;
+  artifacts?: Array<Record<string, unknown>>;
+  commands?: HmcWorkflowEvidenceCommand[];
+  checks?: HmcWorkflowEvidenceCheck[];
+  risks?: Array<string | Record<string, unknown>>;
+  approval?: HmcWorkflowEvidenceApproval;
+}
+
+
+export interface GuardPolicy {
+  mode?: "advisory" | "enforced" | "frozen" | string;
+  scope?: string;
+  allowed_edit_paths?: string[];
+  allowedEditPaths?: string[];
+  destructive_command_warning_level?: "low" | "medium" | "high" | "critical" | string;
+  destructiveCommandWarningLevel?: "low" | "medium" | "high" | "critical" | string;
+  checkpoint_mode?: string;
+  checkpointMode?: string;
+  rollback_artifact_path?: string;
+  rollbackArtifactPath?: string;
+  freeze?: boolean;
+  advisory_enforcement?: boolean;
+  advisoryEnforcement?: boolean;
+  safe_start_required?: boolean;
+  safeStartRequired?: boolean;
+  dirty_repo_policy?: string;
+  dirtyRepoPolicy?: string;
+  evidence_required?: string[];
+  evidenceRequired?: string[];
+}
 
 export interface WorkItemRef {
   id: string;
@@ -1043,6 +1130,11 @@ export interface BoardTaskResultDetails {
   needsHuman?: boolean;
   approval_policy?: Record<string, unknown>;
   approvalPolicy?: Record<string, unknown>;
+  guard_policy?: GuardPolicy;
+  guardPolicy?: GuardPolicy;
+  workflow_evidence?: HmcWorkflowEvidence[] | HmcWorkflowEvidence;
+  workflowEvidence?: HmcWorkflowEvidence[] | HmcWorkflowEvidence;
+  hmc_workflow_evidence?: HmcWorkflowEvidence[] | HmcWorkflowEvidence;
 }
 
 export interface TaskResultResponse {
@@ -1078,6 +1170,8 @@ export interface BoardTask {
   board_is_default?: boolean;
   result: string;
   result_details?: BoardTaskResultDetails | null;
+  guard_policy?: GuardPolicy | null;
+  guardPolicy?: GuardPolicy | null;
   mission_result?: MissionResult | null;
   run_tree?: RunTreePayload | null;
   agent_handoffs?: AgentHandoff[];
@@ -1532,6 +1626,8 @@ export interface ProjectRecord {
   activity: ProjectActivityItem[];
   tags: string[];
   workspace_count: number;
+  guard_policy?: GuardPolicy | null;
+  guardPolicy?: GuardPolicy | null;
   tasks?: ProjectOperatingLink[];
   automations?: ProjectOperatingLink[];
   goals?: ProjectOperatingLink[];
@@ -2354,6 +2450,7 @@ export type ViewKey =
   | "board"
   | "skills"
   | "memory"
+  | "reflections"
   | "approvals"
   | "automations"
   | "audit"

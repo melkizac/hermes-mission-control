@@ -31,6 +31,18 @@ def test_research_deliverable_route_carries_uploaded_attachment_paths_to_backend
     assert 'sizeBytes: attachment.sizeBytes' in mission
 
 
+def test_main_chat_generated_output_does_not_link_untrusted_server_paths():
+    mission = MISSION_PATH.read_text(encoding='utf-8')
+    app = APP_PATH.read_text(encoding='utf-8')
+
+    assert "GENERATED_OUTPUT_DIR = Path(os.environ.get('HMC_GENERATED_OUTPUT_DIR', HOME / '.hermes' / 'output'))" in app
+    assert "elif parsed.path == '/api/generated-output/download':" in app
+    assert "downloadablePathFromText" not in mission
+    assert "/api/generated-output/download?path=${encodeURIComponent" not in mission
+    assert "artifact.downloadUrl || artifact.url || \"\"" in mission
+    assert "fallbackText: [artifact.filename, artifact.preview].filter(Boolean).join(\"\\n\")" in mission
+
+
 def test_backend_attachment_save_normalize_and_prompt_block_exposes_server_path(monkeypatch):
     upload_root = tempfile.mkdtemp(prefix='hmc-attachment-regression-')
     monkeypatch.setenv('HMC_UPLOAD_DIR', upload_root)

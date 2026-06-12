@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DragEvent } from "react";
-import type { Agent, AgentHandoff, BoardStatus, BoardTask, EvidenceGateState, MissionArtifact, ProjectRecord, RunTreePayload, RunTreeRunNode, RunTreeTaskNode } from "../types";
+import type { Agent, AgentHandoff, BoardStatus, BoardTask, EvidenceGateState, GuardPolicy, HmcWorkflowEvidence, HmcWorkflowPhase, MissionArtifact, ProjectRecord, RunTreePayload, RunTreeRunNode, RunTreeTaskNode } from "../types";
 import { ArtifactCard, EvidenceTimeline, ResultSummaryPanel } from "../components/MissionFoundation";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { useStore } from "../services/store";
@@ -40,7 +40,7 @@ const laneGroups: { title: string; className: string; lanes: { key: BoardLaneKey
 const pendingTag = (status: BoardStatus) => statusOptions.find((item) => item.key === status)?.label ?? status;
 
 
-type DetailTab = "overview" | "sources" | "tasks" | "outputs" | "run-tree" | "handoffs" | "evidence" | "settings";
+type DetailTab = "overview" | "sources" | "tasks" | "outputs" | "run-tree" | "handoffs" | "release" | "evidence" | "settings";
 type ViewMode = "cards" | "list";
 type HumanActionKind = "feedback" | "approval" | "manual" | "agent";
 
@@ -76,10 +76,12 @@ type ProjectDrawerData = {
   progress: number;
   progressKnown: boolean;
   needsHuman: boolean;
+  reasonLabel: string;
   sources: ProjectSourceView[];
   outputs: DrawerRecord[];
   evidence: DrawerRecord[];
   settings: DrawerRecord;
+  guardPolicy: GuardPolicy | null;
   stages: Array<{ id: string; label: string; status: string; owner: string; evidence?: string }>;
 };
 
@@ -97,13 +99,17 @@ export function TaskBoard() {
   const [status, setStatus] = useState<BoardStatus | "">("");
   const [assignee, setAssignee] = useState("");
   const [project, setProject] = useState("");
-  const [board, setBoard] = useState("");
+  // Default to the canonical Hermes Admin Console board so the visible Task Board
+  // counts match `hermes kanban list`. Operators can still choose All Boards for
+  // cross-profile/named-board reconciliation work.
+  const [board, setBoard] = useState("default");
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
   const [tasks, setTasks] = useState<BoardTask[]>([]);
   const [summary, setSummary] = useState({ total: 0, triage: 0, todo: 0, scheduled: 0, ready: 0, running: 0, blocked: 0, error: 0, review: 0, done: 0, assignees: [] as string[], projects: [] as string[], boards: [] as string[] });
   const [boardOptions, setBoardOptions] = useState<BoardSourceOption[]>([]);
   const [boardWarnings, setBoardWarnings] = useState<string[]>([]);
   const [projectOptions, setProjectOptions] = useState<ProjectRecord[]>([]);
+  const [boardScopedProjects, setBoardScopedProjects] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab>("overview");
@@ -174,6 +180,27 @@ export function TaskBoard() {
   }, [q, status, assignee, project, board, viewMode]);
 
   useEffect(() => {
+    let cancelled = false;
+    if (!board) {
+      setBoardScopedProjects([]);
+      return () => { cancelled = true; };
+    }
+    void client.listBoard({ board }).then((data) => {
+      if (cancelled) return;
+      setBoardScopedProjects(data.projects ?? data.summary?.projects ?? []);
+    }).catch(() => {
+      if (!cancelled) setBoardScopedProjects([]);
+    });
+    return () => { cancelled = true; };
+  }, [board]);
+
+  useEffect(() => {
+    if (!board || !project) return;
+    if (!boardScopedProjects.length || boardScopedProjects.includes(project)) return;
+    setProject("");
+  }, [board, boardScopedProjects, project]);
+
+  useEffect(() => {
     const close = (event: KeyboardEvent) => {
       if (event.key === "Escape") setSelectedId(null);
     };
@@ -199,10 +226,15 @@ export function TaskBoard() {
 
   const selected = useMemo(() => tasks.find((task) => task.id === selectedId), [tasks, selectedId]);
   const availableAgents = useMemo(() => agents.filter((agent) => agent.id), [agents]);
+  const projectNameById = useMemo(() => new Map(projectOptions.map((item) => [item.id, item.name || item.id])), [projectOptions]);
   const projectFilterOptions = useMemo(() => {
-    if (projectOptions.length) return projectOptions.map((item) => ({ value: item.id, label: item.name || item.id }));
-    return summary.projects.map((item) => ({ value: item, label: item }));
-  }, [projectOptions, summary.projects]);
+    const sourceIds = board
+      ? boardScopedProjects
+      : projectOptions.length
+        ? projectOptions.map((item) => item.id)
+        : summary.projects;
+    return Array.from(new Set(sourceIds.filter(Boolean))).map((id) => ({ value: id, label: projectNameById.get(id) || id }));
+  }, [board, boardScopedProjects, projectNameById, projectOptions, summary.projects]);
   const openTask = (task: BoardTask) => {
     setSelectedId(task.id);
     setDetailTab("overview");
@@ -518,14 +550,15 @@ ${JSON.stringify(payload, null, 2)}`);
 
 
 function TaskListRow({ task, active, onSelect }: { task: BoardTask; active: boolean; onSelect: () => void }) {
+  const copy = getTaskDisplayCopy(task);
   return (
     <button className={`ops-row task-list-row ${active ? "on" : ""}`} onClick={onSelect}>
       <div className="ops-row-main">
         <div className="ops-row-top">
-          <b>{task.title}</b>
+          <b>{copy.title}</b>
           <span className={`tag ${task.status === "blocked" || task.status === "error" ? "warn" : task.status === "done" ? "good" : "muted"}`}>{pendingTag(task.status)}</span>
         </div>
-        <p>{task.body || "No description yet."}</p>
+        <p>{copy.description}</p>
         <small className="mono">{task.id}</small>
       </div>
       <div className="ops-row-meta">
@@ -558,10 +591,11 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
   onSourceAction: (task: BoardTask, action: SourceAction, source: SourceActionPayload) => void;
 }) {
   const intent = classifyHumanTask(task);
+  const displayCopy = getTaskDisplayCopy(task);
   const projectData = getProjectDrawerData(task);
   return (
     <SlideOverDrawer
-      title={task.title}
+      title={displayCopy.title}
       subtitle={<span className="mono">{task.id} · {projectData.displayProjectId}</span>}
       eyebrow={pendingTag(task.status)}
       statusClassName={`tag ${task.status === "blocked" ? "warn" : "good"}`}
@@ -570,7 +604,7 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
       ariaLabel="Project-aware task cockpit"
       dataDeepLinkTarget="task"
       // rendered attribute: data-deeplink-target="task"
-      tabs={["overview", "sources", "tasks", "outputs", "run-tree", "handoffs", "evidence", "settings"] as const}
+      tabs={["overview", "sources", "tasks", "outputs", "run-tree", "handoffs", "release", "evidence", "settings"] as const}
       activeTab={tab}
       onTabChange={setTab}
       className="task-detail task-detail-drawer project-task-drawer"
@@ -592,8 +626,14 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
             </div>
             <h3>{projectData.objective}</h3>
             <p>{projectData.nextAction}</p>
+            <div className="task-briefing-grid" aria-label="Task briefing">
+              <div><span>Why this is here</span><b>{projectData.needsHuman ? "Needs operator attention" : projectData.reasonLabel}</b></div>
+              <div><span>Next action</span><b>{projectData.nextAction}</b></div>
+            </div>
           </section>
           {projectData.needsHuman ? <div className="project-needs-you"><b>Needs you</b><span>A genuine human decision, Approval Gate, access fix, or manual outcome is required before agents can continue.</span></div> : <div className="project-agent-resolvable"><b>Agent repair suggested</b><span>This is an operational task or routine failure. Assign it to the right agent if it should be fixed without a manual decision.</span></div>}
+          <GuardPolicyPanel policy={projectData.guardPolicy} compact />
+          <ReleaseLaneOverview task={task} compact />
           <div className="task-kv project-task-kv">
             <Info label="Owner" value={task.assignee || "unassigned"} />
             <Info label="Status" value={projectData.currentStage} />
@@ -617,6 +657,7 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
       {tab === "outputs" && <OutputsTab outputs={projectData.outputs} />}
       {tab === "run-tree" && <RunTreePanel runTree={task.run_tree ?? null} handoffs={task.agent_handoffs ?? []} />}
       {tab === "handoffs" && <section className="task-section"><TaskHandoffTimeline handoffs={task.agent_handoffs ?? []} /></section>}
+      {tab === "release" && <ReleaseLaneTab task={task} />}
       {tab === "evidence" && <TaskEvidenceProofView task={task} />}
       {tab === "settings" && <SettingsTab settings={projectData.settings} task={task} />}
     </SlideOverDrawer>
@@ -636,6 +677,28 @@ function stringifyValue(value: unknown) {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   try { return JSON.stringify(value); } catch { return String(value); }
+}
+
+function getGuardPolicy(task: BoardTask): GuardPolicy | null {
+  const details = asRecord(task.result_details);
+  const settings = asRecord(details.settings);
+  const requirements = asRecord(details.requirements);
+  const candidates = [task.guard_policy, task.guardPolicy, details.guard_policy, details.guardPolicy, settings.guard_policy, settings.guardPolicy, requirements.guard_policy, requirements.guardPolicy];
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) return candidate as GuardPolicy;
+  }
+  return null;
+}
+
+function guardList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => stringifyValue(item)).filter(Boolean);
+  if (typeof value === "string" && value.trim()) return value.split(/[,\n]+/).map((item) => item.trim()).filter(Boolean);
+  return [];
+}
+
+function guardField(policy: GuardPolicy | null, snake: keyof GuardPolicy, camel: keyof GuardPolicy, fallback = "—") {
+  if (!policy) return fallback;
+  return stringifyValue(policy[snake] ?? policy[camel]) || fallback;
 }
 
 function getNestedRecord(record: DrawerRecord, keys: string[]) {
@@ -725,6 +788,205 @@ function recordEntries(record: DrawerRecord) {
   return Object.entries(record).filter(([, value]) => value !== undefined && value !== null && value !== "");
 }
 
+type ReleaseFieldKey = "branch" | "commit" | "build" | "tests" | "review" | "deployTarget" | "healthCheck" | "browserProof" | "rollback" | "docsImpact";
+type ReleasePhaseStatus = "pending" | "running" | "passed" | "blocked" | "failed" | "skipped" | string;
+
+type ReleasePhaseRow = {
+  id: HmcWorkflowPhase;
+  label: string;
+  command: string;
+  status: ReleasePhaseStatus;
+  taskIds: string[];
+  latest?: HmcWorkflowEvidence;
+  summary: string;
+  missing: ReleaseFieldKey[];
+};
+
+type ReleaseLaneModel = {
+  projectId: string;
+  evidence: HmcWorkflowEvidence[];
+  phases: ReleasePhaseRow[];
+  fields: Array<{ key: ReleaseFieldKey; label: string; value: string; satisfied: boolean }>;
+};
+
+const releasePhaseDefinitions: Array<{ id: HmcWorkflowPhase; label: string; command: string; required: ReleaseFieldKey[] }> = [
+  { id: "hmc-plan", label: "Plan", command: "/hmc-plan", required: ["docsImpact", "rollback"] },
+  { id: "hmc-build", label: "Build", command: "/hmc-build", required: ["branch", "commit", "build", "tests", "docsImpact"] },
+  { id: "hmc-review", label: "Review", command: "/hmc-review", required: ["review"] },
+  { id: "hmc-qa", label: "QA", command: "/hmc-qa", required: ["build", "tests", "healthCheck", "browserProof"] },
+  { id: "hmc-ship", label: "Ship", command: "/hmc-ship", required: ["branch", "commit", "deployTarget", "rollback", "docsImpact"] },
+  { id: "hmc-canary", label: "Canary", command: "/hmc-canary", required: ["healthCheck", "browserProof", "rollback"] },
+  { id: "hmc-retro", label: "Retro", command: "/hmc-retro", required: ["docsImpact", "rollback"] },
+];
+
+const releaseFieldDefinitions: Array<{ key: ReleaseFieldKey; label: string }> = [
+  { key: "branch", label: "Branch" },
+  { key: "commit", label: "Commit" },
+  { key: "build", label: "Build" },
+  { key: "tests", label: "Tests" },
+  { key: "review", label: "Review" },
+  { key: "deployTarget", label: "Deploy target" },
+  { key: "healthCheck", label: "Health check" },
+  { key: "browserProof", label: "Browser proof" },
+  { key: "rollback", label: "Rollback note" },
+  { key: "docsImpact", label: "Docs impact" },
+];
+
+function normalizeHmcPhase(value: unknown): HmcWorkflowPhase | "" {
+  const raw = String(value || "").trim().toLowerCase().replace(/^\//, "").replace(/_/g, "-");
+  const match = releasePhaseDefinitions.find((phase) => phase.id === raw || phase.id.replace("hmc-", "") === raw || phase.command.replace(/^\//, "") === raw);
+  return match?.id ?? "";
+}
+
+function isWorkflowEvidenceRecord(value: unknown): value is HmcWorkflowEvidence {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as DrawerRecord;
+  return record.schema === "hmc.workflow_evidence.v1" || Boolean(normalizeHmcPhase(record.phase));
+}
+
+function collectWorkflowEvidence(value: unknown): HmcWorkflowEvidence[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.flatMap(collectWorkflowEvidence);
+  if (typeof value !== "object") return [];
+  const record = value as DrawerRecord;
+  const direct = isWorkflowEvidenceRecord(record) ? [record as HmcWorkflowEvidence] : [];
+  return direct.concat(
+    collectWorkflowEvidence(record.workflow_evidence),
+    collectWorkflowEvidence(record.workflowEvidence),
+    collectWorkflowEvidence(record.hmc_workflow_evidence),
+    collectWorkflowEvidence(record.evidence),
+  );
+}
+
+function parseWorkflowEvidenceFromText(text: string): HmcWorkflowEvidence[] {
+  if (!text.includes("hmc.workflow_evidence.v1")) return [];
+  const candidates: string[] = [];
+  const fencePattern = /```(?:json)?\s*([\s\S]*?)```/gi;
+  let fence: RegExpExecArray | null;
+  while ((fence = fencePattern.exec(text))) candidates.push(fence[1]);
+  const first = text.indexOf("{");
+  const last = text.lastIndexOf("}");
+  if (first >= 0 && last > first) candidates.push(text.slice(first, last + 1));
+  return candidates.flatMap((candidate) => {
+    try { return collectWorkflowEvidence(JSON.parse(candidate)); } catch { return []; }
+  });
+}
+
+function getWorkflowEvidenceRecords(task: BoardTask): HmcWorkflowEvidence[] {
+  const details = asRecord(task.result_details);
+  const records = [
+    ...collectWorkflowEvidence(details.workflow_evidence),
+    ...collectWorkflowEvidence(details.workflowEvidence),
+    ...collectWorkflowEvidence(details.hmc_workflow_evidence),
+    ...collectWorkflowEvidence(task.mission_result?.evidence),
+    ...(task.comments ?? []).flatMap((comment) => parseWorkflowEvidenceFromText(comment.body)),
+  ];
+  const seen = new Set<string>();
+  return records
+    .filter((record) => normalizeHmcPhase(record.phase))
+    .filter((record) => {
+      const key = `${record.task_id || record.taskId || task.id}:${record.phase}:${record.created_at || record.createdAt || ""}:${record.summary}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => String(a.created_at || a.createdAt || "").localeCompare(String(b.created_at || b.createdAt || "")));
+}
+
+function evidenceHasCommand(evidence: HmcWorkflowEvidence | undefined, pattern: RegExp) {
+  return Boolean(evidence?.commands?.some((command) => pattern.test(`${command.command} ${command.summary || ""}`) && !/failed|blocked/i.test(command.status)));
+}
+
+function evidenceHasCheck(evidence: HmcWorkflowEvidence | undefined, pattern: RegExp) {
+  return Boolean(evidence?.checks?.some((check) => pattern.test(`${check.type} ${check.summary}`) && !/failed|blocked/i.test(check.status)));
+}
+
+function releaseFieldValue(key: ReleaseFieldKey, evidence: HmcWorkflowEvidence[]): string {
+  const latest = [...evidence].reverse();
+  for (const item of latest) {
+    const record = item as unknown as DrawerRecord;
+    if (key === "branch" && item.branch) return item.branch;
+    if (key === "commit" && item.commit) return item.commit;
+    if (key === "build" && (item.build || evidenceHasCommand(item, /build|npm run build|vite/i))) return item.build ? formatRecordValue(item.build) : "Build command passed";
+    if (key === "tests" && (item.tests || evidenceHasCommand(item, /test|pytest|vitest|playwright|npm run build/i) || evidenceHasCheck(item, /test|qa|build/i))) return item.tests ? formatRecordValue(item.tests) : "Verification command attached";
+    if (key === "review" && (item.review || item.approval?.status === "approved" || item.phase === "hmc-review")) return item.review ? formatRecordValue(item.review) : item.summary;
+    if (key === "deployTarget" && (item.deploy_target || item.deployTarget)) return item.deploy_target || item.deployTarget || "";
+    if (key === "healthCheck" && (item.health_check || item.healthCheck || evidenceHasCheck(item, /health|api|endpoint/i))) return item.health_check || item.healthCheck || "Health/API check attached";
+    if (key === "browserProof" && (item.browser_proof || item.browserProof || evidenceHasCheck(item, /browser|dom|screenshot|console/i))) return item.browser_proof || item.browserProof || "Browser proof attached";
+    if (key === "rollback" && (item.rollback || item.rollback_note || item.rollbackNote)) return item.rollback || item.rollback_note || item.rollbackNote || "";
+    if (key === "docsImpact" && (item.docs_impact || item.docsImpact)) return item.docs_impact || item.docsImpact || "";
+    const fallback = getString(record, [key], "");
+    if (fallback) return fallback;
+  }
+  return "";
+}
+
+function buildReleaseLaneModel(task: BoardTask): ReleaseLaneModel {
+  const evidence = getWorkflowEvidenceRecords(task);
+  const projectId = task.tenant?.replace(/^project:/, "") || task.workflow_template_id || task.id;
+  const fields = releaseFieldDefinitions.map((field) => {
+    const value = releaseFieldValue(field.key, evidence);
+    return { ...field, value, satisfied: Boolean(value) };
+  });
+  const byPhase = new Map<HmcWorkflowPhase, HmcWorkflowEvidence[]>();
+  evidence.forEach((item) => {
+    const phase = normalizeHmcPhase(item.phase);
+    if (!phase) return;
+    byPhase.set(phase, [...(byPhase.get(phase) ?? []), item]);
+  });
+  const phases = releasePhaseDefinitions.map((phase) => {
+    const phaseEvidence = byPhase.get(phase.id) ?? [];
+    const latest = phaseEvidence[phaseEvidence.length - 1];
+    const status = latest?.status || (normalizeHmcPhase(task.current_step_key) === phase.id ? task.status : "pending");
+    const missing = phase.required.filter((key) => !releaseFieldValue(key, phaseEvidence.length ? phaseEvidence : evidence));
+    return {
+      ...phase,
+      status,
+      taskIds: Array.from(new Set(phaseEvidence.map((item) => item.task_id || item.taskId || task.id).filter(Boolean) as string[])),
+      latest,
+      summary: latest?.summary || "No structured evidence attached yet.",
+      missing,
+    };
+  });
+  return { projectId, evidence, phases, fields };
+}
+
+function ReleaseLaneOverview({ task, compact = false }: { task: BoardTask; compact?: boolean }) {
+  const model = buildReleaseLaneModel(task);
+  const satisfied = model.fields.filter((field) => field.satisfied).length;
+  const hasHmcContext = model.evidence.length > 0 || task.tenant === "hmc-governed-software-factory" || task.workflow_template_id === "hmc_software_factory";
+  if (!hasHmcContext && compact) return null;
+  return (
+    <section className={`task-section release-lane-overview ${compact ? "compact" : ""}`} aria-label="HMC release lane evidence overview">
+      <div className="release-lane-head"><div><span className="stub-tag">Release lane</span><h3>HMC software-factory evidence</h3></div><span>{satisfied}/{model.fields.length} fields</span></div>
+      <div className="release-phase-strip">
+        {model.phases.map((phase) => <span className={`release-phase-pill ${phase.status}`} key={phase.id}><b>{phase.label}</b><small>{phase.status}</small></span>)}
+      </div>
+    </section>
+  );
+}
+
+function ReleaseLaneTab({ task }: { task: BoardTask }) {
+  const model = buildReleaseLaneModel(task);
+  return (
+    <section className="task-section project-drawer-tab release-lane-tab" aria-label="HMC release lane and evidence model">
+      <ReleaseLaneOverview task={task} />
+      <div className="release-field-grid">
+        {model.fields.map((field) => <div className={`release-field-card ${field.satisfied ? "satisfied" : "missing"}`} key={field.key}><span>{field.satisfied ? "✓" : "!"}</span><b>{field.label}</b><p>{field.value || "Missing from latest structured evidence."}</p></div>)}
+      </div>
+      <div className="release-phase-list">
+        {model.phases.map((phase) => <article className={`release-phase-card ${phase.status}`} key={phase.id}>
+          <div className="release-phase-card-head"><div><span className="stub-tag">{phase.command}</span><h4>{phase.label}</h4></div><span className={`tag ${phase.status === "passed" ? "good" : phase.status === "failed" || phase.status === "blocked" ? "warn" : "muted"}`}>{phase.status}</span></div>
+          <p>{phase.summary}</p>
+          <div className="chip-row compact">{phase.taskIds.length > 0 ? phase.taskIds.map((id) => <span key={id}>{id}</span>) : <span>No linked task evidence</span>}{phase.missing.length > 0 && <em>missing: {phase.missing.map((key) => releaseFieldDefinitions.find((field) => field.key === key)?.label || key).join(", ")}</em>}</div>
+        </article>)}
+      </div>
+      {model.evidence.length === 0 && <div className="empty big">No HMC workflow evidence has been attached yet. Workers should append a structured JSON block with schema hmc.workflow_evidence.v1 in comments or result metadata; this drawer will map it into Plan → Build → Review → QA → Ship → Canary → Retro.</div>}
+      {model.evidence.length > 0 && <section className="source-raw-context"><h4>Raw structured evidence</h4><pre>{JSON.stringify(model.evidence, null, 2)}</pre></section>}
+    </section>
+  );
+}
+
 function taskStageStatus(status: BoardStatus) {
   if (status === "done") return "done";
   if (status === "running") return "running";
@@ -763,9 +1025,99 @@ function matchLine(text: string, label: string) {
   return text.match(pattern)?.[1]?.trim() || "";
 }
 
+type TaskDisplayCopy = {
+  title: string;
+  description: string;
+  reasonLabel?: string;
+  sourceJob?: string;
+  evidencePath?: string;
+  runTime?: string;
+};
+
+function taskText(task: BoardTask) {
+  return `${task.title || ""}\n${task.body || ""}`;
+}
+
+function cleanupInlineText(value: string, fallback = "No description yet.") {
+  const cleaned = value
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/^#+\s*/gm, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[(IMPORTANT|SYSTEM)[\s\S]*?\]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || fallback;
+}
+
+function truncateSentence(value: string, limit = 150) {
+  const cleaned = cleanupInlineText(value, "");
+  if (cleaned.length <= limit) return cleaned;
+  const slice = cleaned.slice(0, limit - 1);
+  return `${slice.replace(/[\s,.;:]+\S*$/, "")}…`;
+}
+
+function humanizeIdentifier(value: string) {
+  return value
+    .replace(/\s*\([0-9a-f]{8,}\)\s*$/i, "")
+    .replace(/^cron[:/]/i, "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+    .replace(/\bLinkedin\b/g, "LinkedIn")
+    .replace(/\bHmc\b/g, "HMC")
+    .replace(/\bQa\b/g, "QA")
+    .trim();
+}
+
+function classifyAttentionReason(raw: string) {
+  const lower = raw.toLowerCase();
+  if (lower.includes("approval")) return "approval or review marker found";
+  if (lower.includes("blocked") || lower.includes("error")) return "blocked or error output";
+  if (lower.includes("human")) return "human attention requested";
+  return raw ? raw.replace(/[-_]+/g, " ") : "operator attention requested";
+}
+
+function parseCronAttention(task: BoardTask) {
+  const text = taskText(task);
+  if (!/^Attention needed:/i.test(task.title) && !text.includes("routed to the Task Board")) return null;
+  const sourceJobRaw = matchLine(text, "Source job") || matchLine(text, "Cron Job") || task.workflow_template_id || task.title.replace(/^Attention needed:\s*/i, "");
+  const sourceJob = sourceJobRaw.replace(/\s*\([0-9a-f]{8,}\)\s*$/i, "").trim();
+  const humanJob = humanizeIdentifier(sourceJob || "scheduled routine");
+  const reason = classifyAttentionReason(matchLine(text, "Why"));
+  const evidencePath = matchLine(text, "Cron output");
+  const runTime = text.match(/\*\*Run Time:\*\*\s*([^\n]+)/i)?.[1]?.trim() || matchLine(text, "Run Time");
+  return { sourceJob, humanJob, reason, evidencePath, runTime };
+}
+
+function getTaskDisplayCopy(task: BoardTask): TaskDisplayCopy {
+  const attention = parseCronAttention(task);
+  if (attention) {
+    const isKanbanNotifier = /kanban.*attention/i.test(attention.sourceJob);
+    const isGoalBottleneck = /goal.*bottleneck/i.test(attention.sourceJob);
+    const title = isKanbanNotifier
+      ? "Review Task Board items needing attention"
+      : isGoalBottleneck
+        ? "Review human bottlenecks blocking agent goals"
+        : `Review ${attention.humanJob} output`;
+    const description = [
+      `A scheduled routine produced ${attention.reason}.`,
+      attention.runTime ? `Run: ${attention.runTime}.` : "",
+      attention.evidencePath ? "Raw log is saved in Sources." : "Open the drawer for context and next action.",
+    ].filter(Boolean).join(" ");
+    return { title, description, reasonLabel: attention.reason, sourceJob: attention.sourceJob, evidencePath: attention.evidencePath, runTime: attention.runTime };
+  }
+
+  const title = cleanupInlineText(task.title, "Untitled task");
+  const explicitSummary = getString(asRecord(task.result_details), ["operator_summary", "summary_text", "human_summary"], "");
+  const firstLine = firstMeaningfulLine(task.body || "");
+  const description = truncateSentence(explicitSummary || firstLine || task.result || "Open the drawer for task context, owner, next action, and evidence.", 170);
+  return { title, description };
+}
+
 function deriveTaskDrawerInsight(task: BoardTask, projectId: string): TaskDrawerInsight {
   const text = `${task.title}\n${task.body || ""}`;
-  const sourceJobRaw = matchLine(text, "Source job") || matchLine(text, "Cron Job") || task.workflow_template_id || "";
+  const displayCopy = getTaskDisplayCopy(task);
+  const sourceJobRaw = matchLine(text, "Source job") || matchLine(text, "Cron Job") || task.workflow_template_id || displayCopy.sourceJob || "";
   const sourceJob = sourceJobRaw.replace(/\s*\([0-9a-f]{8,}\)\s*$/i, "").trim();
   const lower = text.toLowerCase();
   const rawProject = projectId || task.tenant || "";
@@ -777,19 +1129,21 @@ function deriveTaskDrawerInsight(task: BoardTask, projectId: string): TaskDrawer
   const summaryFromDetails = getString(asRecord(task.result_details), ["operator_summary", "summary_text", "human_summary"], "");
   let summary = summaryFromDetails;
   if (!summary) {
-    if (failed && sourceJob) summary = `${sourceJob} failed during its scheduled run.`;
+    if (displayCopy.sourceJob) summary = displayCopy.description;
+    else if (failed && sourceJob) summary = `${sourceJob} failed during its scheduled run.`;
     else if (failed) summary = "This task records a failed run that needs triage before it can continue.";
-    else summary = task.body ? firstMeaningfulLine(task.body) : task.title;
+    else summary = displayCopy.description || (task.body ? firstMeaningfulLine(task.body) : displayCopy.title);
   }
   let nextAction = getString(asRecord(asRecord(task.result_details).summary), ["next_action", "nextAction"], "");
   if (!nextAction) {
-    if (missingSkill) nextAction = "Ask the responsible agent to verify the required skill is installed, loadable, and attached to the routine profile, then rerun the job.";
+    if (displayCopy.sourceJob) nextAction = "Open the Sources tab for the raw run output, then decide whether Melverick must act or assign the repair to the responsible agent with evidence from a rerun.";
+    else if (missingSkill) nextAction = "Ask the responsible agent to verify the required skill is installed, loadable, and attached to the routine profile, then rerun the job.";
     else if (failed && sourceJob) nextAction = "Assign this to the responsible operations agent to inspect the routine failure, fix the cause, and attach evidence from the rerun.";
     else if (task.status === "blocked") nextAction = "Resolve the blocker or add the missing decision/evidence so agents can continue.";
     else if (task.status === "review") nextAction = "Review the attached output and evidence, then move the card to Done or request changes.";
     else nextAction = "Inspect the task context and assign it only if ownership should move to another agent.";
   }
-  const reasonLabel = missingSkill ? "Skill loading issue" : failed ? "Routine failure" : task.status === "blocked" ? "Blocked workflow" : task.status === "review" ? "Review required" : "Operational task";
+  const reasonLabel = displayCopy.reasonLabel ? displayCopy.reasonLabel.charAt(0).toUpperCase() + displayCopy.reasonLabel.slice(1) : missingSkill ? "Skill loading issue" : failed ? "Routine failure" : task.status === "blocked" ? "Blocked workflow" : task.status === "review" ? "Review required" : "Operational task";
   return { projectName, sourceJob, summary, nextAction, reasonLabel };
 }
 
@@ -864,9 +1218,11 @@ function getProjectDrawerData(task: BoardTask): ProjectDrawerData {
     progress,
     progressKnown: explicitProgress || ["running", "review", "done"].includes(task.status),
     needsHuman: shouldSurfaceNeedsYou(task),
+    reasonLabel: insight.reasonLabel,
     sources,
     outputs,
     evidence: rawEvidence,
+    guardPolicy: getGuardPolicy(task),
     settings: Object.keys(settings).length ? settings : {
       workflow_type: workflowType,
       approval_policy: task.status === "review" || task.status === "blocked" ? "human review / intervention may be required" : "internal execution; approvals only for external or irreversible actions",
@@ -875,6 +1231,33 @@ function getProjectDrawerData(task: BoardTask): ProjectDrawerData {
     },
     stages: derivedStages,
   };
+}
+
+function GuardPolicyPanel({ policy, compact = false }: { policy: GuardPolicy | null; compact?: boolean }) {
+  if (!policy) return null;
+  const allowed = guardList(policy.allowed_edit_paths ?? policy.allowedEditPaths);
+  const evidence = guardList(policy.evidence_required ?? policy.evidenceRequired);
+  const warning = guardField(policy, "destructive_command_warning_level", "destructiveCommandWarningLevel", "medium");
+  const checkpoint = guardField(policy, "checkpoint_mode", "checkpointMode", "not specified");
+  const rollback = guardField(policy, "rollback_artifact_path", "rollbackArtifactPath", "not specified");
+  const freeze = Boolean(policy.freeze);
+  return (
+    <section className={`guard-policy-panel ${compact ? "compact" : ""}`} aria-label="Guard mode policy">
+      <div className="guard-policy-head">
+        <div><span className="stub-tag">GUARD MODE</span><h3>{guardField(policy, "mode", "mode", "advisory")} safety rails</h3></div>
+        <span className={`guard-mode-badge ${freeze ? "frozen" : "advisory"}`}>{freeze ? "Frozen" : "Advisory"}</span>
+      </div>
+      <div className="guard-policy-grid">
+        <div><span>Destructive command warning</span><b>{warning}</b></div>
+        <div><span>Checkpoint mode</span><b>{checkpoint}</b></div>
+        <div><span>Safe start</span><b>{policy.safe_start_required || policy.safeStartRequired ? "required" : "standard"}</b></div>
+        <div><span>Rollback artifact</span><b>{rollback}</b></div>
+      </div>
+      {allowed.length > 0 && <div className="guard-path-list"><span>Allowed edit paths</span>{allowed.map((item) => <code key={item}>{item}</code>)}</div>}
+      {(policy.dirty_repo_policy || policy.dirtyRepoPolicy) && <p className="guard-policy-note">{String(policy.dirty_repo_policy || policy.dirtyRepoPolicy)}</p>}
+      {evidence.length > 0 && <div className="guard-evidence-list">{evidence.map((item) => <span key={item}>{item}</span>)}</div>}
+    </section>
+  );
 }
 
 function WorkflowStageList({ stages }: { stages: ProjectDrawerData["stages"] }) {
@@ -1036,17 +1419,19 @@ function Metric({ label, value, sub, tone }: { label: string; value: number | st
 }
 
 function TaskCard({ task, selected, dragging, onSelect, onDragStart, onDragEnd, onDelete }: { task: BoardTask; selected: boolean; dragging: boolean; onSelect: () => void; onDragStart: (event: DragEvent<HTMLElement>) => void; onDragEnd: () => void; onDelete: (task: BoardTask) => void }) {
+  const copy = getTaskDisplayCopy(task);
   return (
     <article className={`task-card task-card-reference task-card-priority-${task.priority_label} ${selected ? "on" : ""} ${dragging ? "dragging" : ""}`} draggable onDragStart={onDragStart} onDragEnd={onDragEnd}>
       <div className="task-card-reference-head">
         <span className={`priority ${task.priority_label}`}>{task.priority_label}</span>
       </div>
       <button className="task-card-main" onClick={onSelect}>
-        <h2>{task.title}</h2>
+        <h2>{copy.title}</h2>
+        <p>{copy.description}</p>
       </button>
       <footer className="task-card-date-footer">
         <span>{formatSingaporeTime(task.updated_at)}</span>
-        <button className="task-delete-icon task-delete-floating" aria-label={`Delete ${task.title}`} title="Delete task" onClick={() => void onDelete(task)}><Icon name="trash" size={15} /></button>
+        <button className="task-delete-icon task-delete-floating" aria-label={`Delete ${copy.title}`} title="Delete task" onClick={() => void onDelete(task)}><Icon name="trash" size={15} /></button>
       </footer>
     </article>
   );

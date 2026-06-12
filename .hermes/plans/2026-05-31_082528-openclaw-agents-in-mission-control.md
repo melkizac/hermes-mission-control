@@ -26,9 +26,9 @@ OpenClaw local state exists under:
 - Cron state: `/root/.openclaw/cron/jobs-state.json`
 - Cron runs: `/root/.openclaw/cron/runs/*.jsonl`
 - Workspace and KB:
-  - `/root/.openclaw/workspace/kb`
-  - `/root/.openclaw/workspace/tmp-kronos`
-  - `/root/.openclaw/workspace/options-flow-tracker`
+  - `/root/.hermes/workspace/kb`
+  - `/root/.hermes/workspace/tmp-kronos`
+  - `/root/.hermes/workspace/options-flow-tracker`
 
 The current Mission Control Agents page already treats Hermes CLI, Telegram, and Web UI as channels of one `Hermes Agent`. OpenClaw should not be merged into that same row. It should appear as a separate coworker/runtime.
 
@@ -66,7 +66,7 @@ Show at least:
    - Runtime path: `/root/.openclaw/agents/main`
    - Sessions from OpenClaw JSONL/session index
    - Skills from OpenClaw runtime/session snapshot
-   - Workspace: `/root/.openclaw/workspace`
+   - Workspace: `/root/.hermes/workspace`
 
 ### Center panel for OpenClaw
 

@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ProjectOperatingLink, ProjectRecord, ProjectRiskItem } from "../types";
+import type { GuardPolicy, ProjectOperatingLink, ProjectRecord, ProjectRiskItem } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { queryCacheEventName } from "../services/queryCache";
 import { formatSingaporeTime } from "../utils/time";
 import { Icon } from "../components/Icon";
 
 const client = new HttpHermesClient();
-type Tab = "overview" | "operations" | "knowledge" | "activity" | "sessions";
+type Tab = "overview" | "workflow" | "operations" | "knowledge" | "activity" | "sessions";
 
 function pct(value: number) {
   return `${Math.max(0, Math.min(100, Math.round(value || 0)))}%`;
@@ -33,6 +33,68 @@ function recency(project: ProjectRecord) {
   if (project.activity?.[0]?.at) return `Latest: ${formatSingaporeTime(project.activity[0].at)}`;
   if (project.updated_at) return `Updated: ${formatSingaporeTime(project.updated_at)}`;
   return "No recent signal";
+}
+
+function projectGuardList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => String(item || "").trim()).filter(Boolean);
+  if (typeof value === "string" && value.trim()) return value.split(/[,\n]+/).map((item) => item.trim()).filter(Boolean);
+  return [];
+}
+
+function projectGuardField(policy: GuardPolicy | null | undefined, snake: keyof GuardPolicy, camel: keyof GuardPolicy, fallback = "—") {
+  if (!policy) return fallback;
+  const value = policy[snake] ?? policy[camel];
+  if (Array.isArray(value)) return value.join(", ");
+  return value === undefined || value === null || value === "" ? fallback : String(value);
+}
+
+function ProjectGuardPolicyPanel({ policy }: { policy?: GuardPolicy | null }) {
+  if (!policy) return null;
+  const allowed = projectGuardList(policy.allowed_edit_paths ?? policy.allowedEditPaths);
+  const evidence = projectGuardList(policy.evidence_required ?? policy.evidenceRequired);
+  return (
+    <div className="guard-policy-panel project-guard-panel" aria-label="Project guard mode policy">
+      <div className="guard-policy-head">
+        <div><span className="stub-tag">GUARD MODE</span><h3>{projectGuardField(policy, "mode", "mode", "advisory")} project rails</h3></div>
+        <span className={`guard-mode-badge ${policy.freeze ? "frozen" : "advisory"}`}>{policy.freeze ? "Frozen" : "Advisory"}</span>
+      </div>
+      <div className="guard-policy-grid">
+        <div><span>Destructive warning</span><b>{projectGuardField(policy, "destructive_command_warning_level", "destructiveCommandWarningLevel", "medium")}</b></div>
+        <div><span>Checkpoint</span><b>{projectGuardField(policy, "checkpoint_mode", "checkpointMode", "not specified")}</b></div>
+        <div><span>Safe start</span><b>{policy.safe_start_required || policy.safeStartRequired ? "required" : "standard"}</b></div>
+        <div><span>Rollback</span><b>{projectGuardField(policy, "rollback_artifact_path", "rollbackArtifactPath", "not specified")}</b></div>
+      </div>
+      {allowed.length > 0 && <div className="guard-path-list"><span>Allowed edit paths</span>{allowed.map((item) => <code key={item}>{item}</code>)}</div>}
+      {evidence.length > 0 && <div className="guard-evidence-list">{evidence.map((item) => <span key={item}>{item}</span>)}</div>}
+    </div>
+  );
+}
+
+function ProjectWorkflowPanel({ project }: { project: ProjectRecord }) {
+  const tasks = project.tasks ?? [];
+  const current = tasks.find((item) => !["done", "archived"].includes(String(item.status || ""))) ?? tasks[0];
+  const phase = current?.status || (project.actions?.running ? "running" : project.actions?.open ? "open" : project.status);
+  const nextAction = primaryNextAction(project);
+  return (
+    <div className="project-workflow-panel" aria-label="Project workflow evidence cockpit">
+      <div className="release-lane-overview compact">
+        <div className="release-lane-head"><div><span className="stub-tag">Workflow surface</span><h3>Current phase and evidence lane</h3></div><span>{phase || "active"}</span></div>
+        <div className="project-workflow-steps">
+          {tasks.slice(0, 7).map((task) => <div className={`release-phase-pill ${task.status || "pending"}`} key={task.id || task.title}><b>{task.title || task.name || "Task"}</b><small>{task.status || "pending"}</small></div>)}
+          {!tasks.length && <div className="empty">No Task Board cards linked yet.</div>}
+        </div>
+      </div>
+      <div className="project-important-details">
+        <div><span>Project</span><b>{project.id}</b></div>
+        <div><span>Current phase</span><b>{current?.title || phase || "No active task"}</b></div>
+        <div><span>Next action</span><b>{nextAction}</b></div>
+        <div><span>Evidence sources</span><b>{project.knowledge.length} notes · {project.artifacts.length} artifacts · {tasks.length} tasks</b></div>
+      </div>
+      <ProjectGuardPolicyPanel policy={project.guard_policy || project.guardPolicy} />
+      <LinkList title="Evidence-linked Task Board cards" empty="No linked workflow tasks yet." items={tasks} meta={(item) => `${item.status || "queued"} · ${item.assignee || "unassigned"}`} />
+      <LinkList title="Artifacts and notes" empty="No project artifacts attached yet." items={[...project.knowledge, ...project.artifacts].map((item: any) => ({ id: item.path || item.title || item.name, title: item.title || item.name, status: item.type || item.kind || "evidence", detail: item.path }))} meta={(item) => `${item.status || "evidence"}${item.detail ? ` · ${item.detail}` : ""}`} />
+    </div>
+  );
 }
 
 function Metric({ label, value, sub, tone }: { label: string; value: string | number; sub: string; tone?: "good" | "bad" }) {
@@ -280,7 +342,7 @@ export function Projects() {
             </div>
 
             <div className="project-tabs">
-              {(["overview", "operations", "knowledge", "activity", "sessions"] as Tab[]).map((item) => <button key={item} className={tab === item ? "on" : ""} onClick={() => setTab(item)}>{item}</button>)}
+              {(["overview", "workflow", "operations", "knowledge", "activity", "sessions"] as Tab[]).map((item) => <button key={item} className={tab === item ? "on" : ""} onClick={() => setTab(item)}>{item}</button>)}
             </div>
 
             {tab === "overview" && <div className="project-tab-panel project-overview-panel">
@@ -297,9 +359,12 @@ export function Projects() {
                 <div><span>Evidence / notes</span><b>{selected.knowledge.length} notes · {selected.artifacts.length} artifacts</b></div>
                 <div><span>Latest activity</span><b>{recency(selected)}</b></div>
               </div>
+              <ProjectGuardPolicyPanel policy={selected.guard_policy || selected.guardPolicy} />
               <label>Workspace</label><code>{selected.path || "—"}</code>
               <label>Tags</label><div className="project-chips">{(selected.tags.length ? selected.tags : ["untagged"]).map((tag) => <span key={tag}>{tag}</span>)}</div>
             </div>}
+
+            {tab === "workflow" && <div className="project-tab-panel project-workflow-tab"><ProjectWorkflowPanel project={selected} /></div>}
 
             {tab === "operations" && <div className="project-tab-panel project-operating-panel">
               <div className="project-section-head"><b>Next actions</b><span>operator-ready</span></div>

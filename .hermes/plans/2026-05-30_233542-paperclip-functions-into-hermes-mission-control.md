@@ -337,7 +337,7 @@ Why Audit Log first:
 ### Task 15: Add `/api/projects` read-only backend
 
 **Sources to consider:**
-- `/root/.openclaw/workspace/kb/wiki`
+- `/root/.hermes/workspace/kb/wiki`
 - Known repos/workflows from memory.
 - Optional project config file under `/opt/hermes-mission-control/projects.json`.
 

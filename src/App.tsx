@@ -15,6 +15,7 @@ import { DelegateWork } from "./views/DelegateWork";
 import { WorkflowLibrary } from "./views/WorkflowLibrary";
 import { SecondBrain } from "./views/SecondBrain";
 import { Approvals } from "./views/Approvals";
+import { Reflections } from "./views/Reflections";
 import { AuditLog } from "./views/AuditLog";
 import { Automations } from "./views/Automations";
 import { TaskBoard } from "./views/TaskBoard";
@@ -127,6 +128,7 @@ function Shell() {
         {canRenderView && view === "board" && <TaskBoard />}
         {canRenderView && view === "skills" && <SkillsHub />}
         {canRenderView && view === "memory" && <MemoryContext />}
+        {canRenderView && view === "reflections" && <Reflections />}
         {canRenderView && view === "tools" && <ToolsHub />}
         {canRenderView && view === "capabilities" && <CapabilityRegistry />}
         {canRenderView && view === "plugins" && <PluginsHub />}

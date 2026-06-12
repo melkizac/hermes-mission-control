@@ -66,6 +66,105 @@ function mockResearchSourceTask(id = "mock-r2d-sources") {
   } as any;
 }
 
+function mockHmcReleaseTask(id = "mock-hmc-release-evidence") {
+  const now = "2026-06-11T17:20:00+08:00";
+  const evidence = [
+    {
+      schema: "hmc.workflow_evidence.v1",
+      project_id: "hmc-governed-software-factory",
+      tenant: "hmc-governed-software-factory",
+      task_id: id,
+      phase: "hmc-build",
+      status: "passed",
+      summary: "Release-lane drawer model implemented with focused build verification.",
+      created_at: now,
+      created_by: "dev-ops",
+      branch: "project/hmc-governed-software-factory",
+      commit: "mock-diff",
+      workspace_path: "/opt/hermes-mission-control/source",
+      artifacts: [{ kind: "diff", path: "src/views/TaskBoard.tsx", title: "Task drawer release lane" }],
+      commands: [{ command: "npm run build", status: "passed", summary: "Mock Vite build passed; chunk-size warning only." }],
+      checks: [
+        { type: "build", status: "passed", summary: "TypeScript and Vite production bundle succeeded." },
+        { type: "browser", status: "passed", summary: "Task drawer renders Release lane tab and evidence fields." }
+      ],
+      approval: { required: true, status: "pending", reason: "Code-changing task awaits review before merge/deploy." },
+      docs_impact: "No public docs changed in mock fixture.",
+      rollback: "Revert the source diff; no production deploy in mock fixture."
+    },
+    {
+      schema: "hmc.workflow_evidence.v1",
+      project_id: "hmc-governed-software-factory",
+      tenant: "hmc-governed-software-factory",
+      task_id: id,
+      phase: "hmc-qa",
+      status: "passed",
+      summary: "Focused UI smoke confirms the evidence tab model is visible.",
+      created_at: "2026-06-11T17:25:00+08:00",
+      created_by: "testing-division",
+      commands: [{ command: "node scripts/hmc_task_drawer_probe.cjs", status: "passed", summary: "Release lane DOM nodes found; console clean." }],
+      checks: [{ type: "browser", status: "passed", summary: "Release lane, fields, raw evidence hierarchy visible in drawer." }],
+      health_check: "GET /api/tasks returned 200 in staging smoke.",
+      browser_proof: "Release lane tab rendered in Task Board drawer.",
+      rollback: "Frontend-only rollback is to restore previous dist backup."
+    }
+  ];
+  return {
+    id,
+    title: "HMC release lane evidence drawer fixture",
+    body: "Sample HMC software-factory card with structured workflow evidence for Build and QA phases.",
+    assignee: "dev-ops",
+    status: "review",
+    raw_status: "review",
+    priority: 80,
+    priority_label: "critical",
+    created_by: "mock",
+    created_at: now,
+    updated_at: now,
+    started_at: null,
+    completed_at: null,
+    workspace_kind: "dir",
+    workspace_path: "/opt/hermes-mission-control/source",
+    branch_name: "project/hmc-governed-software-factory",
+    tenant: "hmc-governed-software-factory",
+    result: "review-required: release lane fixture awaits review",
+    result_details: {
+      status: "review",
+      objective: "Expose release lane and evidence field completeness in the Task Board drawer.",
+      workflow_type: "hmc_software_factory",
+      guard_policy: {
+        mode: "advisory",
+        scope: "mock project-task",
+        allowed_edit_paths: ["/opt/hermes-mission-control/source/src", "/opt/hermes-mission-control/source/docs", "/opt/hermes-mission-control/app.py"],
+        destructive_command_warning_level: "high",
+        checkpoint_mode: "git diff + npm run build before review",
+        rollback_artifact_path: "docs/HMC_SOFTWARE_FACTORY_WORKFLOW.md#rollback--safety",
+        safe_start_required: true,
+        advisory_enforcement: true,
+        evidence_required: ["allowed edit paths", "checkpoint/build proof", "rollback note"],
+      },
+      summary: { progress_percent: 62, next_action: "Review the build evidence, then move to QA/Ship when approved." },
+      workflow_evidence: evidence,
+      approval_gates: [{ id: "mock-review", title: "Code review", risk: "approval-required", status: "pending", reason: "Code-changing task should be reviewed before deploy." }],
+      blockers: [], verification: { build: "passed", drawer: "fixture-rendered" }, artifacts: [], evidence: [], next_actions: ["Review implementation", "Run production browser smoke before deploy"],
+    },
+    mission_result: null,
+    session_id: null,
+    current_run_id: null,
+    workflow_template_id: "hmc_software_factory",
+    current_step_key: "hmc-review",
+    skills: ["agent-mission-control-ui", "webapp-operations"],
+    model_override: null,
+    consecutive_failures: 0,
+    last_failure_error: "",
+    comments: [{ id: 1, author: "dev-ops", created_at: now, body: `workflow-evidence:\n\n\`\`\`json\n${JSON.stringify(evidence[0], null, 2)}\n\`\`\`` }],
+    events: [],
+    runs: [],
+    children: [],
+    parents: [],
+  } as any;
+}
+
 /**
  * MockHermesClient keeps an in-memory copy of the seed data and mutates it.
  * It simulates latency so the UI's loading/optimistic paths are exercised.
@@ -907,16 +1006,19 @@ export class MockHermesClient implements HermesClient {
   async listBoard(): Promise<BoardResponse> {
     await delay(90);
     const task = mockResearchSourceTask();
-    task.board_id = "default";
-    task.board_slug = "default";
-    task.board_label = "Default board";
-    task.board_is_default = true;
-    return { tasks: [task], lanes: { triage: [], todo: [task], scheduled: [], ready: [], running: [], blocked: [], error: [], review: [], done: [] }, summary: { total: 1, triage: 0, todo: 1, scheduled: 0, ready: 0, running: 0, blocked: 0, error: 0, review: 0, done: 0, assignees: ["Melkizac"], projects: ["project:mock-research-to-deliverable"], boards: ["default"] }, statuses: ["triage", "todo", "scheduled", "ready", "running", "blocked", "error", "review", "done"], projects: ["project:mock-research-to-deliverable"], boards: [{ id: "default", slug: "default", label: "Default board", is_default: true }], warnings: [] };
+    const hmcTask = mockHmcReleaseTask();
+    [task, hmcTask].forEach((item) => {
+      item.board_id = "default";
+      item.board_slug = "default";
+      item.board_label = "Default board";
+      item.board_is_default = true;
+    });
+    return { tasks: [task, hmcTask], lanes: { triage: [], todo: [task], scheduled: [], ready: [], running: [], blocked: [], error: [], review: [hmcTask], done: [] }, summary: { total: 2, triage: 0, todo: 1, scheduled: 0, ready: 0, running: 0, blocked: 0, error: 0, review: 1, done: 0, assignees: ["Melkizac", "dev-ops"], projects: ["project:mock-research-to-deliverable", "hmc-governed-software-factory"], boards: ["default"] }, statuses: ["triage", "todo", "scheduled", "ready", "running", "blocked", "error", "review", "done"], projects: ["project:mock-research-to-deliverable", "hmc-governed-software-factory"], boards: [{ id: "default", slug: "default", label: "Default board", is_default: true }], warnings: [] };
   }
 
   async getTaskResult(id: string): Promise<TaskResultResponse> {
     await delay(90);
-    const task = mockResearchSourceTask(id);
+    const task = id.includes("hmc") ? mockHmcReleaseTask(id) : mockResearchSourceTask(id);
     return { ok: true, mission_result: null, task };
   }
 

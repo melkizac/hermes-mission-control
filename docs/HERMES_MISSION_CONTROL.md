@@ -345,7 +345,7 @@ Hermes data sources used by Mission Control:
 Second Brain source:
 
 ```text
-/root/.openclaw/workspace/kb/
+/root/.hermes/workspace/kb/
   raw/                           Source inputs
   wiki/                          Compiled markdown wiki
   schema/WORKFLOW.md             KB workflow/schema rules

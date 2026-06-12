@@ -25,6 +25,7 @@ const allowedViews = new Set<ViewKey>([
   "second-brain",
   "board",
   "skills",
+  "reflections",
   "approvals",
   "automations",
   "audit",

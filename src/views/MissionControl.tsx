@@ -2,10 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type React from "react";
 import voiceHudReference from "../assets/voice-hud-reference.jpg";
 import { useStore } from "../services/store";
+import { Icon } from "../components/Icon";
 import { cachedJsonRequest } from "../services/queryCache";
 import { buildChatIntentPreview, confidenceFromScore, routeChatIntent, serializeChatIntentDecision } from "../services/chatIntentRouter";
 import type { ChatIntentDecision, ChatIntentPreview, ChatIntentNextAction, ChatIntentType, ChatMissionContext, ChatRoutineContext, ChatWorkflowContext } from "../services/chatIntentRouter";
-import type { Attachment, AutomationsResponse, BoardResponse, BoardTask, Message, ProjectRecord, ProjectsResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
+import type { Attachment, AutomationsResponse, BoardResponse, BoardTask, Message, ProjectRecord, ProjectsResponse, ReplyContext, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
 
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
@@ -88,6 +89,7 @@ type AgentOsKanbanCreationResponse = {
 };
 
 type ResearchWorkflowCard = {
+  kind?: string;
   title: string;
   projectId?: string;
   workflowType?: string | null;
@@ -96,8 +98,38 @@ type ResearchWorkflowCard = {
   tasks: BoardTask[];
   outputs: string[];
   status: string;
+  currentPhase?: string;
+  nextAction?: string;
+  actions?: string[];
   idempotent?: boolean;
 };
+
+function workflowCardFromKanbanResponse(response: AgentOsKanbanCreationResponse, fallback: Pick<ResearchWorkflowCard, "title" | "outputs">): ResearchWorkflowCard {
+  const tasks = response.tasks ?? [];
+  const firstOpenTask = tasks.find((task) => task.status !== "done") ?? tasks[0];
+  const stage = firstOpenTask?.result_details && typeof firstOpenTask.result_details === "object" ? String((firstOpenTask.result_details as Record<string, unknown>).stage || "") : "";
+  const currentPhase = firstOpenTask?.current_step_key || stage || response.graph_template || response.workflow_type || "queued";
+  const nextAction = firstOpenTask?.title
+    ? `${firstOpenTask.status}: ${firstOpenTask.title}`
+    : response.chat_card?.actions?.[0]
+      ? response.chat_card.actions[0].replace(/_/g, " ")
+      : "Open the Task Board for evidence and next steps.";
+  return {
+    kind: response.chat_card?.kind,
+    title: response.chat_card?.title || fallback.title,
+    projectId: response.project_id,
+    workflowType: response.workflow_type,
+    graphTemplate: response.graph_template,
+    taskIds: response.task_ids ?? {},
+    tasks,
+    outputs: response.chat_card?.outputs ?? fallback.outputs,
+    status: response.chat_card?.status || "Task graph ready",
+    currentPhase,
+    nextAction,
+    actions: response.chat_card?.actions ?? [],
+    idempotent: response.idempotent,
+  };
+}
 
 type VoiceStatus = "idle" | "listening" | "sending" | "speaking" | "ready" | "unsupported" | "error";
 
@@ -274,7 +306,7 @@ function singaporeDaypartGreeting() {
 }
 
 function isRenderableChatMessage(message: Message) {
-  return (message.role === "user" || message.role === "agent") && Boolean(message.text?.trim() || message.attachments?.length);
+  return (message.role === "user" || message.role === "agent") && Boolean(message.text?.trim() || message.attachments?.length || message.artifact);
 }
 
 function chatMessageLabel(message: Message) {
@@ -300,6 +332,120 @@ function visibleChatText(message: Message) {
     .filter((index) => index >= 0)
     .sort((a, b) => a - b)[0];
   return (firstInternalMarker === undefined ? raw : raw.slice(0, firstInternalMarker)).trim();
+}
+
+
+function mainChatReplyContext(message: Message): ReplyContext {
+  const text = visibleChatText(message)
+    || message.artifact?.preview
+    || message.artifact?.filename
+    || message.attachments?.map((attachment) => attachment.filename).join("\n")
+    || "Message without text";
+  return {
+    id: message.id,
+    role: message.role,
+    author: chatMessageLabel(message),
+    text: text.slice(0, 2000),
+    at: chatMessageTime(message),
+  };
+}
+
+function mainChatReplyPreview(reply: ReplyContext) {
+  return reply.text.replace(/\s+/g, " ").trim().slice(0, 220) || "Message without text";
+}
+
+function mainChatGeneratedOutput(message: Message) {
+  if (message.role !== "agent") return null;
+  const text = visibleChatText(message);
+  const artifact = message.artifact;
+  if (artifact) {
+    const href = artifact.downloadUrl || artifact.url || "";
+    return {
+      filename: artifact.filename || "agent-output",
+      href,
+      fallbackText: [artifact.filename, artifact.preview].filter(Boolean).join("\n"),
+    };
+  }
+  const downloadableAttachment = message.attachments?.find((attachment) => attachment.url);
+  if (downloadableAttachment) {
+    return {
+      filename: downloadableAttachment.filename || "agent-attachment",
+      href: downloadableAttachment.url || "",
+      fallbackText: text,
+    };
+  }
+  const looksLikeGeneratedOutput = /\b(file|artifact|output|generated|created|saved|moved\/copied|written)\b/i.test(text);
+  if (!looksLikeGeneratedOutput || !text.trim()) return null;
+  return {
+    filename: "agent-message-output.txt",
+    href: "",
+    fallbackText: text,
+  };
+}
+
+async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const ok = document.execCommand("copy");
+  document.body.removeChild(textarea);
+  if (!ok) throw new Error("Copy failed");
+}
+
+function MainChatCopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const value = text.trim();
+  if (!value) return null;
+  const onCopy = async () => {
+    await copyTextToClipboard(value);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1400);
+  };
+  return (
+    <button className={`copymsg main-chat-action ${copied ? "copied" : ""}`} type="button" onClick={onCopy} aria-label="Copy message text" title={copied ? "Copied" : "Copy text"}>
+      <Icon name={copied ? "check" : "copy"} size={13} />
+      <span>{copied ? "Copied" : "Copy"}</span>
+    </button>
+  );
+}
+
+function MainChatDownloadButton({ message }: { message: Message }) {
+  const output = mainChatGeneratedOutput(message);
+  if (!output) return null;
+  const label = `Download ${output.filename}`;
+  if (output.href) {
+    return (
+      <a className="main-chat-download-output" href={output.href} download={output.filename} target="_blank" rel="noreferrer" aria-label={label} title={label}>
+        <Icon name="download" size={15} />
+      </a>
+    );
+  }
+  const onDownload = () => {
+    const body = output.fallbackText || visibleChatText(message);
+    const blob = new Blob([body], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = output.filename.endsWith(".txt") ? output.filename : `${output.filename}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  return (
+    <button className="main-chat-download-output" type="button" onClick={onDownload} aria-label={label} title={label}>
+      <Icon name="download" size={15} />
+    </button>
+  );
 }
 
 function formatRunDuration(ms: number) {
@@ -356,6 +502,7 @@ export function MissionControl() {
   const [routingActionError, setRoutingActionError] = useState<string | null>(null);
   const [researchWorkflowCard, setResearchWorkflowCard] = useState<ResearchWorkflowCard | null>(null);
   const [pendingMainMessage, setPendingMainMessage] = useState<MainChatPendingMessage | null>(null);
+  const [mainChatReplyTo, setMainChatReplyTo] = useState<ReplyContext | null>(null);
   const [processingStartedAt, setProcessingStartedAt] = useState<number | null>(null);
   const [processingNow, setProcessingNow] = useState(() => Date.now());
   const latestMessageRef = useRef<HTMLDivElement | null>(null);
@@ -1250,17 +1397,10 @@ export function MissionControl() {
       body: JSON.stringify({ route }),
     });
     if (!response.ok) throw new Error(response.error || "Research-to-Deliverable workflow was not started.");
-    const card: ResearchWorkflowCard = {
-      title: response.chat_card?.title || "Research-to-Deliverable workflow started",
-      projectId: response.project_id,
-      workflowType: response.workflow_type,
-      graphTemplate: response.graph_template,
-      taskIds: response.task_ids ?? {},
-      tasks: response.tasks ?? [],
-      outputs: response.chat_card?.outputs ?? current.preview.researchDeliverable?.outputs ?? [],
-      status: response.chat_card?.status || "Task graph ready",
-      idempotent: response.idempotent,
-    };
+    const card = workflowCardFromKanbanResponse(response, {
+      title: "Research-to-Deliverable workflow started",
+      outputs: current.preview.researchDeliverable?.outputs ?? [],
+    });
     setResearchWorkflowCard(card);
     setSelectedProjectId(response.project_id || selectedProject?.id || current.decision.matchedContext.projectId || "");
     const taskCount = card.tasks.length;
@@ -1283,7 +1423,7 @@ export function MissionControl() {
   async function runRoutingActionFor(
     current: { instruction: string; decision: ChatIntentDecision; preview: ChatIntentPreview },
     action: ChatIntentRoutingActionId,
-    options: { signal?: AbortSignal; requestId?: string; speakReply?: boolean } = {},
+    options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; speakReply?: boolean } = {},
   ) {
     if (routingActionBusy) return;
     const { speakReply = false, ...sendOptions } = options;
@@ -1376,9 +1516,12 @@ export function MissionControl() {
       if (!response.ok) throw new Error(response.error || "Task was not created.");
       const createdTask = response.tasks?.[0];
       const taskCount = response.tasks?.length ?? 0;
-      const graphLabel = response.workflow_type === "research_to_deliverable" && taskCount > 1
-        ? ` with ${taskCount} dependency-linked cards`
-        : "";
+      const graphLabel = taskCount > 1 ? ` with ${taskCount} dependency-linked cards` : "";
+      if (response.mode === "project" || taskCount > 1) {
+        const card = workflowCardFromKanbanResponse(response, { title: response.mode === "project" ? "Project Kickoff" : "Task Board workflow", outputs: [] });
+        setResearchWorkflowCard(card);
+        setSelectedProjectId(response.project_id || selectedProject?.id || current.decision.matchedContext.projectId || "");
+      }
       setRoutingActionMessage(`${response.mode === "project" ? "Project kickoff" : "Task Board"} card ${response.idempotent ? "already exists" : "created"}${createdTask?.id ? `: ${createdTask.id}` : ""}${graphLabel}.`);
       updateDraft("");
       setAttachments([]);
@@ -1446,6 +1589,7 @@ export function MissionControl() {
       }
     }
     const sentAttachments = attachments;
+    const activeReplyTo = mainChatReplyTo;
     const controller = new AbortController();
     const requestId = `main-chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     activeMainRequestRef.current = { id: requestId, controller };
@@ -1467,6 +1611,7 @@ export function MissionControl() {
       }));
       updateDraft("");
       setAttachments([]);
+      setMainChatReplyTo(null);
       const intentDecision = await routeInstruction(instruction, controller.signal);
       if (controller.signal.aborted) return;
       const preview = buildChatIntentPreview(intentDecision);
@@ -1480,6 +1625,7 @@ export function MissionControl() {
       await runRoutingActionFor(routed, defaultRoutingAction(intentDecision, preview), {
         signal: controller.signal,
         requestId,
+        replyTo: activeReplyTo ?? undefined,
         speakReply: options.keepVoiceScreen === true,
       });
       if (options.keepVoiceScreen) setVoiceStatus("ready");
@@ -1689,8 +1835,15 @@ export function MissionControl() {
                         <strong>{chatMessageLabel(message)}</strong>
                         <span>{chatSessionLabel(message)}</span>
                         <time>{chatMessageTime(message)}</time>
+                        <span className="main-chat-message-actions">
+                          <button className="replymsg main-chat-action" type="button" onClick={() => setMainChatReplyTo(mainChatReplyContext(message))} aria-label="Reply using this message as context" title="Reply using this message as context">
+                            <Icon name="reply" size={13} />
+                            <span>Reply</span>
+                          </button>
+                          <MainChatCopyButton text={visibleChatText(message)} />
+                        </span>
                       </div>
-                      {message.replyTo && <div className="main-chat-reply-context">Replying to {message.replyTo.author}: {message.replyTo.text}</div>}
+                      {message.replyTo && <div className="main-chat-reply-context">Replying to {message.replyTo.author}: {mainChatReplyPreview(message.replyTo)}</div>}
                       <div className="main-chat-bubble">
                         <p>{visibleChatText(message)}</p>
                         {message.attachments?.length ? (
@@ -1706,6 +1859,7 @@ export function MissionControl() {
                             ))}
                           </div>
                         ) : null}
+                        <MainChatDownloadButton message={message} />
                       </div>
                     </div>
                     {isUser && <span className="main-chat-user-avatar">M</span>}
@@ -1758,22 +1912,34 @@ export function MissionControl() {
           </div>
           {routingActionMessage && <div className="main-chat-route-status success">{routingActionMessage}</div>}
           {routingActionError && <div className="main-chat-route-status error">{routingActionError}</div>}
-          {researchWorkflowCard && (
-            <section className="main-chat-research-card" aria-label="Research-to-Deliverable workflow status">
+          {mainChatReplyTo && (
+            <div className="reply-context main-chat-composer-reply" aria-label="Replying to selected message">
               <div>
-                <span className="main-chat-research-kicker">Research-to-Deliverable workflow started</span>
+                <b>Replying to {mainChatReplyTo.author}</b>
+                <span>{mainChatReplyPreview(mainChatReplyTo)}</span>
+              </div>
+              <button type="button" onClick={() => setMainChatReplyTo(null)} aria-label="Clear reply context" title="Clear reply context">
+                <Icon name="close" size={13} />
+              </button>
+            </div>
+          )}
+          {researchWorkflowCard && (
+            <section className="main-chat-research-card" aria-label="Main Chat workflow status">
+              <div>
+                <span className="main-chat-research-kicker">{researchWorkflowCard.kind === "project_kickoff" ? "Project workflow started" : "Research-to-Deliverable workflow started"}</span>
                 <h2>{researchWorkflowCard.title}</h2>
                 <p>{researchWorkflowCard.status}{researchWorkflowCard.idempotent ? " · Existing graph reused" : " · Kanban graph queued"}</p>
               </div>
               <dl>
                 <div><dt>Project</dt><dd>{researchWorkflowCard.projectId || "Project tenant pending"}</dd></div>
-                <div><dt>Template</dt><dd>{researchWorkflowCard.graphTemplate || researchWorkflowCard.workflowType || "research_to_deliverable_v1"}</dd></div>
+                <div><dt>Current phase</dt><dd>{researchWorkflowCard.currentPhase || researchWorkflowCard.graphTemplate || researchWorkflowCard.workflowType || "queued"}</dd></div>
                 <div><dt>Tasks</dt><dd>{researchWorkflowCard.tasks.length || Object.keys(researchWorkflowCard.taskIds).length} cards</dd></div>
-                <div><dt>Outputs</dt><dd>{researchWorkflowCard.outputs.length ? researchWorkflowCard.outputs.join(", ") : "Research notes"}</dd></div>
+                <div><dt>Next action</dt><dd>{researchWorkflowCard.nextAction || "Open Task Board for evidence"}</dd></div>
               </dl>
               <div className="main-chat-research-actions">
                 <button type="button" onClick={() => setView("board")}>Open Task Board</button>
-                <button type="button" onClick={() => setView("research-runs")}>Open Research Runs</button>
+                {researchWorkflowCard.workflowType === "research_to_deliverable" && <button type="button" onClick={() => setView("research-runs")}>Open Research Runs</button>}
+                <button type="button" onClick={() => setView("projects")}>Open Project</button>
               </div>
             </section>
           )}

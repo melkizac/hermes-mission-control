@@ -9,12 +9,58 @@ import { Icon } from "../components/Icon";
 
 const client = new HttpHermesClient();
 const tabs: Array<{ key: InboxStatus | "all"; label: string; helper: string }> = [
-  { key: "drafted", label: "Needs decision", helper: "External or irreversible actions awaiting operator decision" },
-  { key: "ready", label: "Ready to approve", helper: "Reviewed proposals ready for final approval" },
-  { key: "sent", label: "Approved", helper: "Approved / released history" },
-  { key: "rejected", label: "Rejected", helper: "Declined or reclassified proposals" },
-  { key: "all", label: "All", helper: "Full approval decision history" },
+  { key: "drafted", label: "Needs decision", helper: "Items where your approval changes what an agent is allowed to do" },
+  { key: "ready", label: "Ready to approve", helper: "Reviewed items awaiting your final yes/no decision" },
+  { key: "sent", label: "Approved", helper: "Past items you approved, including what was released or allowed" },
+  { key: "rejected", label: "Rejected", helper: "Past items you declined or sent back" },
+  { key: "all", label: "All", helper: "Every approval decision with source, destination, and effect" },
 ];
+
+function metadataString(item: InboxItem, key: string): string | null {
+  const value = item.metadata?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function readableToken(value?: string | null): string {
+  return (value || "").replace(/[_-]+/g, " ").trim();
+}
+
+function approvalTarget(item: InboxItem): string {
+  const derivedFrom = metadataString(item, "derived_from");
+  const action = readableToken(metadataString(item, "action"));
+  const resourceType = readableToken(metadataString(item, "resource_type"));
+  const resourceId = metadataString(item, "resource_id") || item.source_id || item.source_path || item.destination;
+  const connectorId = metadataString(item, "connector_id");
+  const jobName = metadataString(item, "job_name");
+
+  if (derivedFrom === "approval_policy") {
+    const actionText = action || readableToken(item.kind) || "run a gated action";
+    const resourceText = [resourceType, resourceId].filter(Boolean).join(" ") || item.destination;
+    const connectorText = connectorId ? ` through connector ${connectorId}` : "";
+    return `Allow ${item.agent_name || item.agent_id} to ${actionText} on ${resourceText}${connectorText}.`;
+  }
+
+  if (derivedFrom === "cron_output" || item.kind === "automation_output") {
+    return `Accept routine output from ${jobName || item.agent_name || item.source_id || "this automation"} for ${item.destination || "its configured destination"}.`;
+  }
+
+  if (item.kind === "workspace_item") {
+    return `Approve workspace item “${item.title}” from ${item.agent_name || item.source || "Mission Control"}.`;
+  }
+
+  return `Approve “${item.title}” for ${item.destination || "the listed destination"}.`;
+}
+
+function approvalEffect(item: InboxItem): string {
+  const derivedFrom = metadataString(item, "derived_from");
+  if (derivedFrom === "approval_policy") {
+    return "Approve records your permission for this paused policy-gated action; Reject keeps it blocked.";
+  }
+  if (derivedFrom === "cron_output" || item.kind === "automation_output") {
+    return "Approve marks this generated routine output as accepted for use/release; Reject keeps it out of the approved history.";
+  }
+  return "Approve records your operator decision for this item; Reject marks it declined.";
+}
 
 export function Approvals() {
   const [data, setData] = useState<InboxResponse | null>(null);
@@ -161,7 +207,12 @@ export function Approvals() {
                 <span className={`inbox-risk ${item.risk}`}>{item.risk}</span>
               </div>
               <h2>{item.title}</h2>
+              <div className="inbox-approval-explain">
+                <strong>You are approving:</strong>
+                <span>{approvalTarget(item)}</span>
+              </div>
               <p>{item.description}</p>
+              <small className="inbox-approval-effect">{approvalEffect(item)}</small>
               <div className="inbox-meta">
                 <span>{item.destination}</span>
                 <span>{item.provenance}</span>
@@ -202,6 +253,14 @@ export function Approvals() {
               <Info label="Created" value={formatSingaporeTime(selected.created_at)} />
               <Info label="Reviewed" value={selected.reviewed_at ?? "—"} />
             </div>
+
+            <section className="inbox-section approval-decision-summary">
+              <h3>What exactly am I approving?</h3>
+              <p><strong>You are approving:</strong> {approvalTarget(selected)}</p>
+              <p><strong>If you click Approve:</strong> {approvalEffect(selected)}</p>
+              <p><strong>Destination:</strong> {selected.destination || "—"}</p>
+              <p><strong>Source:</strong> {selected.source_path ?? selected.source_id ?? selected.source}</p>
+            </section>
 
             <section className="inbox-section">
               <h3>Edit decision artifact before approval</h3>

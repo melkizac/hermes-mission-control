@@ -1,4 +1,4 @@
-import { ReactNode, useEffect } from "react";
+import { ReactNode, useEffect, useRef } from "react";
 
 type DrawerWidth = "standard" | "wide" | "narrow";
 
@@ -39,6 +39,11 @@ export function SlideOverDrawer<Tab extends string = string>({
   ariaLabel,
   dataDeepLinkTarget,
 }: SlideOverDrawerProps<Tab>) {
+  const tabRailRef = useRef<HTMLElement | null>(null);
+  const scrollTabs = (direction: -1 | 1) => {
+    tabRailRef.current?.scrollBy({ left: direction * 220, behavior: "smooth" });
+  };
+
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -61,11 +66,15 @@ export function SlideOverDrawer<Tab extends string = string>({
         </header>
 
         {tabs && tabs.length > 0 && activeTab && onTabChange && (
-          <nav className="mc-drawer-tabs" aria-label="Detail sections">
-            {tabs.map((item) => (
-              <button key={item} className={activeTab === item ? "on" : ""} onClick={() => onTabChange(item)}>{item}</button>
-            ))}
-          </nav>
+          <div className="mc-drawer-tab-rail" aria-label="Detail sections">
+            <button className="mc-drawer-tab-arrow" type="button" aria-label="Scroll tabs left" onClick={() => scrollTabs(-1)}>‹</button>
+            <nav className="mc-drawer-tabs" ref={tabRailRef}>
+              {tabs.map((item) => (
+                <button key={item} className={activeTab === item ? "on" : ""} aria-current={activeTab === item ? "page" : undefined} onClick={() => onTabChange(item)}>{item}</button>
+              ))}
+            </nav>
+            <button className="mc-drawer-tab-arrow" type="button" aria-label="Scroll tabs right" onClick={() => scrollTabs(1)}>›</button>
+          </div>
         )}
 
         {actions && <div className="mc-drawer-actions">{actions}</div>}

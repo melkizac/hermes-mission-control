@@ -15,6 +15,34 @@ def load_app(tmp_path):
     return module
 
 
+def test_isolated_kanban_db_does_not_aggregate_live_home_board_sources(tmp_path):
+    app = load_app(tmp_path)
+    isolated_db = app.KANBAN_DB
+    poison_home = tmp_path / 'live-hermes-home'
+    poison_board_root = poison_home / 'kanban' / 'boards'
+    poison_board_db = poison_board_root / 'default' / 'kanban.db'
+    poison_profile_db = poison_home / 'profiles' / 'dev-ops' / 'kanban.db'
+
+    for db_path, title in [
+        (poison_board_db, 'LIVE DEFAULT BOARD POISON'),
+        (poison_profile_db, 'LIVE PROFILE BOARD POISON'),
+    ]:
+        app.KANBAN_DB = db_path
+        created, status = app.create_task({'title': title, 'status': 'todo', 'tenant': 'live-project'})
+        assert status == 201
+        assert created['ok'] is True
+
+    app.HERMES_HOME = poison_home
+    app.KANBAN_BOARDS_ROOT = poison_board_root
+    app.KANBAN_DB = isolated_db
+
+    board = app.list_task_board()
+
+    assert board['summary']['total'] == 0
+    assert all('POISON' not in task['title'] for task in board['tasks'])
+    assert [source['id'] for source in board['sources']] == ['default']
+
+
 def test_agent_os_project_decision_creates_project_container_with_structured_body(tmp_path):
     app = load_app(tmp_path)
     route = app.agent_os_route_decision(
@@ -87,13 +115,25 @@ def test_agent_os_generic_project_decision_creates_visible_kickoff_graph(tmp_pat
 
     board = app.list_task_board({'project': [result['project_id']]})
     assert board['summary']['total'] == 5
+    detail_board = app.list_task_board({'project': [result['project_id']], 'q': ['Plan Review']})
     by_id = {task['id']: task for task in board['tasks']}
+    by_detail_id = {task['id']: task for task in detail_board['tasks']}
     assert by_id[result['task_ids']['current_state']]['parents'] == [result['task_ids']['project_kickoff']]
     assert by_id[result['task_ids']['implementation']]['parents'] == [result['task_ids']['current_state']]
     assert by_id[result['task_ids']['verification']]['parents'] == [result['task_ids']['implementation']]
     assert by_id[result['task_ids']['handoff']]['parents'] == [result['task_ids']['verification']]
     assert by_id[result['task_ids']['project_kickoff']]['status'] == 'scheduled'
     assert by_id[result['task_ids']['current_state']]['status'] == 'todo'
+    assert 'Plan Review gate: product fit and slice definition' in by_id[result['task_ids']['current_state']]['title']
+    full_current_state = next(task for task in result['tasks'] if task['id'] == result['task_ids']['current_state'])
+    assert '## Plan Review gate questions' in full_current_state['body']
+    assert 'Operator value:' in full_current_state['body']
+    assert 'Project→Tasks fit:' in full_current_state['body']
+    assert 'Narrowest useful slice:' in full_current_state['body']
+    assert 'Approval/safety boundary:' in full_current_state['body']
+    assert 'Docs impact:' in full_current_state['body']
+    assert by_detail_id[result['task_ids']['current_state']]['result_details']['workflow_type'] == 'hmc_software_factory'
+    assert by_detail_id[result['task_ids']['current_state']]['result_details']['evidence'][0]['title'] == 'HMC Plan Review gate'
     assert 'Project Kickoff task graph' in by_id[result['task_ids']['implementation']]['body']
     assert 'Evidence required' in by_id[result['task_ids']['verification']]['body']
 
