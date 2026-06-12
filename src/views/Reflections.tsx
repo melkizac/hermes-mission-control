@@ -37,6 +37,11 @@ type ReflectionsResponse = {
   workforceAlignment: WorkforceReflection;
 };
 
+type ApprovalMutationResponse = {
+  ok: boolean;
+  item?: { id?: string; status?: string };
+};
+
 type DrawerTab = "Overview" | "Memory" | "Skills" | "Authority" | "Evidence" | "Approval";
 
 const DRAWER_TABS: DrawerTab[] = ["Overview", "Memory", "Skills", "Authority", "Evidence", "Approval"];
@@ -106,6 +111,8 @@ export function Reflections() {
   const [drawerTab, setDrawerTab] = useState<DrawerTab>("Overview");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  const [approvedAgents, setApprovedAgents] = useState<Record<string, string>>({});
+  const [draftedAgents, setDraftedAgents] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -134,27 +141,60 @@ export function Reflections() {
     setDrawerTab(tab);
   }
 
-  async function requestAgentApproval(agent: ReflectionAgent) {
-    setBusy(agent.agentId);
+  async function createReflectionApproval(agent: ReflectionAgent) {
+    return requestJson<ApprovalMutationResponse>("/api/reflections/approval", {
+      method: "POST",
+      body: JSON.stringify({
+        proposalId: `agent-${agent.agentId}`,
+        kind: "agent_sharpening",
+        title: `Approve Agent Sharpening proposal: ${agent.agentName}`,
+        target: agent.agentName,
+        effect: `Future reflection runs may propose memory and skill improvements for ${agent.agentName} inside this role boundary: ${agent.authorityBoundaries.join("; ")}.`,
+        reason: "Agent-specific learning should improve competence without silently expanding authority.",
+        body: approvalBodyForAgent(agent),
+      }),
+    });
+  }
+
+  async function saveAgentApprovalDraft(agent: ReflectionAgent) {
+    setBusy(`${agent.agentId}:draft`);
     setNotice(null);
     setError(null);
     try {
-      await requestJson("/api/reflections/approval", {
-        method: "POST",
-        body: JSON.stringify({
-          proposalId: `agent-${agent.agentId}`,
-          kind: "agent_sharpening",
-          title: `Approve Agent Sharpening proposal: ${agent.agentName}`,
-          target: agent.agentName,
-          effect: `Future reflection runs may propose memory and skill improvements for ${agent.agentName} inside this role boundary: ${agent.authorityBoundaries.join("; ")}.`,
-          reason: "Agent-specific learning should improve competence without silently expanding authority.",
-          body: approvalBodyForAgent(agent),
-        }),
-      });
-      setNotice(`Created approval card for ${agent.agentName}.`);
+      const result = await createReflectionApproval(agent);
+      const approvalId = result.item?.id || "";
+      setDraftedAgents((prev) => ({ ...prev, [agent.agentId]: approvalId || "drafted" }));
+      setNotice(`Saved draft approval for ${agent.agentName}. You can also approve it directly from the drawer.`);
       setDrawerTab("Approval");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to create approval");
+      setError(err instanceof Error ? err.message : "Unable to save approval draft");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function approveAgentReflection(agent: ReflectionAgent) {
+    setBusy(`${agent.agentId}:approve`);
+    setNotice(null);
+    setError(null);
+    try {
+      const created = await createReflectionApproval(agent);
+      const approvalId = created.item?.id;
+      if (!approvalId) throw new Error("Approval was created without an id");
+      const approved = await requestJson<ApprovalMutationResponse>(`/api/approvals/${encodeURIComponent(approvalId)}`, {
+        method: "POST",
+        body: JSON.stringify({
+          decision: "approve",
+          note: `Approved from ${agent.agentName} reflection drawer.`,
+        }),
+      });
+      setApprovedAgents((prev) => ({ ...prev, [agent.agentId]: approvalId }));
+      setDraftedAgents((prev) => ({ ...prev, [agent.agentId]: approvalId }));
+      setNotice(`Approved reflection proposal for ${agent.agentName}.`);
+      setDrawerTab("Approval");
+      if (!approved.ok) setError("Approval was submitted, but the server did not confirm ok=true.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to approve reflection");
     } finally {
       setBusy(null);
     }
@@ -167,7 +207,7 @@ export function Reflections() {
           <span className="stub-tag">AI WORKFORCE REFLECTIONS</span>
           <h1>Review each agent’s learning proposal</h1>
           <p>
-            Click an agent to open its reflection drawer. Review memory, skills, authority, evidence, and approval from one place. Nothing is applied until an approval card is created and reviewed.
+            Click an agent to open its reflection drawer. Review memory, skills, authority, evidence, and approve the proposal from the same drawer. No need to jump to the Approvals page.
           </p>
         </div>
         <div className="reflections-hero-actions">
@@ -176,7 +216,7 @@ export function Reflections() {
       </header>
 
       {error && <div className="task-error">{error}</div>}
-      {notice && <div className="task-notice">{notice} <button className="ghost tiny" onClick={() => setView("approvals")}>Open Approvals</button></div>}
+      {notice && <div className="task-notice">{notice}</div>}
 
       {loading && <div className="empty big">Loading agent reflections…</div>}
       {data && !loading && (
@@ -190,11 +230,11 @@ export function Reflections() {
           <section className="reflection-list-guidance" aria-label="How to use reflections">
             <div>
               <strong>How to use this page</strong>
-              <p>Select an agent. Review its proposal in the drawer tabs. If it makes sense, create an approval card from the drawer.</p>
+              <p>Select an agent, inspect the tabs, then approve or save a draft without leaving the drawer.</p>
             </div>
             <div>
               <strong>Safety rule</strong>
-              <p>Reflections propose learning. They do not automatically write memory, create skills, or expand authority.</p>
+              <p>Approving records the decision. It still does not silently write memory, create skills, or expand authority.</p>
             </div>
           </section>
 
@@ -250,8 +290,8 @@ export function Reflections() {
           actions={(
             <>
               <button className="ghost tiny" type="button" onClick={() => setDrawerTab("Approval")}>Review approval</button>
-              <button className="btn primary tiny" type="button" disabled={busy === selectedAgent.agentId} onClick={() => void requestAgentApproval(selectedAgent)}>
-                {busy === selectedAgent.agentId ? "Creating…" : "Create approval card"}
+              <button className="btn primary tiny" type="button" disabled={busy === `${selectedAgent.agentId}:approve`} onClick={() => void approveAgentReflection(selectedAgent)}>
+                {busy === `${selectedAgent.agentId}:approve` ? "Approving…" : approvedAgents[selectedAgent.agentId] ? "Approved" : "Approve reflection"}
               </button>
             </>
           )}
@@ -314,16 +354,31 @@ export function Reflections() {
             <section className="reflection-drawer-section">
               <div className="approval-decision-summary">
                 <h3>Approve reflection proposal for {selectedAgent.agentName}</h3>
-                <p><strong>You are approving:</strong> a reviewable proposal that this agent may use these memory/skill improvements inside its current role boundary.</p>
+                <p><strong>You are approving:</strong> the reflection proposal for this agent, inside the authority boundary shown here.</p>
                 <p><strong>Not approving:</strong> automatic memory writes, automatic skill creation, external posting, production changes, or expanded authority.</p>
-                <p><strong>Next step:</strong> create an approval card, then review it in Approvals before applying any durable change.</p>
+                <p><strong>No double work:</strong> approve directly here. Mission Control records the approval card behind the scenes for audit history.</p>
               </div>
               <pre>{approvalBodyForAgent(selectedAgent)}</pre>
+              {approvedAgents[selectedAgent.agentId] && (
+                <div className="reflection-drawer-callout">
+                  <strong>Approved in this drawer</strong>
+                  <p>Audit record: {approvedAgents[selectedAgent.agentId]}</p>
+                </div>
+              )}
+              {draftedAgents[selectedAgent.agentId] && !approvedAgents[selectedAgent.agentId] && (
+                <div className="reflection-drawer-callout amber">
+                  <strong>Draft saved</strong>
+                  <p>Audit record: {draftedAgents[selectedAgent.agentId]}</p>
+                </div>
+              )}
               <div className="reflection-drawer-footer-actions">
-                <button className="btn primary" type="button" disabled={busy === selectedAgent.agentId} onClick={() => void requestAgentApproval(selectedAgent)}>
-                  {busy === selectedAgent.agentId ? "Creating approval…" : "Create approval card in Approvals"}
+                <button className="btn primary" type="button" disabled={busy === `${selectedAgent.agentId}:approve` || Boolean(approvedAgents[selectedAgent.agentId])} onClick={() => void approveAgentReflection(selectedAgent)}>
+                  {busy === `${selectedAgent.agentId}:approve` ? "Approving…" : approvedAgents[selectedAgent.agentId] ? "Approved" : "Approve reflection"}
                 </button>
-                <button className="ghost" type="button" onClick={() => setView("approvals")}>Open Approvals</button>
+                <button className="ghost" type="button" disabled={busy === `${selectedAgent.agentId}:draft` || Boolean(approvedAgents[selectedAgent.agentId])} onClick={() => void saveAgentApprovalDraft(selectedAgent)}>
+                  {busy === `${selectedAgent.agentId}:draft` ? "Saving…" : "Save draft only"}
+                </button>
+                <button className="ghost" type="button" onClick={() => setView("approvals")}>View audit queue</button>
               </div>
             </section>
           )}
