@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Agent, ToolCapability } from "../types";
 import { useStore } from "../services/store";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
@@ -40,6 +40,8 @@ function displaySource(value?: string) {
 
 export function ToolsHub() {
   const { agents, loading } = useStore();
+  const [apiRecords, setApiRecords] = useState<ToolRecord[]>([]);
+  const [detailedAgents, setDetailedAgents] = useState<Agent[]>([]);
   const [q, setQ] = useState("");
   const [source, setSource] = useState("");
   const [kind, setKind] = useState("");
@@ -56,9 +58,51 @@ export function ToolsHub() {
   const [installStatus, setInstallStatus] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
 
+  useEffect(() => {
+    let cancelled = false;
+    const loadTools = async () => {
+      try {
+        const res = await fetch("/api/tools", { credentials: "include" });
+        if (!res.ok) return;
+        const payload = await res.json();
+        if (!cancelled && Array.isArray(payload.tools)) setApiRecords(payload.tools as ToolRecord[]);
+      } catch {
+        // Older Mission Control backends do not expose /api/tools; fall back to agent detail loading below.
+      }
+    };
+    void loadTools();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const summaryAgents = agents ?? [];
+    if (!summaryAgents.length) {
+      setDetailedAgents([]);
+      return () => { cancelled = true; };
+    }
+    const loadDetails = async () => {
+      const loaded = await Promise.all(summaryAgents.map(async (agent) => {
+        if ((agent.tools ?? []).length > 0 || !agent.detailEndpoint) return agent;
+        try {
+          const res = await fetch(agent.detailEndpoint, { credentials: "include" });
+          if (!res.ok) return agent;
+          return { ...agent, ...await res.json() } as Agent;
+        } catch {
+          return agent;
+        }
+      }));
+      if (!cancelled) setDetailedAgents(loaded);
+    };
+    void loadDetails();
+    return () => { cancelled = true; };
+  }, [agents]);
+
   const records = useMemo(() => {
+    if (apiRecords.length) return apiRecords;
     const byId = new Map<string, ToolRecord>();
-    agents.forEach((agent) => {
+    const sourceAgents = detailedAgents.length ? detailedAgents : agents;
+    sourceAgents.forEach((agent) => {
       (agent.tools ?? []).forEach((tool) => {
         const id = toolKey(tool);
         const existing = byId.get(id);
@@ -76,7 +120,7 @@ export function ToolsHub() {
       });
     });
     return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [agents]);
+  }, [agents, apiRecords, detailedAgents]);
 
   const visibleRecords = useMemo(() => records.filter((item) => item.kind !== "toolset" && item.name !== "Full Hermes CLI tools" && item.id !== "hermes-cli"), [records]);
   const sources = useMemo(() => Array.from(new Set(visibleRecords.map((item) => displaySource(item.source)))).sort(), [visibleRecords]);

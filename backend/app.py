@@ -11232,6 +11232,43 @@ def agent_tool_capabilities(profile_id='default'):
     return capabilities
 
 
+def tools_hub_payload(identity=None):
+    """Aggregate executable tool capabilities for the Tools Hub without loading chat transcripts."""
+    shared_status = agent_list_status_payload()
+    if identity and not is_admin_identity(identity):
+        directory = list_agent_directory(identity)
+        agent_refs = []
+        for row in directory.get('agents', []):
+            if not isinstance(row, dict):
+                continue
+            shared_ref = safe_id(row.get('shared_agent_ref') or row.get('id') or 'default') or 'default'
+            agent_refs.append((shared_ref, row.get('name') or shared_ref))
+    else:
+        agent_refs = [(profile_id, '') for profile_id in agent_roster_profile_ids(include_default=True)]
+    by_id = {}
+    for profile_id, display_name in agent_refs:
+        summary = agent_summary_payload(profile_id, st=shared_status)
+        if display_name:
+            summary['name'] = display_name
+        for tool in agent_tool_capabilities(profile_id):
+            tid = tool.get('id') or tool.get('name')
+            if not tid:
+                continue
+            existing = by_id.get(tid)
+            if existing:
+                existing.setdefault('agents', []).append(summary)
+                if tool.get('enabled') is not False:
+                    existing['enabledAgents'] = int(existing.get('enabledAgents') or 0) + 1
+                continue
+            item = dict(tool)
+            item['id'] = tid
+            item['agents'] = [summary]
+            item['enabledAgents'] = 0 if tool.get('enabled') is False else 1
+            by_id[tid] = item
+    tools = sorted(by_id.values(), key=lambda item: str(item.get('name') or item.get('id') or '').lower())
+    return {'tools': tools, 'summary': {'total': len(tools), 'agents': len(agent_refs)}}
+
+
 def skill_platform_for_agent(profile_id):
     if profile_id in ('terminal', 'cli'):
         return 'cli'
@@ -18440,6 +18477,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(result, status)
         elif parsed.path == '/api/agents':
             self.send_json(list_agents_payload(current_identity_from_cookie(self.headers.get('Cookie', ''))))
+        elif parsed.path == '/api/tools':
+            self.send_json(tools_hub_payload(current_identity_from_cookie(self.headers.get('Cookie', ''))))
         elif parsed.path.startswith('/api/agents/'):
             parts = parsed.path.strip('/').split('/')
             if len(parts) >= 4 and parts[3] == 'rate-limits':
