@@ -415,10 +415,6 @@ ${JSON.stringify(payload, null, 2)}`);
           <div className="task-title-row">
             <div className="task-title-main">
               <h1>Task Board</h1>
-              <div className="task-title-status" aria-label="Task board status">
-                <span className="task-title-count">{loading ? "Loading…" : `${tasks.length} issues shown`}</span>
-                <span className={`realtime-status ${refreshState.stale ? "stale" : refreshState.refreshing ? "refreshing" : "live"}`}>{refreshState.statusLabel}</span>
-              </div>
             </div>
             <div className="task-title-actions" aria-label="Task board actions">
               <button
@@ -429,6 +425,7 @@ ${JSON.stringify(payload, null, 2)}`);
               >
                 <Icon name="plus" size={18} />
               </button>
+              <span className={`realtime-status ${refreshState.stale ? "stale" : refreshState.refreshing ? "refreshing" : "live"}`}>{refreshState.statusLabel}</span>
               <button className="task-icon-action dark" aria-label="Refresh task board" title="Refresh task board" disabled={refreshState.refreshing} onClick={() => void refreshState.refresh("manual")}>
                 <Icon name="refresh" size={18} />
               </button>
