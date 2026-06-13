@@ -3,6 +3,7 @@ import { useStore } from "../services/store";
 import { MobileOperatorDock, type MobileOperatorAction } from "../components/MobileOperatorDock";
 import type { AutomationsResponse, BoardResponse, CostsResponse, InboxResponse, ProjectsResponse, SecondBrainResponse, ViewKey } from "../types";
 import { formatSingaporeShort, formatSingaporeTime } from "../utils/time";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 type RuntimeStatus = {
   now: string;
@@ -200,8 +201,10 @@ export function Dashboard() {
       <div className="home-topbar cockpit-topbar">
         <div>
           <div className="crumb">Dashboard › Agent operating metrics</div>
-          <h1>Dashboard</h1>
-          <p>See what agents are doing, what needs intervention, what produced evidence, and whether runtimes are healthy.</p>
+          <div className="hero-title-with-help">
+            <h1>Dashboard</h1>
+            <InfoTooltip label="About Dashboard">See what agents are doing, what needs intervention, what produced evidence, and whether runtimes are healthy.</InfoTooltip>
+          </div>
         </div>
       </div>
 

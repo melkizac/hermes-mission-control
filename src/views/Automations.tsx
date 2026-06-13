@@ -6,6 +6,7 @@ import { SlideOverDrawer } from "../components/SlideOverDrawer";
 import { Icon } from "../components/Icon";
 import { useStore } from "../services/store";
 import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 const client = new HttpHermesClient();
 
@@ -222,10 +223,12 @@ export function Automations() {
       <header className="automations-hero">
         <div>
           <span className="stub-tag">ROUTINE CONTROL</span>
-          <h1>Routines</h1>
-          <p>
-            Recurring and scheduled Hermes work. Click a routine to inspect schedule, prompt, outputs, and run evidence in a right-side drawer.
-          </p>
+          <div className="hero-title-with-help">
+            <h1>Routines</h1>
+            <InfoTooltip label="About routines">
+              Recurring and scheduled Hermes work. Click a routine to inspect schedule, prompt, outputs, and run evidence in a right-side drawer.
+            </InfoTooltip>
+          </div>
         </div>
         <div className="task-hero-actions">
           <span className={`realtime-status ${refreshState.stale ? "stale" : refreshState.refreshing ? "refreshing" : "live"}`}>{refreshState.statusLabel}</span>

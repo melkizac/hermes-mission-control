@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { DelegateWorkPlan, ProjectMasterInstructions, RiskLevel } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { RiskBadges, EvidenceTimeline } from "../components/MissionFoundation";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 const client = new HttpHermesClient();
 
@@ -88,8 +89,10 @@ export function DelegateWork() {
       <header className="delegate-work-hero">
         <div>
           <span className="stub-tag">DELEGATE WORK</span>
-          <h1>Delegate Work</h1>
-          <p>Turn a natural-language request into project-scoped, evidence-ready work with routing, risk, and Project master instructions attached.</p>
+          <div className="hero-title-with-help">
+            <h1>Delegate Work</h1>
+            <InfoTooltip label="About delegation">Turn a natural-language request into project-scoped, evidence-ready work with routing, risk, and Project master instructions attached.</InfoTooltip>
+          </div>
         </div>
         <button className="btn dark" disabled={busy === "load"} onClick={() => void routeWork()}>{busy === "plan" ? "Routing…" : "Route work"}</button>
       </header>

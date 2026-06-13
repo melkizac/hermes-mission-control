@@ -6,6 +6,7 @@ import { parseMissionControlDeepLink } from "../services/deepLinks";
 import { formatSingaporeTime } from "../utils/time";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
 import { Icon } from "../components/Icon";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 const client = new HttpHermesClient();
 const tabs: Array<{ key: InboxStatus | "all"; label: string; helper: string }> = [
@@ -177,8 +178,10 @@ export function Approvals() {
       <header className="inbox-hero">
         <div>
           <span className="stub-tag">APPROVAL GATE</span>
-          <h1>Approval Gates</h1>
-          <p>Approve or reject external-facing and irreversible agent actions. Email alerts, blockers, and “needs attention” items belong on the Task Board instead.</p>
+          <div className="hero-title-with-help">
+            <h1>Approval Gates</h1>
+            <InfoTooltip label="About approval gates">Approve or reject external-facing and irreversible agent actions. Email alerts, blockers, and “needs attention” items belong on the Task Board instead.</InfoTooltip>
+          </div>
         </div>
         <button className="task-icon-action dark" aria-label="Refresh approvals" title="Refresh approvals" onClick={() => void load("manual")}>
           <Icon name="refresh" size={18} />
@@ -205,7 +208,7 @@ export function Approvals() {
           <span>Search</span>
           <input value={q} onChange={(event) => setQ(event.target.value)} placeholder="title, body, source, destination…" />
         </label>
-        <div className="inbox-filter-note">Only items requiring an operator decision should appear here. Attention-only items are routed to the Task Board.</div>
+        <div className="filter-help"><InfoTooltip label="About approval filters">Only items requiring an operator decision should appear here. Attention-only items are routed to the Task Board.</InfoTooltip></div>
       </section>
 
       {error && <div className="inbox-error">{error}</div>}

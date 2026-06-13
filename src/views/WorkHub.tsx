@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../services/store";
 import type { BoardResponse, WorkflowLibraryResponse, ProjectsResponse, ResearchRunsResponse, ViewKey } from "../types";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 async function safe<T>(path: string, fallback: T): Promise<T> {
   try {
@@ -58,8 +59,10 @@ export function WorkHub() {
     <div className="simplified-hub scroll">
       <div className="hub-hero">
         <span className="eyebrow">Work hub</span>
-        <h1>Work</h1>
-        <p>All open, running, completed, planned, and research work in one non-technical workspace.</p>
+        <div className="hero-title-with-help">
+          <h1>Work</h1>
+          <InfoTooltip label="About Work Hub">All open, running, completed, planned, and research work in one non-technical workspace.</InfoTooltip>
+        </div>
         <button className="btn" onClick={() => setView("delegate-work")}>Start work manually</button>
       </div>
       <section className="hub-grid" aria-label="Work sections">

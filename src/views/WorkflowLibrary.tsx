@@ -3,6 +3,7 @@ import type { PackagedWorkflow, WorkflowLibraryResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { ArtifactCard, EvidenceTimeline, RiskBadges } from "../components/MissionFoundation";
 import { Icon } from "../components/Icon";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 const client = new HttpHermesClient();
 
@@ -91,10 +92,12 @@ export function WorkflowLibrary() {
       <header className="workflow-hero">
         <div>
           <span className="stub-tag">PACKAGED SME WORKFLOWS</span>
-          <h1>Workflow library</h1>
-          <p>
-            Launch repeatable SME operating loops with linked skills, built-in evidence requirements, artifacts, and approval gates.
-          </p>
+          <div className="hero-title-with-help">
+            <h1>Workflow library</h1>
+            <InfoTooltip label="About workflows">
+              Launch repeatable SME operating loops with linked skills, built-in evidence requirements, artifacts, and approval gates.
+            </InfoTooltip>
+          </div>
         </div>
         <button className="task-icon-action dark" aria-label="Refresh workflow library" title="Refresh workflow library" onClick={() => void load()}>
           <Icon name="refresh" size={18} />
@@ -120,7 +123,7 @@ export function WorkflowLibrary() {
             {(data?.categories ?? []).map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
         </label>
-        <div className="workflow-filter-note">Evidence-ready workflows launch as Task Board items, not hidden chats.</div>
+        <div className="filter-help"><InfoTooltip label="About workflow launch">Evidence-ready workflows launch as Task Board items, not hidden chats.</InfoTooltip></div>
       </section>
 
       {error && <div className="skills-error">{error}</div>}

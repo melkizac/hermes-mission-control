@@ -9,6 +9,7 @@ import { formatSingaporeTime } from "../utils/time";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
 import { Icon } from "../components/Icon";
 import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 const client = new HttpHermesClient();
 const TASK_PAGE_SIZE = 5;
@@ -433,7 +434,7 @@ ${JSON.stringify(payload, null, 2)}`);
               </button>
             </div>
           </div>
-          <p>Project-first operating view. Mission Control aggregates live Hermes Kanban task sources and maps tenant to Project.</p>
+          <div className="filter-help"><InfoTooltip label="About Task Board">Project-first operating view. Mission Control aggregates live Hermes Kanban task sources and maps tenant to Project.</InfoTooltip></div>
         </div>
       </header>
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Icon } from "../components/Icon";
 import { formatSingaporeTime } from "../utils/time";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 type FileRoot = {
   id: string;
@@ -158,8 +159,10 @@ export function FileSystem() {
       <header className="fs-hero">
         <div>
           <span className="stub-tag">VPS FILE ACCESS</span>
-          <h1>File System</h1>
-          <p>Browse generated outputs, uploads, and Second Brain files directly from Mission Control. Download files without SSH/SFTP.</p>
+          <div className="hero-title-with-help">
+            <h1>File System</h1>
+            <InfoTooltip label="About file access">Browse generated outputs, uploads, and Second Brain files directly from Mission Control. Download files without SSH/SFTP.</InfoTooltip>
+          </div>
         </div>
         <button className="btn" onClick={() => void load()} disabled={loading}>
           <Icon name="refresh" size={17} />

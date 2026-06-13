@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { CostsResponse, ModelUsageWindow } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { useStore } from "../services/store";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 const client = new HttpHermesClient();
 
@@ -106,8 +107,10 @@ export function UsageRemaining() {
       <header className="usage-hero">
         <div>
           <span className="stub-tag">RATE LIMITS</span>
-          <h1>Rate limits</h1>
-          <p>Workspace model entitlement view for the selected model. Admin cost analytics stay in Admin → Costs / Usage.</p>
+          <div className="hero-title-with-help">
+            <h1>Rate limits</h1>
+            <InfoTooltip label="About rate limits">Workspace model entitlement view for the selected model. Admin cost analytics stay in Admin → Costs / Usage.</InfoTooltip>
+          </div>
         </div>
         {uiMode === "admin" ? (
           <label className="usage-model-select">

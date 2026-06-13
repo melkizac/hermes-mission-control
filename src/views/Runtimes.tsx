@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRecord, RuntimeRegistryResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { Icon } from "../components/Icon";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 const client = new HttpHermesClient();
 
@@ -151,10 +152,12 @@ export function Runtimes() {
       <header className="skills-hero runtimes-hero">
         <div>
           <span className="stub-tag">RUNTIME CONNECTORS</span>
-          <h1>Runtime Connectors</h1>
-          <p>
-            Connect Hermes Desktop, OpenClaw, NanoClaw, NemoClaw, Codex, Claude Code, and custom worker backends into one Mission Control view. The primary path is Connector V2: token, register, heartbeat, event stream.
-          </p>
+          <div className="hero-title-with-help">
+            <h1>Runtime Connectors</h1>
+            <InfoTooltip label="About runtime connectors">
+              Connect Hermes Desktop, OpenClaw, NanoClaw, NemoClaw, Codex, Claude Code, and custom worker backends into one Mission Control view. The primary path is Connector V2: token, register, heartbeat, event stream.
+            </InfoTooltip>
+          </div>
         </div>
         <div className="task-hero-actions">
           <button className="task-icon-action dark" aria-label="Refresh runtimes" title="Refresh runtimes" onClick={() => void load()}>
@@ -193,9 +196,7 @@ export function Runtimes() {
           <div className="runtime-connect-copy">
             <span className="stub-tag">RUNTIME CONNECTOR V2</span>
             <h2>Create a connector token and let a local or external runtime register itself.</h2>
-            <p>
-              This is now the primary Runtime Connectors workflow. Use it for Hermes Desktop/Windows bridges, OpenClaw-family runtimes, Codex, Claude Code, or a custom agent. Raw adapter evidence stays in Advanced so the daily view remains operator-clean.
-            </p>
+            <div className="form-help"><InfoTooltip label="About Connector V2">This is now the primary Runtime Connectors workflow. Use it for Hermes Desktop/Windows bridges, OpenClaw-family runtimes, Codex, Claude Code, or a custom agent. Raw adapter evidence stays in Advanced so the daily view remains operator-clean.</InfoTooltip></div>
             <div className="runtime-connect-form">
               <input value={tokenLabel} onChange={(event) => setTokenLabel(event.target.value)} placeholder="Connector label" />
               <button className="btn dark" onClick={() => void createConnector()}>Create connector token</button>
@@ -220,7 +221,7 @@ export function Runtimes() {
           <article className="runtime-overview-card primary">
             <span>Operator view</span>
             <h2>Runtime health without raw adapter noise.</h2>
-            <p>Use the tabs to move from the decision layer to inventory, token control, event history, and raw adapter evidence only when needed.</p>
+            <InfoTooltip label="About runtime tabs">Use the tabs to move from the decision layer to inventory, token control, event history, and raw adapter evidence only when needed.</InfoTooltip>
             <div className="runtime-checks">
               <b>Visible by default</b>
               <span>Connected runtimes, status, safe actions, last update, and registration health.</span>

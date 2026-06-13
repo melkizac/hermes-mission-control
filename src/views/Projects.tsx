@@ -4,6 +4,7 @@ import { HttpHermesClient } from "../services/httpHermesClient";
 import { queryCacheEventName } from "../services/queryCache";
 import { formatSingaporeTime } from "../utils/time";
 import { Icon } from "../components/Icon";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 const client = new HttpHermesClient();
 type Tab = "overview" | "workflow" | "operations" | "knowledge" | "activity" | "sessions";
@@ -277,8 +278,10 @@ export function Projects() {
       <header className="projects-hero professional">
         <div>
           <span className="stub-tag">PROJECT HUB</span>
-          <h1>Projects</h1>
-          <p>Operator view for each initiative: what it is, what needs attention, who is working on it, and what Melkizac should do next.</p>
+          <div className="hero-title-with-help">
+            <h1>Projects</h1>
+            <InfoTooltip label="About Projects">Operator view for each initiative: what it is, what needs attention, who is working on it, and what Melkizac should do next.</InfoTooltip>
+          </div>
         </div>
         <div className="projects-control projects-control-refresh-only">
           <button className="task-icon-action dark" aria-label="Refresh projects" title="Refresh projects" onClick={() => void load("manual")}>

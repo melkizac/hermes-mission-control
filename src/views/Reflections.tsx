@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
 import { useStore } from "../services/store";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 type ReflectionAgent = {
   agentId: string;
@@ -205,10 +206,12 @@ export function Reflections() {
       <header className="reflections-hero reflection-list-hero">
         <div>
           <span className="stub-tag">AI WORKFORCE REFLECTIONS</span>
-          <h1>Review each agent’s learning proposal</h1>
-          <p>
-            Click an agent to open its reflection drawer. Review memory, skills, authority, evidence, and approve the proposal from the same drawer. No need to jump to the Approvals page.
-          </p>
+          <div className="hero-title-with-help">
+            <h1>Review each agent’s learning proposal</h1>
+            <InfoTooltip label="About reflections">
+              Click an agent to open its reflection drawer. Review memory, skills, authority, evidence, and approve the proposal from the same drawer. No need to jump to the Approvals page.
+            </InfoTooltip>
+          </div>
         </div>
         <div className="reflections-hero-actions">
           <button className="task-icon-action dark" aria-label="Refresh reflections" title="Refresh reflections" onClick={() => void load()}>↻</button>
@@ -230,7 +233,7 @@ export function Reflections() {
           <section className="reflection-list-guidance" aria-label="How to use reflections">
             <div>
               <strong>How to use this page</strong>
-              <p>Select an agent, inspect the tabs, then approve or save a draft without leaving the drawer.</p>
+              <InfoTooltip label="Review workflow">Select an agent, inspect the tabs, then approve or save a draft without leaving the drawer.</InfoTooltip>
             </div>
             <div>
               <strong>Safety rule</strong>

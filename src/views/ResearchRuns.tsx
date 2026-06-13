@@ -3,6 +3,7 @@ import type { CreateResearchRunRequest, ResearchRun, ResearchRunsResponse } from
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { Icon } from "../components/Icon";
 import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 const client = new HttpHermesClient();
 
@@ -106,8 +107,10 @@ export function ResearchRuns() {
       <header className="skills-hero research-hero">
         <div>
           <span className="stub-tag">PARALLEL RESEARCH</span>
-          <h1>Research command center</h1>
-          <p>Track wide research runs as parallel agent lanes with source coverage, confidence, blockers, synthesis progress, and final recommendation evidence before operators act on findings.</p>
+          <div className="hero-title-with-help">
+            <h1>Research command center</h1>
+            <InfoTooltip label="About research runs">Track wide research runs as parallel agent lanes with source coverage, confidence, blockers, synthesis progress, and final recommendation evidence before operators act on findings.</InfoTooltip>
+          </div>
         </div>
         <div className="task-hero-actions">
           <span className={`realtime-status ${refreshState.stale ? "stale" : refreshState.refreshing ? "refreshing" : "live"}`}>{refreshState.statusLabel}</span>

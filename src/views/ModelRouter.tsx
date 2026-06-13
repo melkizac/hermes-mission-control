@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 type ModelTier = "frontier" | "balanced" | "standard" | "economy" | "low_cost" | string;
 
@@ -173,7 +174,7 @@ export function ModelRouter() {
 
   return <div className="page router-page">
     <section className="hero router-hero">
-      <div><span className="stub-tag">MODEL ROUTER</span><h1>Cost-aware AI Model Router</h1><p>Register available models, check authorisation, and let Mission Control decide which model tier should handle planning, execution, verification, and sub-agent work.</p></div>
+      <div><span className="stub-tag">MODEL ROUTER</span><div className="hero-title-with-help"><h1>Cost-aware AI Model Router</h1><InfoTooltip label="About model routing">Register available models, check authorisation, and let Mission Control decide which model tier should handle planning, execution, verification, and sub-agent work.</InfoTooltip></div></div>
       <button className="btn dark" onClick={() => void save()} disabled={saving}>{saving ? "Saving…" : "Save routing policy"}</button>
     </section>
 
@@ -189,8 +190,7 @@ export function ModelRouter() {
     <section className="router-panel hermes-cli-panel">
       <div className="section-head">
         <div>
-          <h2>Hermes CLI model settings</h2>
-          <p>This is the allow-list interface for models Mission Control may use. It reads the active Hermes CLI model from config.yaml and checks authorisation from Hermes .env API keys or auth.json OAuth credentials. Secrets are never shown here.</p>
+          <div className="section-title-with-help"><h2>Hermes CLI model settings</h2><InfoTooltip label="About Hermes model settings">This is the allow-list interface for models Mission Control may use. It reads the active Hermes CLI model from config.yaml and checks authorisation from Hermes .env API keys or auth.json OAuth credentials. Secrets are never shown here.</InfoTooltip></div>
         </div>
         <button className="btn dark" onClick={addHermesCliModel}>Add current Hermes CLI model</button>
       </div>
@@ -205,17 +205,17 @@ export function ModelRouter() {
     </section>
 
     <section className="router-panel">
-      <div className="section-head"><div><h2>Routing policy</h2><p>The main agent uses frontier models for decomposition, strategy, complex reasoning and final review; lower-cost workers handle simple execution, formatting, extraction, and classification.</p></div><label className="toggle-line"><input type="checkbox" checked={draft.enabled} onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} /> Auto-select models</label></div>
+      <div className="section-head"><div><div className="section-title-with-help"><h2>Routing policy</h2><InfoTooltip label="About routing policy">The main agent uses frontier models for decomposition, strategy, complex reasoning and final review; lower-cost workers handle simple execution, formatting, extraction, and classification.</InfoTooltip></div></div><label className="toggle-line"><input type="checkbox" checked={draft.enabled} onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} /> Auto-select models</label></div>
       <textarea className="policy-textarea" value={String(draft.policy?.goal || "")} onChange={(e) => setDraft({ ...draft, policy: { ...draft.policy, goal: e.target.value } })} />
     </section>
 
     <section className="router-panel">
-      <div className="section-head"><div><h2>Model allow-list + authorisation</h2><p>Only enabled models in this allow-list appear in chat model selection or router decisions. Mission Control marks a model authorised when the matching Hermes CLI API key/env var or OAuth credential exists server-side.</p></div><button className="btn ghost" onClick={addModel}>Add model manually</button></div>
+      <div className="section-head"><div><div className="section-title-with-help"><h2>Model allow-list + authorisation</h2><InfoTooltip label="About model authorisation">Only enabled models in this allow-list appear in chat model selection or router decisions. Mission Control marks a model authorised when the matching Hermes CLI API key/env var or OAuth credential exists server-side.</InfoTooltip></div></div><button className="btn ghost" onClick={addModel}>Add model manually</button></div>
       <div className="router-model-grid">{draft.models.map((model, index) => <ModelEditor key={model.id || index} model={model} onChange={(next) => setDraft({ ...draft, models: draft.models.map((m, i) => i === index ? next : m) })} onRemove={() => setDraft({ ...draft, models: draft.models.filter((_, i) => i !== index) })} />)}</div>
     </section>
 
     <section className="router-panel">
-      <div className="section-head"><div><h2>Test auto-selection</h2><p>Paste a human instruction and Mission Control will classify complexity, choose a planner model, and assign suitable model tiers to sub-agent steps.</p></div><button className="btn dark" onClick={() => void testRoute()}>Route this task</button></div>
+      <div className="section-head"><div><div className="section-title-with-help"><h2>Test auto-selection</h2><InfoTooltip label="About route testing">Paste a human instruction and Mission Control will classify complexity, choose a planner model, and assign suitable model tiers to sub-agent steps.</InfoTooltip></div></div><button className="btn dark" onClick={() => void testRoute()}>Route this task</button></div>
       <textarea className="policy-textarea tall" value={instruction} onChange={(e) => setInstruction(e.target.value)} />
       {plan && <div className="route-plan">
         <div className="route-score"><b>{plan.complexity}</b><span>{plan.complexity_label}</span><small>Planner: {modelSummary(plan.planner_model)}</small></div>

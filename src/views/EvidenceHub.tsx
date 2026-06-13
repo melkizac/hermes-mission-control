@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../services/store";
 import type { AutomationsResponse, BoardResponse, BrowserSessionsResponse, ViewKey } from "../types";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 type SessionRow = { id: string; title?: string; source?: string };
 
@@ -58,8 +59,10 @@ export function EvidenceHub() {
     <div className="simplified-hub evidence-hub scroll">
       <div className="hub-hero">
         <span className="eyebrow">Results & Proof</span>
-        <h1>Evidence</h1>
-        <p>Proof of what agents did: screenshots, final links, task results, run traces, and generated artifacts.</p>
+        <div className="hero-title-with-help">
+          <h1>Evidence</h1>
+          <InfoTooltip label="About Evidence">Proof of what agents did: screenshots, final links, task results, run traces, and generated artifacts.</InfoTooltip>
+        </div>
         <button className="btn" onClick={() => setView("audit")}>Open detailed audit</button>
       </div>
       <section className="hub-grid" aria-label="Evidence sections">
