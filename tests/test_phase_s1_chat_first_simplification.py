@@ -43,6 +43,11 @@ def test_workspace_nav_is_chat_first_five_section_ia_and_preserves_advanced_acce
         assert view in deep_links
         assert f'view === {view}' in app
 
+    # Top-level page links such as /reflections should render their named view,
+    # not fall back to the chat surface after login.
+    assert 'const topLevelView = normalizedPath.startsWith("/") ? normalizedPath.slice(1) as ViewKey : null;' in deep_links
+    assert 'if (topLevelView && allowedViews.has(topLevelView)) target.view = topLevelView;' in deep_links
+
 
 def test_mode_toggle_defaults_land_on_home_and_admin_overview():
     app = read('App.tsx')

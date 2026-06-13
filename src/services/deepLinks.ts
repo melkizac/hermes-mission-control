@@ -53,6 +53,10 @@ export function parseMissionControlDeepLink(input: string | URL | Location = win
     const appPathView = normalizedPath.startsWith("/app/") ? normalizedPath.slice("/app/".length) as ViewKey : null;
     if (appPathView && allowedViews.has(appPathView)) target.view = appPathView;
   }
+  if (!target.view) {
+    const topLevelView = normalizedPath.startsWith("/") ? normalizedPath.slice(1) as ViewKey : null;
+    if (topLevelView && allowedViews.has(topLevelView)) target.view = topLevelView;
+  }
   if (!target.view && normalizedPath === "/admin") target.view = "settings";
   const taskId = params.get("task") || params.get("task_id");
   const approvalId = params.get("approval") || params.get("approval_id");
