@@ -2067,9 +2067,11 @@ input, select, textarea { font-family: inherit; }
 .inbox-risk.high, .inbox-risk.critical { background: #fff2db; color: #a95507; }
 .inbox-card footer { border-top: 1px solid #edf1f5; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px; flex-wrap: wrap; }
 .inbox-card-hint { color: #94a3b8; font-size: 11.5px; font-weight: 700; }
-.inbox-decision-actions { display: inline-flex; align-items: center; gap: 8px; }
-.inbox-decision-actions .tiny, .inbox-decision-actions .tinybtn { min-width: 86px; height: 32px; display: inline-flex; align-items: center; justify-content: center; }
-.inbox-decision-actions.drawer { margin-left: auto; }
+.inbox-decision-actions { display: grid; grid-template-columns: repeat(2, 96px); gap: 8px; align-items: stretch; justify-content: end; }
+.inbox-decision-actions .tiny, .inbox-decision-actions .tinybtn, .inbox-decision-actions .btn { width: 96px; min-width: 96px; height: 34px; min-height: 34px; display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; margin: 0; box-sizing: border-box; }
+.inbox-decision-actions.drawer { grid-template-columns: repeat(2, 132px); gap: 10px; margin-left: auto; }
+.inbox-decision-actions.drawer .tiny, .inbox-decision-actions.drawer .tinybtn, .inbox-decision-actions.drawer .btn { width: 132px; min-width: 132px; height: 40px; min-height: 40px; font-size: 12px; }
+.inbox-secondary-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tinybtn { padding: 6px 10px; font-size: 11px; }
 .inbox-drawer-layer { position: fixed; inset: 0; z-index: 80; pointer-events: none; }
 .inbox-drawer-scrim { position: absolute; inset: 0; border: 0; background: rgba(15, 23, 42, .22); backdrop-filter: blur(1.5px); pointer-events: auto; cursor: default; }

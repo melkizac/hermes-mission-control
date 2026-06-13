@@ -288,8 +288,10 @@ export function Approvals() {
               <label>Summary<textarea value={draft.description ?? ""} onChange={(e) => setDraft({ ...draft, description: e.target.value })} /></label>
               <label>Body<textarea className="body" value={draft.body ?? ""} onChange={(e) => setDraft({ ...draft, body: e.target.value })} /></label>
               <div className="inbox-drawer-actions">
-                <button className="ghost tiny" onClick={() => void save()}>Save edits</button>
-                {selected.status === "drafted" && <button className="ghost tiny" onClick={() => void runAction(selected, "ready")}>Mark reviewed</button>}
+                <span className="inbox-secondary-actions">
+                  <button className="ghost tiny" onClick={() => void save()}>Save edits</button>
+                  {selected.status === "drafted" && <button className="ghost tiny" onClick={() => void runAction(selected, "ready")}>Mark reviewed</button>}
+                </span>
                 {(selected.status === "drafted" || selected.status === "ready") && (
                   <span className="inbox-decision-actions drawer">
                     <button className="ghost tiny danger" onClick={() => void runAction(selected, "reject")}>Reject</button>
