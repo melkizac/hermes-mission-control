@@ -255,8 +255,7 @@ export function Reflections() {
                   </span>
                 </button>
                 <div className="reflection-agent-row-actions">
-                  <button className="ghost tiny" type="button" onClick={() => openAgent(agent, "Overview")}>Review</button>
-                  <button className="btn tiny" type="button" onClick={() => openAgent(agent, "Approval")}>Review approval</button>
+                  <button className="btn tiny" type="button" onClick={() => openAgent(agent, "Overview")}>Review</button>
                 </div>
               </article>
             ))}
