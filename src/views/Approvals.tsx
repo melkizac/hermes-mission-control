@@ -239,8 +239,8 @@ export function Approvals() {
               <span className="inbox-card-hint">Click card for details</span>
               {(item.status === "drafted" || item.status === "ready") && (
                 <span className="inbox-decision-actions">
-                  <button className="ghost tiny danger" onClick={() => void runAction(item, "reject")}>Reject</button>
-                  <button className="btn dark tinybtn" onClick={() => void runAction(item, "approve")}>Approve</button>
+                  <button className="approval-decision-button reject" onClick={() => void runAction(item, "reject")}>Reject</button>
+                  <button className="approval-decision-button approve" onClick={() => void runAction(item, "approve")}>Approve</button>
                 </span>
               )}
             </footer>
@@ -294,8 +294,8 @@ export function Approvals() {
                 </span>
                 {(selected.status === "drafted" || selected.status === "ready") && (
                   <span className="inbox-decision-actions drawer">
-                    <button className="ghost tiny danger" onClick={() => void runAction(selected, "reject")}>Reject</button>
-                    <button className="btn dark" onClick={() => void runAction(selected, "approve")}>Approve</button>
+                    <button className="approval-decision-button reject" onClick={() => void runAction(selected, "reject")}>Reject</button>
+                    <button className="approval-decision-button approve" onClick={() => void runAction(selected, "approve")}>Approve</button>
                   </span>
                 )}
               </div>
