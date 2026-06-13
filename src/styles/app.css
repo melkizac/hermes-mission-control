@@ -11,6 +11,61 @@ button { font-family: inherit; cursor: pointer; }
 input, select, textarea { font-family: inherit; }
 .mono { font-family: "JetBrains Mono", monospace; }
 
+.info-tooltip { position: relative; display: inline-flex; align-items: center; vertical-align: middle; }
+.info-tooltip-trigger {
+  width: 24px;
+  height: 24px;
+  border: 1px solid #dce5ee;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .92);
+  color: #64748b;
+  display: inline-grid;
+  place-items: center;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, .06);
+}
+.info-tooltip-trigger:hover,
+.info-tooltip-trigger:focus-visible { color: #0e8f84; border-color: #9bdad3; background: #f0fffc; outline: none; }
+.info-tooltip-popover {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 10px);
+  transform: translateX(-50%) translateY(-3px);
+  z-index: 160;
+  width: min(320px, calc(100vw - 40px));
+  max-width: 320px;
+  pointer-events: none;
+  opacity: 0;
+  border: 1px solid #dce5ee;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(15, 23, 42, .97);
+  color: #fff;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, .22);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.45;
+  text-align: left;
+  transition: opacity .14s ease, transform .14s ease;
+}
+.info-tooltip-popover::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -6px;
+  width: 10px;
+  height: 10px;
+  transform: translateX(-50%) rotate(45deg);
+  background: rgba(15, 23, 42, .97);
+  border-left: 1px solid #dce5ee;
+  border-top: 1px solid #dce5ee;
+}
+.info-tooltip:hover .info-tooltip-popover,
+.info-tooltip:focus-within .info-tooltip-popover { opacity: 1; transform: translateX(-50%) translateY(0); }
+.hero-title-with-help { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.hero-title-with-help h1 { margin-right: 0; }
+.filter-help { align-self: end; justify-self: start; margin: 0 0 8px; }
+.form-help { align-self: flex-start; margin: 2px 0 6px; }
+
 .scroll { overflow: auto; }
 .scroll::-webkit-scrollbar { width: 9px; height: 9px; }
 .scroll::-webkit-scrollbar-thumb { background: #dde1e7; border-radius: 9px; border: 3px solid var(--panel); }

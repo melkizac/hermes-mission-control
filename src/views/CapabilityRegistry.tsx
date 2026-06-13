@@ -3,6 +3,7 @@ import type { CapabilityAssignmentRef, CapabilityIntakeRecord, CapabilityRegistr
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
 import { Icon } from "../components/Icon";
+import { InfoTooltip } from "../components/InfoTooltip";
 import { buildMissionControlUrl } from "../services/deepLinks";
 
 const client = new HttpHermesClient();
@@ -135,10 +136,12 @@ export function CapabilityRegistry() {
       <header className="skills-hero">
         <div>
           <span className="stub-tag">CAPABILITY REGISTRY</span>
-          <h1>Capability Registry</h1>
-          <p>
-            Admin registry surface for governing, assigning, and auditing skills, tools, plugins, pilots, and intake requests across workspaces. User-mode Skills, Tools, and Plugins remain workspace resource views; Admin manages them here as capabilities.
-          </p>
+          <div className="hero-title-with-help">
+            <h1>Capability Registry</h1>
+            <InfoTooltip label="About Capability Registry">
+              Admin registry surface for governing, assigning, and auditing skills, tools, plugins, pilots, and intake requests across workspaces. User-mode Skills, Tools, and Plugins remain workspace resource views; Admin manages them here as capabilities.
+            </InfoTooltip>
+          </div>
         </div>
         <div className="task-hero-actions">
           <button className="task-icon-action dark" aria-label="Refresh capability registry" title="Refresh capability registry" onClick={() => void load()}>
@@ -200,7 +203,9 @@ export function CapabilityRegistry() {
             {statuses.map((item) => <option key={item} value={item}>{titleCase(item)}</option>)}
           </select>
         </label>
-        <div className="skills-filter-note">{activeTab.hint} Type filters cover Skills, Tools, Plugins, and other capability classes; the Category filter is intentionally skill-only because Tools and Plugins do not use skill categories. Non-admin workspaces only see records allowed by the backend visibility boundary.</div>
+        <InfoTooltip className="filter-help" label="About capability filters">
+          {activeTab.hint} Type filters cover Skills, Tools, Plugins, and other capability classes; the Category filter is intentionally skill-only because Tools and Plugins do not use skill categories. Non-admin workspaces only see records allowed by the backend visibility boundary.
+        </InfoTooltip>
       </section>
 
       {error && <div className="skills-error">{error}</div>}

@@ -47,6 +47,7 @@ type Name =
   | "stop"
   | "mic"
   | "sidebar"
+  | "info"
   | "spinner";
 
 const paths: Record<Name, string> = {
@@ -96,6 +97,7 @@ const paths: Record<Name, string> = {
   stop: "M7 7h10v10H7z",
   mic: "M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3zM5 11v1a7 7 0 0014 0v-1M12 19v3M8 22h8",
   sidebar: "M4 5.5A2.5 2.5 0 016.5 3h11A2.5 2.5 0 0120 5.5v13a2.5 2.5 0 01-2.5 2.5h-11A2.5 2.5 0 014 18.5zM9 3v18M12.5 8h4M12.5 12h4M12.5 16h4",
+  info: "M12 11v6M12 7h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
   spinner: "M12 2a10 10 0 019.5 7",
 };
 
