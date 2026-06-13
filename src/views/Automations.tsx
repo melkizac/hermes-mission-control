@@ -269,7 +269,11 @@ export function Automations() {
             <option value="personal">Personal governed</option>
           </select>
         </label>
-        <div className="automation-filter-note">Actions call Hermes cron directly. “Run now” may execute real workflows and deliveries.</div>
+        <div className="automation-filter-help">
+          <InfoTooltip label="Routine action safety">
+            Actions call Hermes cron directly. “Run now” may execute real workflows and deliveries.
+          </InfoTooltip>
+        </div>
       </section>
 
       {showAdminRoutineManagement && (

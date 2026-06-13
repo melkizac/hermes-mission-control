@@ -1058,6 +1058,11 @@ input, select, textarea { font-family: inherit; }
 .automation-filters input, .automation-filters select { border: 1px solid var(--line); border-radius: 11px; padding: 10px 12px; font-size: 13px; color: var(--ink); background: #fff; text-transform: none; letter-spacing: normal; font-weight: 500; }
 .automation-filters input:focus, .automation-filters select:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .automation-filter-note { grid-column: 2 / -1; color: var(--muted); font-size: 12px; line-height: 1.45; padding-bottom: 4px; max-width: none; }
+.automation-filter-help { display: flex; align-items: flex-end; justify-content: flex-start; padding: 0 0 8px; }
+.automation-filter-help .info-tooltip-popover { left: auto; right: 0; transform: translateX(0) translateY(6px); }
+.automation-filter-help .info-tooltip-popover::before { left: auto; right: 10px; transform: rotate(45deg); }
+.automation-filter-help .info-tooltip:hover .info-tooltip-popover,
+.automation-filter-help .info-tooltip:focus-within .info-tooltip-popover { transform: translateX(0) translateY(0); }
 .automation-error, .automation-notice { border-radius: 13px; padding: 11px 13px; margin-bottom: 14px; font-size: 12.5px; font-weight: 700; }
 .automation-error { border: 1px solid #f1b8b8; background: var(--bad-soft); color: #b62a2a; }
 .automation-error.compact { margin: 0 0 14px; }
@@ -1153,7 +1158,7 @@ input, select, textarea { font-family: inherit; }
 @media (max-width: 1180px) {
   .automation-metrics { grid-template-columns: repeat(2, 1fr); }
   .automation-filters, .automation-layout { grid-template-columns: 1fr; }
-  .automation-filter-note { grid-column: 1 / -1; }
+  .automation-filter-note, .automation-filter-help { grid-column: 1 / -1; }
   .automation-detail { position: static; max-height: none; }
 }
 @media (max-width: 760px) {
