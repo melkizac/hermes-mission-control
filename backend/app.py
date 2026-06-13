@@ -1819,6 +1819,20 @@ def iso(ts):
         return str(ts)
 
 
+def sortable_time_value(value):
+    """Normalize mixed SQLite timestamp shapes for stable numeric sorting."""
+    if value in (None, ''):
+        return 0.0
+    try:
+        return float(value)
+    except Exception:
+        pass
+    try:
+        return datetime.fromisoformat(str(value).replace('Z', '+00:00')).timestamp()
+    except Exception:
+        return 0.0
+
+
 def trim(s, n=160):
     s = (s or '').replace('\n', ' ').strip()
     return s if len(s) <= n else s[: n - 1] + '…'
@@ -5930,7 +5944,8 @@ def list_task_board(filters=None, identity=None):
                     task['comments'] = []
                     task['events'] = []
                     task['runs'] = []
-                task['_sort_ts'] = r['last_heartbeat_at'] or r['started_at'] or r['completed_at'] or r['created_at'] or 0
+                task['_sort_ts'] = sortable_time_value(r['last_heartbeat_at'] or r['started_at'] or r['completed_at'] or r['created_at'] or 0)
+                task['_created_sort_ts'] = sortable_time_value(r['created_at'] or 0)
                 task['_active_rank'] = 0 if task.get('status') == 'done' else 1
                 tasks.append(with_task_board_identity(task, source))
         except sqlite3.DatabaseError as e:
@@ -5941,7 +5956,7 @@ def list_task_board(filters=None, identity=None):
             if con:
                 con.close()
 
-    tasks.sort(key=lambda t: (t.get('_active_rank') or 0, t.get('_sort_ts') or 0, t.get('created_at') or ''), reverse=True)
+    tasks.sort(key=lambda t: (t.get('_active_rank') or 0, t.get('_sort_ts') or 0, t.get('_created_sort_ts') or 0), reverse=True)
     deduped_tasks = []
     seen_ids = set()
     for t in tasks:
@@ -5953,6 +5968,7 @@ def list_task_board(filters=None, identity=None):
     tasks = deduped_tasks
     for t in tasks:
         t.pop('_sort_ts', None)
+        t.pop('_created_sort_ts', None)
         t.pop('_active_rank', None)
     projects = sorted({t['tenant'] for t in tasks if t.get('tenant')})
     boards = [public_kanban_board_source(s) for s in all_sources]
