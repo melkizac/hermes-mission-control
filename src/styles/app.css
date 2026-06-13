@@ -63,6 +63,14 @@ input, select, textarea { font-family: inherit; }
 .info-tooltip:focus-within .info-tooltip-popover { opacity: 1; transform: translateX(-50%) translateY(0); }
 .hero-title-with-help { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .hero-title-with-help h1 { margin-right: 0; }
+.hero-title-with-help .info-tooltip-popover {
+  left: 0;
+  right: auto;
+  transform: translateX(0) translateY(-3px);
+}
+.hero-title-with-help .info-tooltip-popover::before { left: 12px; transform: rotate(45deg); }
+.hero-title-with-help .info-tooltip:hover .info-tooltip-popover,
+.hero-title-with-help .info-tooltip:focus-within .info-tooltip-popover { transform: translateX(0) translateY(0); }
 .filter-help { align-self: end; justify-self: start; margin: 0 0 8px; }
 .form-help { align-self: flex-start; margin: 2px 0 6px; }
 
