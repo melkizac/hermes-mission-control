@@ -50,6 +50,35 @@ function compact(value: number | undefined | null) {
   return Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value ?? 0);
 }
 
+const executableUserToolTypes = new Set(["tool", "toolset"]);
+const governedToolLikeTypes = new Set(["tool", "toolset", "cli-tool", "internal-tool", "api-connector", "mcp", "mcp-server"]);
+
+function typeLabel(value?: string | null) {
+  switch (value) {
+    case "tool": return "Executable tool";
+    case "toolset": return "Executable toolset";
+    case "cli-tool": return "CLI tool (governed)";
+    case "internal-tool": return "Internal tool (governed)";
+    case "api-connector": return "API connector (governed)";
+    case "mcp":
+    case "mcp-server": return "MCP server / connector";
+    case "github-project": return "GitHub project";
+    case "owned_app": return "Owned app";
+    case "skill": return "Skill";
+    case "plugin": return "Plugin";
+    default: return titleCase(value);
+  }
+}
+
+function capabilityScopeLabel(record: CapabilityRegistryRecord) {
+  if (executableUserToolTypes.has(record.type)) return "Executable user-visible tool";
+  if (governedToolLikeTypes.has(record.type)) return "Governed tool-like capability";
+  if (record.type === "skill") return "Skill capability";
+  if (record.type === "plugin") return "Plugin capability";
+  if (record.type === "github-project" || record.type === "owned_app") return "Governed software source";
+  return "Governed capability";
+}
+
 function toneForStatus(status?: string, health?: string) {
   if (status === "enabled" || status === "installed" || status === "approved" || health === "passing") return "good";
   if (status === "broken" || status === "rejected" || health === "failing") return "bad";
@@ -67,6 +96,7 @@ export function CapabilityRegistry() {
   const [intake, setIntake] = useState<CapabilityIntakeRecord[]>([]);
   const [summary, setSummary] = useState({ total: 0, enabled: 0, assigned: 0, awaitingApproval: 0, degraded: 0, requiringSecrets: 0 });
   const [intakeSummary, setIntakeSummary] = useState({ total: 0, awaitingApproval: 0, requiringSecrets: 0 });
+  const [userToolsCount, setUserToolsCount] = useState<number | null>(null);
   const [q, setQ] = useState("");
   const [type, setType] = useState("");
   const [category, setCategory] = useState("");
@@ -102,6 +132,23 @@ export function CapabilityRegistry() {
   }, [q, type, category, status]);
 
   useEffect(() => {
+    let cancelled = false;
+    async function loadUserToolsCount() {
+      try {
+        const res = await fetch(`${window.location.protocol}//${window.location.host}/api/tools`, { credentials: "include" });
+        if (!res.ok) return;
+        const payload = await res.json();
+        const tools = Array.isArray(payload?.tools) ? payload.tools : [];
+        if (!cancelled) setUserToolsCount(tools.length);
+      } catch {
+        if (!cancelled) setUserToolsCount(null);
+      }
+    }
+    void loadUserToolsCount();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
     if (type && type !== "skill" && category) setCategory("");
   }, [type, category]);
 
@@ -128,6 +175,8 @@ export function CapabilityRegistry() {
     return records;
   }, [records, tab]);
 
+  const toolLikeCount = useMemo(() => records.filter((item) => governedToolLikeTypes.has(item.type)).length, [records]);
+
   const selectedRecord = useMemo(() => records.find((item) => item.id === selected), [records, selected]);
   const activeTab = tabs.find((item) => item.id === tab) ?? tabs[0];
 
@@ -139,7 +188,7 @@ export function CapabilityRegistry() {
           <div className="hero-title-with-help">
             <h1>Capability Registry</h1>
             <InfoTooltip label="About Capability Registry">
-              Admin registry surface for governing, assigning, and auditing skills, tools, plugins, pilots, and intake requests across workspaces. User-mode Skills, Tools, and Plugins remain workspace resource views; Admin manages them here as capabilities.
+              Admin Capabilities is the governance registry: it includes skills, plugins, executable tools, CLI tools, API/internal connectors, pilots, intake, GitHub projects, and owned apps that may be assigned, approved, audited, or blocked. User Tools is narrower: it shows only currently usable workspace/runtime tools. So Admin can show more governed tool-like capability records than the user Tools page without implying those records are all live executable tools.
             </InfoTooltip>
           </div>
         </div>
@@ -151,9 +200,9 @@ export function CapabilityRegistry() {
       </header>
 
       <section className="skills-metrics capability-metrics">
-        <Metric label="Registered" value={summary.total} sub="Visible capability records" />
-        <Metric label="Enabled" value={summary.enabled} sub="Installed or active" tone="good" />
-        <Metric label="Assigned" value={summary.assigned} sub="Agent, routine, or task usage" />
+        <Metric label="Registered" value={summary.total} sub="Admin-governed capability records" />
+        <Metric label="User Tools Hub" value={userToolsCount ?? "—"} sub="Currently usable workspace tools" tone="good" />
+        <Metric label="Tool-like governed" value={toolLikeCount} sub="CLI, API, internal, MCP, and executable records" />
         <Metric label="Needs review" value={summary.awaitingApproval + summary.degraded + intakeSummary.total} sub="Approvals, degraded health, intake" tone={summary.awaitingApproval + summary.degraded + intakeSummary.total > 0 ? "bad" : undefined} />
       </section>
 
@@ -181,7 +230,7 @@ export function CapabilityRegistry() {
           <span>Type</span>
           <select value={type} onChange={(event) => setType(event.target.value)}>
             <option value="">All types</option>
-            {types.map((item) => <option key={item} value={item}>{titleCase(item)}</option>)}
+            {types.map((item) => <option key={item} value={item}>{typeLabel(item)}</option>)}
           </select>
         </label>
         <label>
@@ -204,7 +253,7 @@ export function CapabilityRegistry() {
           </select>
         </label>
         <InfoTooltip className="filter-help" label="About capability filters">
-          {activeTab.hint} Type filters cover Skills, Tools, Plugins, and other capability classes; the Category filter is intentionally skill-only because Tools and Plugins do not use skill categories. Non-admin workspaces only see records allowed by the backend visibility boundary.
+          {activeTab.hint} Type labels distinguish executable user-visible tools from governed tool-like records such as CLI tools, API connectors, internal tools, and MCP servers. The Category filter is intentionally skill-only. Non-admin workspaces only see records allowed by the backend visibility boundary.
         </InfoTooltip>
       </section>
 
@@ -440,7 +489,7 @@ function CapabilityCard({ record, active, onSelect }: { record: CapabilityRegist
         <div className="skill-title-row"><h2>{displayName(record)}</h2></div>
         <p>{record.description || "No description recorded for this capability source."}</p>
         <div className="skill-chips">
-          <span>{titleCase(record.type)}</span>
+          <span>{capabilityScopeLabel(record)}</span>
           <span>{record.sourceLabel || "Registry"}</span>
           <span>{record.ownerKind || "system"}</span>
           {risks.slice(0, 2).map((risk) => <em key={risk}>{risk}</em>)}
@@ -467,7 +516,7 @@ function CapabilityListRow({ record, active, onSelect }: { record: CapabilityReg
         <small className="mono">{record.id}</small>
       </div>
       <div className="ops-row-meta">
-        <span>{titleCase(record.type)}</span>
+        <span>{typeLabel(record.type)}</span>
         <small>{record.sourceLabel || "Registry"} · {record.ownerKind || "system"}</small>
         <em>{assignmentCount(record)} assigned · {record.installMethod?.requiresRestart ? "restart required" : "no restart flag"}</em>
       </div>
@@ -554,7 +603,7 @@ function AssignedByAgent({ records, loading, onSelect }: { records: CapabilityRe
             {row.records.map((record) => (
               <button key={record.id} className="capability-agent-chip" onClick={() => onSelect(record.id)}>
                 <b>{displayName(record)}</b>
-                <small>{titleCase(record.type)} · {titleCase(record.status)}</small>
+                <small>{typeLabel(record.type)} · {titleCase(record.status)}</small>
               </button>
             ))}
           </div>
@@ -692,7 +741,7 @@ function CapabilityDrawer({ record, onClose }: { record: CapabilityRegistryRecor
     <SlideOverDrawer
       title={displayName(record)}
       subtitle={<span className="mono">{record.id}</span>}
-      eyebrow={titleCase(record.type)}
+      eyebrow={typeLabel(record.type)}
       statusClassName={`tag ${toneForStatus(record.status, record.health?.state)}`}
       onClose={onClose}
       closeLabel="Close capability details"
@@ -712,7 +761,7 @@ function CapabilityDrawer({ record, onClose }: { record: CapabilityRegistryRecor
               <Mini label="Health" value={titleCase(record.health?.state)} />
               <Mini label="Last verified" value={formatDateTime(lastVerified)} />
               <Mini label="Broken state" value={broken ? titleCase(record.health?.state || record.status || "needs review") : "Not flagged"} />
-              <Mini label="Type" value={titleCase(record.type)} />
+              <Mini label="Capability class" value={capabilityScopeLabel(record)} />
               <Mini label="Owner" value={`${record.visibility || "workspace"} · ${record.ownerKind || "system"}`} />
             </div>
             {broken && <div className="skills-error install-status">{brokenSummary}</div>}
