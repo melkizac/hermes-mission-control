@@ -209,7 +209,9 @@ export function Reflections() {
           <div className="hero-title-with-help">
             <h1>Review each agent’s learning proposal</h1>
             <InfoTooltip label="About reflections">
-              Click an agent to open its reflection drawer. Review memory, skills, authority, evidence, and approve the proposal from the same drawer. No need to jump to the Approvals page.
+              <strong>How to use this page:</strong> select an agent, inspect the tabs, then approve or save a draft without leaving the drawer.
+              <br />
+              <strong>Safety rule:</strong> approving records the decision. It still does not silently write memory, create skills, or expand authority.
             </InfoTooltip>
           </div>
         </div>
@@ -228,17 +230,6 @@ export function Reflections() {
             <Metric label="Agents" value={data.summary.agents} sub="available for review" />
             <Metric label="Approval mode" value={data.summary.application_mode} sub="changes stay review-gated" />
             <Metric label="Workflow" value="drawer" sub="review and approve per agent" />
-          </section>
-
-          <section className="reflection-list-guidance" aria-label="How to use reflections">
-            <div>
-              <strong>How to use this page</strong>
-              <InfoTooltip label="Review workflow">Select an agent, inspect the tabs, then approve or save a draft without leaving the drawer.</InfoTooltip>
-            </div>
-            <div>
-              <strong>Safety rule</strong>
-              <p>Approving records the decision. It still does not silently write memory, create skills, or expand authority.</p>
-            </div>
           </section>
 
           <section className="reflection-agent-list" aria-label="Agent reflection list">
