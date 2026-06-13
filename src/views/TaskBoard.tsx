@@ -415,6 +415,7 @@ ${JSON.stringify(payload, null, 2)}`);
           <div className="task-title-row">
             <div className="task-title-main">
               <h1>Task Board</h1>
+              <InfoTooltip label="About Task Board">Project-first operating view. Mission Control aggregates live Hermes Kanban task sources and maps tenant to Project.</InfoTooltip>
             </div>
             <div className="task-title-actions" aria-label="Task board actions">
               <button
@@ -425,13 +426,8 @@ ${JSON.stringify(payload, null, 2)}`);
               >
                 <Icon name="plus" size={18} />
               </button>
-              <span className={`realtime-status ${refreshState.stale ? "stale" : refreshState.refreshing ? "refreshing" : "live"}`}>{refreshState.statusLabel}</span>
-              <button className="task-icon-action dark" aria-label="Refresh task board" title="Refresh task board" disabled={refreshState.refreshing} onClick={() => void refreshState.refresh("manual")}>
-                <Icon name="refresh" size={18} />
-              </button>
             </div>
           </div>
-          <div className="filter-help"><InfoTooltip label="About Task Board">Project-first operating view. Mission Control aggregates live Hermes Kanban task sources and maps tenant to Project.</InfoTooltip></div>
         </div>
       </header>
 
