@@ -62,6 +62,22 @@ function approvalEffect(item: InboxItem): string {
   return "Approve records your operator decision for this item; Reject marks it declined.";
 }
 
+function statusLabel(status: InboxStatus): string {
+  if (status === "drafted") return "Needs decision";
+  if (status === "ready") return "Reviewed";
+  if (status === "sent") return "Approved";
+  if (status === "rejected") return "Rejected";
+  return status;
+}
+
+function riskLabel(risk: string): string {
+  if (risk === "critical") return "Critical risk";
+  if (risk === "high") return "High risk";
+  if (risk === "medium") return "Medium risk";
+  if (risk === "low") return "Low risk";
+  return risk;
+}
+
 export function Approvals() {
   const [data, setData] = useState<InboxResponse | null>(null);
   const [status, setStatus] = useState<InboxStatus | "all">("drafted");
@@ -203,8 +219,8 @@ export function Approvals() {
           <article className="inbox-card" key={item.id}>
             <button className="inbox-card-main" onClick={() => open(item)}>
               <div className="inbox-card-top">
-                <span className={`inbox-status ${item.status}`}>{item.status}</span>
-                <span className={`inbox-risk ${item.risk}`}>{item.risk}</span>
+                <span className={`inbox-status ${item.status}`}>{statusLabel(item.status)}</span>
+                {(item.risk === "high" || item.risk === "critical") && <span className={`inbox-risk ${item.risk}`}>{riskLabel(item.risk)}</span>}
               </div>
               <h2>{item.title}</h2>
               <div className="inbox-approval-explain">
@@ -220,10 +236,13 @@ export function Approvals() {
               </div>
             </button>
             <footer>
-              <button className="ghost tiny" onClick={() => open(item)}>Open</button>
-              {item.status === "drafted" && <button className="ghost tiny" onClick={() => void runAction(item, "ready")}>Mark reviewed</button>}
-              {(item.status === "drafted" || item.status === "ready") && <button className="ghost tiny danger" onClick={() => void runAction(item, "reject")}>Reject</button>}
-              {(item.status === "drafted" || item.status === "ready") && <button className="btn dark tinybtn" onClick={() => void runAction(item, "approve")}>Approve</button>}
+              <span className="inbox-card-hint">Click card for details</span>
+              {(item.status === "drafted" || item.status === "ready") && (
+                <span className="inbox-decision-actions">
+                  <button className="ghost tiny danger" onClick={() => void runAction(item, "reject")}>Reject</button>
+                  <button className="btn dark tinybtn" onClick={() => void runAction(item, "approve")}>Approve</button>
+                </span>
+              )}
             </footer>
           </article>
         ))}
@@ -234,7 +253,7 @@ export function Approvals() {
         <SlideOverDrawer
           title={selected.title}
           subtitle={selected.provenance}
-          eyebrow={selected.status}
+          eyebrow={statusLabel(selected.status)}
           statusClassName={`inbox-status ${selected.status}`}
           onClose={() => setSelected(null)}
           closeLabel="Close approval details"
@@ -270,9 +289,13 @@ export function Approvals() {
               <label>Body<textarea className="body" value={draft.body ?? ""} onChange={(e) => setDraft({ ...draft, body: e.target.value })} /></label>
               <div className="inbox-drawer-actions">
                 <button className="ghost tiny" onClick={() => void save()}>Save edits</button>
-                <button className="ghost tiny" onClick={() => void runAction(selected, "ready")}>Mark reviewed</button>
-                <button className="ghost tiny danger" onClick={() => void runAction(selected, "reject")}>Reject</button>
-                <button className="btn dark" onClick={() => void runAction(selected, "approve")}>Approve</button>
+                {selected.status === "drafted" && <button className="ghost tiny" onClick={() => void runAction(selected, "ready")}>Mark reviewed</button>}
+                {(selected.status === "drafted" || selected.status === "ready") && (
+                  <span className="inbox-decision-actions drawer">
+                    <button className="ghost tiny danger" onClick={() => void runAction(selected, "reject")}>Reject</button>
+                    <button className="btn dark" onClick={() => void runAction(selected, "approve")}>Approve</button>
+                  </span>
+                )}
               </div>
             </section>
 
