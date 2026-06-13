@@ -215,9 +215,6 @@ export function Reflections() {
             </InfoTooltip>
           </div>
         </div>
-        <div className="reflections-hero-actions">
-          <button className="task-icon-action dark" aria-label="Refresh reflections" title="Refresh reflections" onClick={() => void load()}>↻</button>
-        </div>
       </header>
 
       {error && <div className="task-error">{error}</div>}
