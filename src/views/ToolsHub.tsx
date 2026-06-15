@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Agent, ToolCapability } from "../types";
 import { useStore } from "../services/store";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
 import { Icon } from "../components/Icon";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 type ToolRecord = ToolCapability & {
   agents: Agent[];
@@ -39,6 +40,8 @@ function displaySource(value?: string) {
 
 export function ToolsHub() {
   const { agents, loading } = useStore();
+  const [apiRecords, setApiRecords] = useState<ToolRecord[]>([]);
+  const [detailedAgents, setDetailedAgents] = useState<Agent[]>([]);
   const [q, setQ] = useState("");
   const [source, setSource] = useState("");
   const [kind, setKind] = useState("");
@@ -55,9 +58,51 @@ export function ToolsHub() {
   const [installStatus, setInstallStatus] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
 
+  useEffect(() => {
+    let cancelled = false;
+    const loadTools = async () => {
+      try {
+        const res = await fetch("/api/tools", { credentials: "include" });
+        if (!res.ok) return;
+        const payload = await res.json();
+        if (!cancelled && Array.isArray(payload.tools)) setApiRecords(payload.tools as ToolRecord[]);
+      } catch {
+        // Older Mission Control backends do not expose /api/tools; fall back to agent detail loading below.
+      }
+    };
+    void loadTools();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const summaryAgents = agents ?? [];
+    if (!summaryAgents.length) {
+      setDetailedAgents([]);
+      return () => { cancelled = true; };
+    }
+    const loadDetails = async () => {
+      const loaded = await Promise.all(summaryAgents.map(async (agent) => {
+        if ((agent.tools ?? []).length > 0 || !agent.detailEndpoint) return agent;
+        try {
+          const res = await fetch(agent.detailEndpoint, { credentials: "include" });
+          if (!res.ok) return agent;
+          return { ...agent, ...await res.json() } as Agent;
+        } catch {
+          return agent;
+        }
+      }));
+      if (!cancelled) setDetailedAgents(loaded);
+    };
+    void loadDetails();
+    return () => { cancelled = true; };
+  }, [agents]);
+
   const records = useMemo(() => {
+    if (apiRecords.length) return apiRecords;
     const byId = new Map<string, ToolRecord>();
-    agents.forEach((agent) => {
+    const sourceAgents = detailedAgents.length ? detailedAgents : agents;
+    sourceAgents.forEach((agent) => {
       (agent.tools ?? []).forEach((tool) => {
         const id = toolKey(tool);
         const existing = byId.get(id);
@@ -75,7 +120,7 @@ export function ToolsHub() {
       });
     });
     return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [agents]);
+  }, [agents, apiRecords, detailedAgents]);
 
   const visibleRecords = useMemo(() => records.filter((item) => item.kind !== "toolset" && item.name !== "Full Hermes CLI tools" && item.id !== "hermes-cli"), [records]);
   const sources = useMemo(() => Array.from(new Set(visibleRecords.map((item) => displaySource(item.source)))).sort(), [visibleRecords]);
@@ -142,10 +187,12 @@ export function ToolsHub() {
       <header className="skills-hero">
         <div>
           <span className="stub-tag">TOOL REGISTRY</span>
-          <h1>Tools</h1>
-          <p>
-            Mission Control lists each executable tool as an assignment-ready capability. Use Type and Source to see whether a capability comes from Hermes, User-installed integrations, or another connected runtime.
-          </p>
+          <div className="hero-title-with-help">
+            <h1>Tools</h1>
+            <InfoTooltip label="About Tools">
+              Mission Control lists each executable tool as an assignment-ready capability. Use Type and Source to see whether a capability comes from Hermes, User-installed integrations, or another connected runtime.
+            </InfoTooltip>
+          </div>
         </div>
         <div className="task-hero-actions">
           <button className="task-icon-action dark" aria-label="Refresh tools hub" title="Refresh tools hub" onClick={() => window.location.reload()}>
@@ -186,7 +233,9 @@ export function ToolsHub() {
             {sources.map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
         </label>
-        <div className="skills-filter-note">Tool cards show executable capabilities only. Source labels identify whether each tool is from Hermes, User-installed integrations, or another connected runtime.</div>
+        <InfoTooltip className="filter-help" label="About tool filters">
+          Tool cards show executable capabilities only. Source labels identify whether each tool is from Hermes, User-installed integrations, or another connected runtime.
+        </InfoTooltip>
       </section>
 
       {viewMode === "cards" ? (
@@ -217,7 +266,9 @@ export function ToolsHub() {
               <label className="field"><span>{installKind === "mcp" ? "Command" : "Executable command"}</span><input value={toolCommand} onChange={(event) => setToolCommand(event.target.value)} placeholder={installKind === "mcp" ? "npx or uvx" : "gh, linear, custom-cli"} disabled={installKind === "mcp" && Boolean(toolUrl.trim())} /></label>
               <label className="field"><span>{installKind === "mcp" ? "Args" : "Install / setup note"}</span><textarea value={toolArgs} onChange={(event) => setToolArgs(event.target.value)} rows={4} placeholder={installKind === "mcp" ? "-y @modelcontextprotocol/server-time" : "npm install -g … / pipx install …"} /></label>
               <label className="field"><span>Description</span><input value={toolDescription} onChange={(event) => setToolDescription(event.target.value)} placeholder="What this tool enables" /></label>
-              <p className="hint">MCP installs update ~/.hermes/config.yaml under mcp_servers and require a Hermes restart before discovered tools appear. CLI installs are registered for operators without running arbitrary shell commands.</p>
+              <InfoTooltip className="form-help" label="About tool installs">
+                MCP installs update ~/.hermes/config.yaml under mcp_servers and require a Hermes restart before discovered tools appear. CLI installs are registered for operators without running arbitrary shell commands.
+              </InfoTooltip>
               {installStatus && <div className="skills-error install-status">{installStatus}</div>}
             </div>
             <div className="drawer-foot"><button className="btn" onClick={() => setInstallOpen(false)}>Close</button><button className="btn dark" disabled={installing || !toolName.trim() || (!toolUrl.trim() && !toolCommand.trim())} onClick={() => void installTool()}>{installing ? "Installing…" : "Install"}</button></div>

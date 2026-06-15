@@ -1,23 +1,135 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
-import { ChatIntentRoutingPreview } from "../components/ChatIntentRoutingPreview";
 import voiceHudReference from "../assets/voice-hud-reference.jpg";
 import { useStore } from "../services/store";
-import { buildChatIntentPreview, routeChatIntent, serializeChatIntentDecision } from "../services/chatIntentRouter";
-import type { ChatIntentDecision, ChatIntentPreview, ChatMissionContext, ChatRoutineContext, ChatWorkflowContext } from "../services/chatIntentRouter";
-import type { AutomationsResponse, BoardResponse, BoardTask, Message, ProjectRecord, ProjectsResponse, WorkflowLibraryResponse } from "../types";
+import { Icon } from "../components/Icon";
+import { cachedJsonRequest } from "../services/queryCache";
+import { buildChatIntentPreview, confidenceFromScore, routeChatIntent, serializeChatIntentDecision } from "../services/chatIntentRouter";
+import type { ChatIntentDecision, ChatIntentPreview, ChatIntentNextAction, ChatIntentType, ChatMissionContext, ChatRoutineContext, ChatWorkflowContext } from "../services/chatIntentRouter";
+import type { Attachment, AutomationsResponse, BoardResponse, BoardTask, Message, ProjectRecord, ProjectsResponse, ReplyContext, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
 
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
 type ChatPermissionMode = "ask-critical" | "full-policy" | "draft-only";
 type ChatModelMode = "auto" | "gpt-55-medium" | "fast" | "deep";
 
+type ChatIntentRoutingActionId =
+  | "send_to_agent"
+  | "create_task"
+  | "create_project_task"
+  | "create_project"
+  | "start_research_deliverable"
+  | "launch_workflow"
+  | "recommend_routine"
+  | "create_routine_draft"
+  | "clarify";
+
+
 type ChatAttachment = {
   id: string;
   name: string;
   size: number;
   type: string;
+  file?: File;
+  uploaded?: Attachment;
 };
+
+type MainChatPendingMessage = {
+  text: string;
+  attachments: ChatAttachment[];
+};
+
+type AgentOsIntentRoute = {
+  intent_type?: string;
+  research_deliverable_intent?: string | null;
+  confidence?: number;
+  rationale?: string;
+  project_required?: boolean;
+  suggested_project_id?: string | null;
+  create_task?: boolean;
+  create_project?: boolean;
+  launch_workflow?: boolean;
+  recommend_routine?: boolean;
+  one_time_reply?: boolean;
+  agent_id?: string;
+  tools_required?: string[];
+  skills_required?: string[];
+  evidence_required?: boolean;
+  approval_required?: boolean;
+  prompt?: string;
+  context?: Record<string, unknown>;
+  workflow_candidate?: { id?: string; name?: string; agent_id?: string; approval_required?: boolean };
+};
+
+type AgentOsIntentRouteResponse = {
+  ok?: boolean;
+  route?: AgentOsIntentRoute;
+  error?: string;
+};
+
+type AgentOsKanbanCreationResponse = {
+  ok?: boolean;
+  mode?: "project" | "task";
+  project_id?: string;
+  tenant?: string;
+  workflow_type?: string | null;
+  graph_template?: string | null;
+  task_ids?: Record<string, string>;
+  tasks?: BoardTask[];
+  chat_card?: {
+    kind?: string;
+    title?: string;
+    detected_intent?: string | null;
+    outputs?: string[];
+    status?: string;
+    actions?: string[];
+  };
+  idempotent?: boolean;
+  error?: string;
+};
+
+type ResearchWorkflowCard = {
+  kind?: string;
+  title: string;
+  projectId?: string;
+  workflowType?: string | null;
+  graphTemplate?: string | null;
+  taskIds: Record<string, string>;
+  tasks: BoardTask[];
+  outputs: string[];
+  status: string;
+  currentPhase?: string;
+  nextAction?: string;
+  actions?: string[];
+  idempotent?: boolean;
+};
+
+function workflowCardFromKanbanResponse(response: AgentOsKanbanCreationResponse, fallback: Pick<ResearchWorkflowCard, "title" | "outputs">): ResearchWorkflowCard {
+  const tasks = response.tasks ?? [];
+  const firstOpenTask = tasks.find((task) => task.status !== "done") ?? tasks[0];
+  const stage = firstOpenTask?.result_details && typeof firstOpenTask.result_details === "object" ? String((firstOpenTask.result_details as Record<string, unknown>).stage || "") : "";
+  const currentPhase = firstOpenTask?.current_step_key || stage || response.graph_template || response.workflow_type || "queued";
+  const nextAction = firstOpenTask?.title
+    ? `${firstOpenTask.status}: ${firstOpenTask.title}`
+    : response.chat_card?.actions?.[0]
+      ? response.chat_card.actions[0].replace(/_/g, " ")
+      : "Open the Task Board for evidence and next steps.";
+  return {
+    kind: response.chat_card?.kind,
+    title: response.chat_card?.title || fallback.title,
+    projectId: response.project_id,
+    workflowType: response.workflow_type,
+    graphTemplate: response.graph_template,
+    taskIds: response.task_ids ?? {},
+    tasks,
+    outputs: response.chat_card?.outputs ?? fallback.outputs,
+    status: response.chat_card?.status || "Task graph ready",
+    currentPhase,
+    nextAction,
+    actions: response.chat_card?.actions ?? [],
+    idempotent: response.idempotent,
+  };
+}
 
 type VoiceStatus = "idle" | "listening" | "sending" | "speaking" | "ready" | "unsupported" | "error";
 
@@ -65,11 +177,89 @@ const modelModeOptions: Array<{ value: ChatModelMode; label: string; promptLabel
   { value: "deep", label: "Deep", promptLabel: "Deep reasoning" },
 ];
 
-async function request<T>(path: string): Promise<T> {
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${window.location.protocol}//${window.location.host}${path}`;
-  const res = await fetch(url, { credentials: "include", headers: { Accept: "application/json" } });
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+  if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  const res = await fetch(url, {
+    ...init,
+    credentials: "include",
+    headers,
+  });
   if (!res.ok) throw new Error(`${path}: ${res.statusText}`);
   return res.json() as Promise<T>;
+}
+
+function cachedRequest<T>(key: string, path: string, options: { staleAfterMs?: number } = {}) {
+  return cachedJsonRequest(key, () => request<T>(path), { staleAfterMs: options.staleAfterMs ?? 45_000 });
+}
+
+function scheduleProgressiveHydration(callback: () => void) {
+  let cancelled = false;
+  let idleId: number | null = null;
+  const frameId = window.requestAnimationFrame(() => {
+    const run = () => {
+      if (!cancelled) callback();
+    };
+    const requestIdle = window.requestIdleCallback as ((cb: IdleRequestCallback, opts?: IdleRequestOptions) => number) | undefined;
+    if (requestIdle) idleId = requestIdle(run, { timeout: 1000 });
+    else window.setTimeout(run, 80);
+  });
+  return () => {
+    cancelled = true;
+    window.cancelAnimationFrame(frameId);
+    const cancelIdle = window.cancelIdleCallback as ((handle: number) => void) | undefined;
+    if (idleId !== null && cancelIdle) cancelIdle(idleId);
+  };
+}
+
+function shouldHydrateWorkflowContext(instruction: string) {
+  return /\b(workflow|workflows|playbook|runbook|routine|automation|automate|launch)\b/i.test(instruction);
+}
+
+function shouldUseMissionControlRouter(instruction: string, hasAttachments: boolean) {
+  const normalized = instruction.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!normalized) return false;
+  const explicitOperationPhrases = [
+    "create task",
+    "add task",
+    "track this",
+    "make this a task",
+    "turn this into a task",
+    "turn this into a card",
+    "convert this to a task",
+    "start project",
+    "create project",
+    "project kickoff",
+    "launch workflow",
+    "start workflow",
+    "run workflow",
+    "research deliverable",
+    "research-to-deliverable",
+    "start research",
+    "training material",
+    "training materials",
+    "create deck",
+    "generate deck",
+    "create pptx",
+    "generate pptx",
+    "create report",
+    "generate report",
+    "create proposal",
+    "generate proposal",
+    "schedule routine",
+    "create routine",
+    "draft routine",
+    "set up routine",
+    "create automation",
+    "set up automation",
+  ];
+  if (explicitOperationPhrases.some((phrase) => normalized.includes(phrase))) return true;
+  const explicitOperationPattern = hasAttachments
+    ? /\b(turn|convert|build|generate|create|start|launch|schedule|automate|track)\b.*\b(task|card|project|workflow|routine|automation|deck|slides|pptx|docx|proposal|report|deliverable)\b/
+    : /\b(create|add|track|start|launch|run|schedule|automate)\b\s+(?:a |an |the |this |new )?\b(task|card|project|workflow|routine|automation|research deliverable)\b/;
+  return explicitOperationPattern.test(normalized);
 }
 
 function formatBytes(bytes: number) {
@@ -79,6 +269,28 @@ function formatBytes(bytes: number) {
 
 function projectLabel(project: ProjectRecord) {
   return project.name || project.id;
+}
+
+function slugFromInstruction(prefix: string, instruction: string) {
+  const compact = instruction.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 56) || "chat-request";
+  return `${prefix}-${compact}`.replace(/-+$/g, "");
+}
+
+function frontendIntentFromAgentOs(route: AgentOsIntentRoute): ChatIntentType {
+  if (route.intent_type === "clarification") return "clarification";
+  if (route.one_time_reply || route.intent_type === "one_time_reply") return "one_time_reply";
+  if (route.recommend_routine || route.intent_type === "routine_recommendation") return "routine_recommendation";
+  if (route.launch_workflow || route.intent_type === "workflow") return "workflow";
+  if (route.create_project || route.intent_type === "project") return "project";
+  if (route.create_task || route.intent_type === "kanban_task") return "kanban_task";
+  return "create_one_time_task";
+}
+
+function frontendNextActionFromAgentOs(route: AgentOsIntentRoute): ChatIntentNextAction {
+  if (route.intent_type === "clarification") return "ask_clarifying_question";
+  if (route.create_project || route.launch_workflow || route.recommend_routine) return "show_mission_proposal";
+  if (route.create_task) return "update_existing_work";
+  return "proceed";
 }
 
 function singaporeDaypartGreeting() {
@@ -94,7 +306,7 @@ function singaporeDaypartGreeting() {
 }
 
 function isRenderableChatMessage(message: Message) {
-  return (message.role === "user" || message.role === "agent") && Boolean(message.text?.trim() || message.attachments?.length);
+  return (message.role === "user" || message.role === "agent") && Boolean(message.text?.trim() || message.attachments?.length || message.artifact);
 }
 
 function chatMessageLabel(message: Message) {
@@ -122,8 +334,131 @@ function visibleChatText(message: Message) {
   return (firstInternalMarker === undefined ? raw : raw.slice(0, firstInternalMarker)).trim();
 }
 
+
+function mainChatReplyContext(message: Message): ReplyContext {
+  const text = visibleChatText(message)
+    || message.artifact?.preview
+    || message.artifact?.filename
+    || message.attachments?.map((attachment) => attachment.filename).join("\n")
+    || "Message without text";
+  return {
+    id: message.id,
+    role: message.role,
+    author: chatMessageLabel(message),
+    text: text.slice(0, 2000),
+    at: chatMessageTime(message),
+  };
+}
+
+function mainChatReplyPreview(reply: ReplyContext) {
+  return reply.text.replace(/\s+/g, " ").trim().slice(0, 220) || "Message without text";
+}
+
+function mainChatGeneratedOutput(message: Message) {
+  if (message.role !== "agent") return null;
+  const text = visibleChatText(message);
+  const artifact = message.artifact;
+  if (artifact) {
+    const href = artifact.downloadUrl || artifact.url || "";
+    return {
+      filename: artifact.filename || "agent-output",
+      href,
+      fallbackText: [artifact.filename, artifact.preview].filter(Boolean).join("\n"),
+    };
+  }
+  const downloadableAttachment = message.attachments?.find((attachment) => attachment.url);
+  if (downloadableAttachment) {
+    return {
+      filename: downloadableAttachment.filename || "agent-attachment",
+      href: downloadableAttachment.url || "",
+      fallbackText: text,
+    };
+  }
+  const looksLikeGeneratedOutput = /\b(file|artifact|output|generated|created|saved|moved\/copied|written)\b/i.test(text);
+  if (!looksLikeGeneratedOutput || !text.trim()) return null;
+  return {
+    filename: "agent-message-output.txt",
+    href: "",
+    fallbackText: text,
+  };
+}
+
+async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const ok = document.execCommand("copy");
+  document.body.removeChild(textarea);
+  if (!ok) throw new Error("Copy failed");
+}
+
+function MainChatCopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const value = text.trim();
+  if (!value) return null;
+  const onCopy = async () => {
+    await copyTextToClipboard(value);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1400);
+  };
+  return (
+    <button className={`copymsg main-chat-action ${copied ? "copied" : ""}`} type="button" onClick={onCopy} aria-label="Copy message text" title={copied ? "Copied" : "Copy text"}>
+      <Icon name={copied ? "check" : "copy"} size={13} />
+      <span>{copied ? "Copied" : "Copy"}</span>
+    </button>
+  );
+}
+
+function MainChatDownloadButton({ message }: { message: Message }) {
+  const output = mainChatGeneratedOutput(message);
+  if (!output) return null;
+  const label = `Download ${output.filename}`;
+  if (output.href) {
+    return (
+      <a className="main-chat-download-output" href={output.href} download={output.filename} target="_blank" rel="noreferrer" aria-label={label} title={label}>
+        <Icon name="download" size={15} />
+      </a>
+    );
+  }
+  const onDownload = () => {
+    const body = output.fallbackText || visibleChatText(message);
+    const blob = new Blob([body], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = output.filename.endsWith(".txt") ? output.filename : `${output.filename}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  return (
+    <button className="main-chat-download-output" type="button" onClick={onDownload} aria-label={label} title={label}>
+      <Icon name="download" size={15} />
+    </button>
+  );
+}
+
+function formatRunDuration(ms: number) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
 export function MissionControl() {
-  const { agents, approvals, sendToAgent } = useStore();
+  const { agents, approvals, sendToAgent, uploadAttachmentToAgent, setView, stopProcessingForAgent, refreshAgent } = useStore();
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -131,6 +466,9 @@ export function MissionControl() {
   const [recentTasks, setRecentTasks] = useState<BoardTask[]>([]);
   const [routines, setRoutines] = useState<ChatRoutineContext[]>([]);
   const [workflows, setWorkflows] = useState<ChatWorkflowContext[]>([]);
+  const [contextHydrating, setContextHydrating] = useState(false);
+  const [workflowContextHydrating, setWorkflowContextHydrating] = useState(false);
+  const [workflowContextLoaded, setWorkflowContextLoaded] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [permissionMode, setPermissionMode] = useState<ChatPermissionMode>("full-policy");
   const [modelMode, setModelMode] = useState<ChatModelMode>("gpt-55-medium");
@@ -154,14 +492,24 @@ export function MissionControl() {
   const speechPrimedRef = useRef(false);
   const draftRef = useRef("");
   const previousVoiceStatusRef = useRef<VoiceStatus>("idle");
-  const [routingPreview, setRoutingPreview] = useState<{
+  const [, setRoutingPreview] = useState<{
     instruction: string;
     decision: ChatIntentDecision;
     preview: ChatIntentPreview;
   } | null>(null);
+  const [routingActionBusy, setRoutingActionBusy] = useState<ChatIntentRoutingActionId | null>(null);
+  const [routingActionMessage, setRoutingActionMessage] = useState<string | null>(null);
+  const [routingActionError, setRoutingActionError] = useState<string | null>(null);
+  const [researchWorkflowCard, setResearchWorkflowCard] = useState<ResearchWorkflowCard | null>(null);
+  const [pendingMainMessage, setPendingMainMessage] = useState<MainChatPendingMessage | null>(null);
+  const [mainChatReplyTo, setMainChatReplyTo] = useState<ReplyContext | null>(null);
+  const [processingStartedAt, setProcessingStartedAt] = useState<number | null>(null);
+  const [processingNow, setProcessingNow] = useState(() => Date.now());
   const latestMessageRef = useRef<HTMLDivElement | null>(null);
   const mainChatHistoryRef = useRef<HTMLElement | null>(null);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const activeMainRequestRef = useRef<{ id: string; controller: AbortController } | null>(null);
+  const activeMainUploadedAttachmentsRef = useRef<Attachment[]>([]);
 
   function resizeComposerTextarea() {
     const textarea = composerTextareaRef.current;
@@ -192,32 +540,61 @@ export function MissionControl() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  // Do not lazy-load the full default agent transcript on fresh Chat mount.
+  // It is a multi-second detail endpoint and made simple sends compete with a
+  // history refresh. The clean hero can render from the lightweight roster; the
+  // current exchange is appended optimistically and then completed via the
+  // lightweight request-status poller.
+
   useEffect(() => {
     let alive = true;
-    async function loadContext() {
-      const [projectResult, boardResult, automationResult, workflowResult] = await Promise.allSettled([
-        request<ProjectsResponse>("/api/projects"),
-        request<BoardResponse>("/api/tasks"),
-        request<AutomationsResponse>("/api/automations"),
-        request<WorkflowLibraryResponse>("/api/workflows"),
-      ]);
-      if (!alive) return;
-      setProjects(projectResult.status === "fulfilled" ? projectResult.value.projects ?? [] : []);
-      setRecentTasks(boardResult.status === "fulfilled" ? (boardResult.value.tasks ?? []).slice(0, 60) : []);
-      setRoutines(
-        automationResult.status === "fulfilled"
-          ? (automationResult.value.automations ?? []).slice(0, 40).map((routine) => ({ id: routine.id, title: routine.name, status: routine.state || routine.status }))
-          : [],
-      );
-      setWorkflows(
-        workflowResult.status === "fulfilled"
-          ? (workflowResult.value.workflows ?? []).slice(0, 40).map((workflow) => ({ id: workflow.id, title: workflow.name, status: workflow.category }))
-          : [],
-      );
-    }
-    void loadContext();
-    return () => { alive = false; };
+    let contextTimer: number | null = null;
+    const cancelHydration = scheduleProgressiveHydration(() => {
+      contextTimer = window.setTimeout(() => {
+        if (!alive) return;
+        setContextHydrating(true);
+        async function loadContext() {
+          const [projectResult, boardResult, automationResult] = await Promise.allSettled([
+            cachedRequest<ProjectsResponse>("main-chat:projects", "/api/projects", { staleAfterMs: 60_000 }),
+            cachedRequest<BoardResponse>("main-chat:tasks", "/api/tasks", { staleAfterMs: 30_000 }),
+            cachedRequest<AutomationsResponse>("main-chat:automations", "/api/automations", { staleAfterMs: 45_000 }),
+          ]);
+          if (!alive) return;
+          setProjects(projectResult.status === "fulfilled" ? projectResult.value.projects ?? [] : []);
+          setRecentTasks(boardResult.status === "fulfilled" ? (boardResult.value.tasks ?? []).slice(0, 60) : []);
+          setRoutines(
+            automationResult.status === "fulfilled"
+              ? (automationResult.value.automations ?? []).slice(0, 40).map((routine) => ({ id: routine.id, title: routine.name, status: routine.state || routine.status }))
+              : [],
+          );
+        }
+        void loadContext().finally(() => {
+          if (alive) setContextHydrating(false);
+        });
+      }, 9000);
+    });
+    return () => {
+      alive = false;
+      if (contextTimer !== null) window.clearTimeout(contextTimer);
+      cancelHydration();
+    };
   }, []);
+
+  const ensureWorkflowContext = useCallback(async () => {
+    if (workflowContextLoaded || workflowContextHydrating) return workflows;
+    setWorkflowContextHydrating(true);
+    try {
+      const response = await cachedRequest<WorkflowLibraryResponse>("main-chat:workflows", "/api/workflows", { staleAfterMs: 120_000 });
+      const next = (response.workflows ?? []).slice(0, 40).map((workflow) => ({ id: workflow.id, title: workflow.name, status: workflow.category }));
+      setWorkflows(next);
+      setWorkflowContextLoaded(true);
+      return next;
+    } catch {
+      return workflows;
+    } finally {
+      setWorkflowContextHydrating(false);
+    }
+  }, [workflowContextHydrating, workflowContextLoaded, workflows]);
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
   const visibleMissions = useMemo<ChatMissionContext[]>(
@@ -228,8 +605,8 @@ export function MissionControl() {
       .map((workItem) => ({ id: workItem.id, title: workItem.title, status: workItem.status })),
     [recentTasks],
   );
-  const selectedPermission = permissionModeOptions.find((option) => option.value === permissionMode) ?? permissionModeOptions[0];
   const selectedModel = modelModeOptions.find((option) => option.value === modelMode) ?? modelModeOptions[0];
+  const selectedPermission = permissionModeOptions.find((option) => option.value === permissionMode) ?? permissionModeOptions[0];
   const greeting = singaporeDaypartGreeting();
   const heroPrompt = selectedProject ? `What should we work on in “${projectLabel(selectedProject)}”?` : `${greeting}, Melverick!`;
   const melkizac = agents.find((agent) => agent.id === "default") ?? agents[0];
@@ -237,6 +614,40 @@ export function MissionControl() {
     () => (melkizac?.messages ?? []).filter(isRenderableChatMessage).slice(-80),
     [melkizac?.messages],
   );
+  const pendingMainMessageAlreadyVisible = useMemo(
+    () => Boolean(pendingMainMessage && mainChatMessages.some((message) => message.role === "user" && visibleChatText(message) === pendingMainMessage.text)),
+    [mainChatMessages, pendingMainMessage],
+  );
+  const visiblePendingMainMessage = pendingMainMessageAlreadyVisible ? null : pendingMainMessage;
+  const activeMainBackendRequestId = useMemo(() => {
+    const activeIds = new Set(melkizac?.processingRequests ?? []);
+    if (!activeIds.size) return null;
+    const activeUserRequests = [...mainChatMessages]
+      .reverse()
+      .filter((message) => message.role === "user" && message.requestId && activeIds.has(message.requestId));
+    for (const userMessage of activeUserRequests) {
+      const completed = mainChatMessages.some((message) => message.requestId === userMessage.requestId && (message.role === "agent" || message.role === "system"));
+      if (!completed) return userMessage.requestId ?? null;
+    }
+    return melkizac?.processingRequests?.[0] ?? null;
+  }, [mainChatMessages, melkizac?.processingRequests]);
+  const activeMainBackendRequestDetail = useMemo(
+    () => (melkizac?.processingRequestDetails ?? []).find((item) => item.id === activeMainBackendRequestId),
+    [activeMainBackendRequestId, melkizac?.processingRequestDetails],
+  );
+  const activeMainBackendUserMessage = useMemo(
+    () => mainChatMessages.find((message) => message.role === "user" && message.requestId === activeMainBackendRequestId),
+    [activeMainBackendRequestId, mainChatMessages],
+  );
+  const activeMainBackendStartedAt = activeMainBackendUserMessage?.ts
+    ? activeMainBackendUserMessage.ts * 1000
+    : activeMainBackendRequestDetail?.started_at
+      ? activeMainBackendRequestDetail.started_at * 1000
+      : null;
+  const effectiveProcessingStartedAt = processingStartedAt ?? activeMainBackendStartedAt;
+  const isMainChatProcessing = sending || Boolean(routingActionBusy) || Boolean(activeMainBackendRequestId);
+  const shouldShowMainChatTranscript = hasStartedMainChat || Boolean(visiblePendingMainMessage) || Boolean(activeMainBackendRequestId);
+  const processingElapsedLabel = effectiveProcessingStartedAt ? formatRunDuration(processingNow - effectiveProcessingStartedAt) : "0:00";
 
   function scrollToLatestMainChatMessage() {
     window.requestAnimationFrame(() => {
@@ -247,20 +658,49 @@ export function MissionControl() {
   }
 
   useEffect(() => {
-    if (!hasStartedMainChat) return;
+    if (!shouldShowMainChatTranscript) return;
     scrollToLatestMainChatMessage();
-  }, [hasStartedMainChat, mainChatMessages.length, sending]);
+  }, [shouldShowMainChatTranscript, mainChatMessages.length, sending, visiblePendingMainMessage]);
+
+  useEffect(() => {
+    if (!effectiveProcessingStartedAt) return;
+    setProcessingNow(Date.now());
+    const timer = window.setInterval(() => setProcessingNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [effectiveProcessingStartedAt]);
+
+  useEffect(() => {
+    if (!activeMainBackendRequestId || sending) return;
+    // Keep the normal composer send path off the heavyweight /api/agents/<id>
+    // detail endpoint. client.sendMessage() already reconciles the active turn
+    // through /messages/status; this fallback detail refresh is only for an
+    // orphaned backend request discovered outside the local send lifecycle.
+    const poll = window.setInterval(() => void refreshAgent("default").catch(() => undefined), 3000);
+    return () => window.clearInterval(poll);
+  }, [activeMainBackendRequestId, refreshAgent, sending]);
+
+  useEffect(() => {
+    if (sending || routingActionBusy || !hasStartedMainChat) return;
+    const localRequestId = activeMainRequestRef.current?.id;
+    if (!localRequestId) return;
+    const persistedUser = mainChatMessages.some((message) => message.role === "user" && message.requestId === localRequestId);
+    const completed = mainChatMessages.some((message) => message.requestId === localRequestId && (message.role === "agent" || message.role === "system"));
+    const stillActive = Boolean(melkizac?.processingRequests?.includes(localRequestId));
+    if (persistedUser && !completed && !stillActive) {
+      void refreshAgent("default").catch(() => undefined);
+    }
+  }, [hasStartedMainChat, mainChatMessages, melkizac?.processingRequests, refreshAgent, routingActionBusy, sending]);
 
   useEffect(() => {
     const wasInVoiceMode = previousVoiceStatusRef.current !== "idle";
     const isNowTextMode = voiceStatus === "idle";
     previousVoiceStatusRef.current = voiceStatus;
-    if (!hasStartedMainChat || !wasInVoiceMode || !isNowTextMode) return;
+    if (!shouldShowMainChatTranscript || !wasInVoiceMode || !isNowTextMode) return;
     const frame = window.requestAnimationFrame(() => {
       scrollToLatestMainChatMessage();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [hasStartedMainChat, voiceStatus]);
+  }, [shouldShowMainChatTranscript, voiceStatus]);
 
   useEffect(() => {
     if (!voiceReplyMode) return;
@@ -268,6 +708,10 @@ export function MissionControl() {
     if (!latestAgentMessage) return;
     const messageId = String(latestAgentMessage.id);
     if (messageId === voiceReplyBaselineId || messageId === spokenMessageId) return;
+    // Voice replies are per voice-originated turn, not a sticky global default.
+    // Once we attach speech to the next agent reply, clear the arm flag so later
+    // text-chat replies remain text-only unless the user records another voice message.
+    setVoiceReplyMode(false);
     speakAgentReply(latestAgentMessage);
   }, [mainChatMessages, spokenMessageId, voiceReplyBaselineId, voiceReplyMode]);
 
@@ -753,13 +1197,89 @@ export function MissionControl() {
         setError(`${file.name} is larger than Max 50MB.`);
         continue;
       }
-      next.push({ id: `${file.name}-${file.size}-${file.lastModified}`, name: file.name, size: file.size, type: file.type || "file" });
+      next.push({ id: `${file.name}-${file.size}-${file.lastModified}`, name: file.name, size: file.size, type: file.type || "file", file });
     }
     if (next.length) setAttachments((current) => [...current, ...next]);
   }
 
-  function routeInstruction(instruction: string): ChatIntentDecision {
-    return routeChatIntent({
+  async function uploadMainChatAttachments(items: ChatAttachment[]) {
+    const uploaded: Attachment[] = [];
+    for (const item of items) {
+      if (item.uploaded) {
+        uploaded.push(item.uploaded);
+        continue;
+      }
+      if (!item.file) {
+        throw new Error(`${item.name} was selected in the browser but is no longer available to upload. Please attach it again.`);
+      }
+      uploaded.push(await uploadAttachmentToAgent("default", item.file));
+    }
+    return uploaded;
+  }
+
+  function routerTaskTitle(prefix: string, instruction: string) {
+    const compact = instruction.replace(/\s+/g, " ").trim();
+    return `${prefix}: ${compact.slice(0, 84)}${compact.length > 84 ? "…" : ""}`;
+  }
+
+  function agentOsRoutePayload(instruction: string, decision: ChatIntentDecision, forceProject = false): AgentOsIntentRoute {
+    const isResearchDeliverable = decision.intentType === "research_to_deliverable";
+    const isProject = forceProject || isResearchDeliverable || decision.intentType === "project";
+    const isTask = !isProject && (decision.intentType === "kanban_task" || decision.intentType === "create_one_time_task" || decision.nextAction === "show_mission_proposal");
+    return {
+      intent_type: isProject ? "project" : isTask ? "kanban_task" : decision.intentType,
+      research_deliverable_intent: decision.matchedContext.researchSubtype ?? null,
+      confidence: decision.confidence === "high" ? 0.9 : decision.confidence === "medium" ? 0.75 : 0.45,
+      rationale: decision.reason,
+      project_required: Boolean(isResearchDeliverable || decision.matchedContext.projectId || selectedProject?.id),
+      suggested_project_id: isResearchDeliverable ? (selectedProject?.id || decision.matchedContext.projectId || null) : isProject ? null : (selectedProject?.id || decision.matchedContext.projectId || null),
+      create_task: isResearchDeliverable ? false : isTask,
+      create_project: isProject,
+      launch_workflow: decision.intentType === "workflow",
+      recommend_routine: decision.intentType === "routine_recommendation" || decision.intentType === "modify_routine",
+      one_time_reply: decision.intentType === "one_time_reply",
+      agent_id: decision.intentType === "project" || decision.intentType === "kanban_task" ? "devops" : "melkizac",
+      tools_required: decision.matchedContext.toolsRequired?.length ? decision.matchedContext.toolsRequired : ["kanban"],
+      skills_required: decision.matchedContext.skillsRequired ?? [],
+      evidence_required: decision.matchedContext.evidenceRequired ?? true,
+      approval_required: decision.matchedContext.approvalRequired ?? false,
+      prompt: instruction,
+      context: {
+        selected_project_id: selectedProject?.id ?? decision.matchedContext.projectId ?? null,
+        selected_project_name: selectedProject ? projectLabel(selectedProject) : decision.matchedContext.projectName ?? null,
+        attachments: activeMainUploadedAttachmentsRef.current.map((attachment) => ({
+          filename: attachment.filename,
+          path: attachment.path,
+          mime: attachment.mime,
+          sizeBytes: attachment.sizeBytes,
+          url: attachment.url,
+        })),
+      },
+    };
+  }
+
+
+  function researchOutputLabels(subtype: ChatIntentDecision["matchedContext"]["researchSubtype"]) {
+    switch (subtype) {
+      case "generate_deck": return ["PPTX deck", "Citation notes"];
+      case "generate_report": return ["DOCX briefing", "Citation notes"];
+      case "generate_proposal": return ["Proposal", "Citation notes"];
+      case "generate_training_material": return ["Training materials", "Citation notes"];
+      case "summarize_sources": return ["Research notes"];
+      case "compare_sources": return ["Comparison notes"];
+      case "ask_sources": return ["Source-grounded answer"];
+      case "revise_artifact": return ["Revised artifact"];
+      case "add_sources_to_project": return ["Updated source set"];
+      case "check_project_status": return ["Project status summary"];
+      case "learn_topic":
+      default:
+        return ["Research notes"];
+    }
+  }
+
+  function decisionFromAgentOsRoute(route: AgentOsIntentRoute, instruction: string, workflowContext: ChatWorkflowContext[] = workflows): ChatIntentDecision {
+    const workflowCandidate = route.workflow_candidate;
+    const localDecision = routeChatIntent({
       instruction,
       selectedProject,
       selectedMission: null,
@@ -767,9 +1287,253 @@ export function MissionControl() {
       tasks: recentTasks,
       approvals,
       routines,
-      workflows,
+      workflows: workflowContext,
     });
+    // Prefer the local UI router's subtype when it detects one: the backend
+    // heuristic may classify words like "editable" as an edit/revision signal,
+    // while the frontend preview needs the user's visible create/generate intent.
+    const researchSubtype = (localDecision.matchedContext.researchSubtype || route.research_deliverable_intent) as ChatIntentDecision["matchedContext"]["researchSubtype"];
+    const isResearchDeliverable = Boolean(researchSubtype);
+    const isCreatingResearchProject = isResearchDeliverable && Boolean(route.create_project || route.intent_type === "project");
+    const suggestedProjectId = route.suggested_project_id || selectedProject?.id || localDecision.matchedContext.projectId || null;
+    const suggestedProjectName = selectedProject && selectedProject.id === suggestedProjectId
+      ? projectLabel(selectedProject)
+      : localDecision.matchedContext.projectName ?? null;
+    let confidence = confidenceFromScore(route.confidence);
+    const routeNeedsProject = Boolean(route.project_required || isResearchDeliverable);
+    if (routeNeedsProject && !isCreatingResearchProject && !suggestedProjectId && !suggestedProjectName) {
+      confidence = confidence === "low" ? "low" : "medium";
+    }
+    return {
+      intentType: isResearchDeliverable ? "research_to_deliverable" : frontendIntentFromAgentOs(route),
+      matchedContext: {
+        projectId: suggestedProjectId,
+        projectName: suggestedProjectName,
+        workflowId: workflowCandidate?.id || localDecision.matchedContext.workflowId || null,
+        workflowTitle: workflowCandidate?.name || localDecision.matchedContext.workflowTitle || null,
+        researchSubtype,
+        requestedOutputs: localDecision.matchedContext.requestedOutputs?.length
+          ? localDecision.matchedContext.requestedOutputs
+          : isResearchDeliverable ? researchOutputLabels(researchSubtype) : undefined,
+        sourceSummary: localDecision.matchedContext.sourceSummary || (attachments.length ? `${attachments.length} attached file${attachments.length === 1 ? "" : "s"}` : null),
+        toolsRequired: route.tools_required ?? localDecision.matchedContext.toolsRequired ?? [],
+        skillsRequired: route.skills_required ?? localDecision.matchedContext.skillsRequired ?? [],
+        evidenceRequired: route.evidence_required ?? localDecision.matchedContext.evidenceRequired,
+        approvalRequired: Boolean(route.approval_required || workflowCandidate?.approval_required || localDecision.matchedContext.approvalRequired),
+      },
+      confidence,
+      nextAction: isResearchDeliverable
+        ? (confidence === "high" ? "show_mission_proposal" : "ask_clarifying_question")
+        : frontendNextActionFromAgentOs(route),
+      reason: route.rationale || localDecision.reason || `Agent OS router selected ${route.intent_type || "chat"}.`,
+    };
   }
+
+  async function routeInstruction(instruction: string, signal?: AbortSignal): Promise<ChatIntentDecision> {
+    const isSimpleGreeting = /^(hi|hello|hey|yo|sup|test)[!.\s]*$/i.test(instruction.trim());
+    if (isSimpleGreeting && attachments.length === 0) {
+      return {
+        intentType: "one_time_reply",
+        matchedContext: { approvalRequired: false },
+        confidence: "high",
+        nextAction: "proceed",
+        reason: "Simple greeting; bypassing task/project router for fast chat response.",
+      };
+    }
+    const shouldUseRouter = shouldUseMissionControlRouter(instruction, attachments.length > 0);
+    if (!shouldUseRouter) {
+      return {
+        intentType: "one_time_reply",
+        matchedContext: { approvalRequired: false },
+        confidence: "high",
+        nextAction: "proceed",
+        reason: "Direct agent conversation; Melkizac owns intent and next-action selection.",
+      };
+    }
+    const workflowContext = shouldHydrateWorkflowContext(instruction) ? await ensureWorkflowContext() : workflows;
+    try {
+      const response = await request<AgentOsIntentRouteResponse>("/api/intent/route", {
+        method: "POST",
+        signal,
+        body: JSON.stringify({
+          prompt: instruction,
+          context: {
+            selected_project_id: selectedProject?.id ?? null,
+            project_id: selectedProject?.id ?? null,
+            selected_project_name: selectedProject ? projectLabel(selectedProject) : null,
+            attachment_count: attachments.length,
+            attachments: attachments.map((file) => ({ name: file.name, size: file.size, type: file.type })),
+            project_context_loaded: projects.length > 0,
+            workflow_context_loaded: workflowContextLoaded,
+          },
+        }),
+      });
+      if (response.ok && response.route) return decisionFromAgentOsRoute(response.route, instruction, workflowContext);
+      throw new Error(response.error || "Agent OS router returned no route.");
+    } catch {
+      return routeChatIntent({
+        instruction,
+        selectedProject,
+        selectedMission: null,
+        visibleMissions,
+        tasks: recentTasks,
+        approvals,
+        routines,
+        workflows: workflowContext,
+      });
+    }
+  }
+
+  async function runResearchDeliverableWorkflow(current: { instruction: string; decision: ChatIntentDecision; preview: ChatIntentPreview }, signal?: AbortSignal) {
+    const route = agentOsRoutePayload(current.instruction, current.decision, true);
+    route.intent_type = "project";
+    route.create_project = true;
+    route.create_task = false;
+    route.suggested_project_id = selectedProject?.id || current.decision.matchedContext.projectId || null;
+    route.launch_workflow = false;
+    const response = await request<AgentOsKanbanCreationResponse>("/api/intent/create-kanban", {
+      method: "POST",
+      signal,
+      body: JSON.stringify({ route }),
+    });
+    if (!response.ok) throw new Error(response.error || "Research-to-Deliverable workflow was not started.");
+    const card = workflowCardFromKanbanResponse(response, {
+      title: "Research-to-Deliverable workflow started",
+      outputs: current.preview.researchDeliverable?.outputs ?? [],
+    });
+    setResearchWorkflowCard(card);
+    setSelectedProjectId(response.project_id || selectedProject?.id || current.decision.matchedContext.projectId || "");
+    const taskCount = card.tasks.length;
+    setRoutingActionMessage(`Research-to-Deliverable workflow started${response.idempotent ? " (already existed)" : ""}${card.projectId ? ` for ${card.projectId}` : ""}${taskCount ? ` with ${taskCount} Kanban cards` : ""}.`);
+    updateDraft("");
+    setAttachments([]);
+    return card;
+  }
+
+  function autoStartResearchDeliverable(decision: ChatIntentDecision, preview: ChatIntentPreview) {
+    return (
+      decision.intentType === "research_to_deliverable" &&
+      decision.confidence === "high" &&
+      preview.canProceed &&
+      permissionMode !== "draft-only" &&
+      decision.matchedContext.approvalRequired !== true
+    );
+  }
+
+  async function runRoutingActionFor(
+    current: { instruction: string; decision: ChatIntentDecision; preview: ChatIntentPreview },
+    action: ChatIntentRoutingActionId,
+    options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; speakReply?: boolean } = {},
+  ) {
+    if (routingActionBusy) return;
+    const { speakReply = false, ...sendOptions } = options;
+    if (action === "clarify") {
+      setRoutingActionMessage(null);
+      setRoutingActionError(null);
+      const newMessages = await sendToAgent("default", composeClarificationContext(current.instruction, current.decision, current.preview), activeMainUploadedAttachmentsRef.current, sendOptions);
+      const directReply = [...newMessages].reverse().find((message) => message.role === "agent" && visibleChatText(message).trim());
+      if (speakReply && directReply) speakAgentReply(directReply);
+      updateDraft("");
+      setAttachments([]);
+      setRoutingPreview(null);
+      return;
+    }
+    setRoutingActionBusy(action);
+    setRoutingActionMessage(null);
+    setRoutingActionError(null);
+    try {
+      if (action === "send_to_agent") {
+        const newMessages = await sendToAgent("default", composeInstructionContext(current.instruction, current.decision), activeMainUploadedAttachmentsRef.current, sendOptions);
+        const directReply = [...newMessages].reverse().find((message) => message.role === "agent" && visibleChatText(message).trim());
+        if (speakReply && directReply) speakAgentReply(directReply);
+        updateDraft("");
+        setAttachments([]);
+        setRoutingPreview(null);
+        return;
+      }
+
+      if (action === "start_research_deliverable") {
+        await runResearchDeliverableWorkflow(current, options.signal);
+        return;
+      }
+
+      if (action === "launch_workflow") {
+        const workflowId = current.decision.matchedContext.workflowId;
+        if (!workflowId) throw new Error("No workflow candidate is linked to this route.");
+        const response = await request<WorkflowLaunchResponse>(`/api/workflows/${encodeURIComponent(workflowId)}/launch`, {
+          method: "POST",
+          signal: options.signal,
+          body: JSON.stringify({
+            projectId: selectedProject?.id,
+            title: routerTaskTitle("Workflow", current.instruction),
+            request: current.instruction,
+            runMode: "approval_required",
+          }),
+        });
+        if (!response.ok) throw new Error(response.error || "Workflow launch was not queued.");
+        setRoutingActionMessage(`Workflow queued${response.workflow?.name ? `: ${response.workflow.name}` : ""}.`);
+        return;
+      }
+
+      if (action === "create_routine_draft" || action === "recommend_routine") {
+        const routineId = slugFromInstruction("chat-routine", current.instruction);
+        const response = await request<{ ok?: boolean; error?: string; routine?: { id?: string; name?: string } }>("/api/automations", {
+          method: "POST",
+          signal: options.signal,
+          body: JSON.stringify({
+            id: routineId,
+            name: routerTaskTitle("Routine draft", current.instruction),
+            type: "workspace",
+            routine_type: "workspace",
+            workspace_id: selectedProject?.id,
+            agent_id: current.decision.matchedContext.approvalRequired ? "melkizac" : "devops",
+            schedule: "draft - not scheduled",
+            trigger_status: "disabled",
+            status: "draft",
+            approval_policy_dependency: { decision: "approval_required", reason: "Created from main chat router; review before enabling." },
+            quota_policy: { blocked: true, reason: "Draft routine from chat router; enable deliberately after review." },
+          }),
+        });
+        if (!response.ok) throw new Error(response.error || "Routine draft was not created.");
+        setRoutingActionMessage(`Routine draft created${response.routine?.id ? `: ${response.routine.id}` : ""}.`);
+        return;
+      }
+
+      const isProjectKickoff = action === "create_project";
+      const forcedTaskRoute = action === "create_project_task" || action === "create_task";
+      const route = agentOsRoutePayload(current.instruction, current.decision, isProjectKickoff);
+      if (forcedTaskRoute) {
+        route.intent_type = "kanban_task";
+        route.create_task = true;
+        route.create_project = false;
+        route.suggested_project_id = selectedProject?.id || current.decision.matchedContext.projectId || null;
+      }
+      const response = await request<AgentOsKanbanCreationResponse>("/api/intent/create-kanban", {
+        method: "POST",
+        signal: options.signal,
+        body: JSON.stringify({ route }),
+      });
+      if (!response.ok) throw new Error(response.error || "Task was not created.");
+      const createdTask = response.tasks?.[0];
+      const taskCount = response.tasks?.length ?? 0;
+      const graphLabel = taskCount > 1 ? ` with ${taskCount} dependency-linked cards` : "";
+      if (response.mode === "project" || taskCount > 1) {
+        const card = workflowCardFromKanbanResponse(response, { title: response.mode === "project" ? "Project Kickoff" : "Task Board workflow", outputs: [] });
+        setResearchWorkflowCard(card);
+        setSelectedProjectId(response.project_id || selectedProject?.id || current.decision.matchedContext.projectId || "");
+      }
+      setRoutingActionMessage(`${response.mode === "project" ? "Project kickoff" : "Task Board"} card ${response.idempotent ? "already exists" : "created"}${createdTask?.id ? `: ${createdTask.id}` : ""}${graphLabel}.`);
+      updateDraft("");
+      setAttachments([]);
+      setRoutingPreview(null);
+    } catch (err) {
+      if (options.signal?.aborted) throw err;
+      setRoutingActionError(err instanceof Error ? err.message : "Router action failed.");
+    } finally {
+      setRoutingActionBusy(null);
+    }
+  }
+
 
   function composeInstructionContext(instruction: string, intentDecision: ChatIntentDecision) {
     const context = [
@@ -781,43 +1545,141 @@ export function MissionControl() {
     return `${instruction}\n\n[Mission Control Chat Context]\n${context.join("\n")}\n\n[Mission Control Intent Routing]\n${serializeChatIntentDecision(intentDecision)}`;
   }
 
+  function composeClarificationContext(instruction: string, intentDecision: ChatIntentDecision, preview: ChatIntentPreview) {
+    const context = [
+      selectedProject ? `Project: ${projectLabel(selectedProject)} (${selectedProject.id})` : "Project: No Project selected",
+      `Permission: ${selectedPermission.promptLabel}`,
+      `Model: ${selectedModel.promptLabel}`,
+      attachments.length ? `Attachments: ${attachments.map((file) => `${file.name} (${formatBytes(file.size)})`).join(", ")}` : null,
+    ].filter(Boolean);
+    const suggestedQuestion = preview.suggestedQuestion || "Ask one concise clarification question before taking action.";
+    return `${instruction}\n\n[Mission Control Chat Context]\n${context.join("\n")}\n\n[Mission Control Intent Routing]\nThe router was not confident enough to create tasks, projects, routines, or workflows automatically. Do not expose router internals. Reply in normal chat with a brief clarification question only. Suggested question: ${suggestedQuestion}\n\n${serializeChatIntentDecision(intentDecision)}`;
+  }
+
+  function shouldClarifyInChat(decision: ChatIntentDecision, preview: ChatIntentPreview) {
+    return !preview.canProceed || decision.confidence === "low" || decision.nextAction === "ask_clarifying_question";
+  }
+
+  function defaultRoutingAction(decision: ChatIntentDecision, preview: ChatIntentPreview): ChatIntentRoutingActionId {
+    if (shouldClarifyInChat(decision, preview)) return "clarify";
+    if (decision.intentType === "research_to_deliverable" && autoStartResearchDeliverable(decision, preview)) return "start_research_deliverable";
+    if (decision.intentType === "workflow" && decision.matchedContext.workflowId && permissionMode !== "draft-only") return "launch_workflow";
+    if ((decision.intentType === "routine_recommendation" || decision.intentType === "modify_routine") && permissionMode !== "draft-only") return "create_routine_draft";
+    if (decision.intentType === "project" && permissionMode !== "draft-only" && !decision.matchedContext.approvalRequired) return "create_project";
+    if ((decision.intentType === "kanban_task" || decision.intentType === "create_one_time_task") && permissionMode !== "draft-only" && !decision.matchedContext.approvalRequired) {
+      return selectedProject?.id ? "create_project_task" : "create_task";
+    }
+    return "send_to_agent";
+  }
+
   async function submitInstruction(instructionText: string, options: { preserveDraft?: boolean; keepVoiceScreen?: boolean } = {}) {
     const instruction = instructionText.trim();
     if (!instruction || sending) return;
+    if (!options.keepVoiceScreen) {
+      // Plain text submits must never inherit a previous voice session's reply mode.
+      // Voice reply is opt-in per voice-originated message only.
+      setVoiceReplyMode(false);
+      setVoiceReplyText("");
+      setVoiceReplyNeedsTap(false);
+      pendingVoiceReplyRef.current = null;
+      if (speechPlaying) {
+        window.speechSynthesis?.cancel();
+        setSpeechPlaying(false);
+        stopVoiceVisualPulse();
+      }
+    }
+    const sentAttachments = attachments;
+    const activeReplyTo = mainChatReplyTo;
+    const controller = new AbortController();
+    const requestId = `main-chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    activeMainRequestRef.current = { id: requestId, controller };
     setHasStartedMainChat(true);
+    setPendingMainMessage({ text: instruction, attachments: sentAttachments });
+    const startedAt = Date.now();
+    setProcessingStartedAt(startedAt);
+    setProcessingNow(startedAt);
     setSending(true);
     setError(null);
-    const intentDecision = routeInstruction(instruction);
-    const preview = buildChatIntentPreview(intentDecision);
-    setRoutingPreview({ instruction, decision: intentDecision, preview });
-    if (!preview.canProceed) {
-      setSending(false);
-      setError(preview.suggestedQuestion ?? "Please clarify the target before I route this.");
-      if (options.keepVoiceScreen) setVoiceStatus("ready");
-      window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
-      return;
-    }
+    activeMainUploadedAttachmentsRef.current = [];
     try {
-      const newMessages = await sendToAgent("default", composeInstructionContext(instruction, intentDecision));
-      const directReply = options.keepVoiceScreen
-        ? [...newMessages].reverse().find((message) => message.role === "agent" && visibleChatText(message).trim())
-        : undefined;
-      if (directReply) speakAgentReply(directReply);
-      if (options.preserveDraft !== true) updateDraft("");
+      const uploadedAttachments = sentAttachments.length ? await uploadMainChatAttachments(sentAttachments) : [];
+      if (controller.signal.aborted) return;
+      activeMainUploadedAttachmentsRef.current = uploadedAttachments;
+      setAttachments((current) => current.map((item) => {
+        const uploaded = uploadedAttachments.find((attachment) => attachment.filename === item.name && attachment.sizeBytes === item.size);
+        return uploaded ? { ...item, uploaded } : item;
+      }));
+      updateDraft("");
       setAttachments([]);
-      if (options.keepVoiceScreen) {
-        setVoiceStatus((current) => (current === "sending" ? "ready" : current));
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Mission Control could not send this instruction.");
+      setMainChatReplyTo(null);
+      const intentDecision = await routeInstruction(instruction, controller.signal);
+      if (controller.signal.aborted) return;
+      const preview = buildChatIntentPreview(intentDecision);
+      const routed = { instruction, decision: intentDecision, preview };
+      // Keep the router silent by default. The agent/router decides the path;
+      // users see only chat replies, clarification questions, compact task cards,
+      // or real Approval Gates when policy requires them.
+      setRoutingPreview(null);
+      setRoutingActionMessage(null);
+      setRoutingActionError(null);
+      await runRoutingActionFor(routed, defaultRoutingAction(intentDecision, preview), {
+        signal: controller.signal,
+        requestId,
+        replyTo: activeReplyTo ?? undefined,
+        speakReply: options.keepVoiceScreen === true,
+      });
       if (options.keepVoiceScreen) setVoiceStatus("ready");
+      if (options.preserveDraft === true) updateDraft(instruction);
+    } catch (err) {
+      if (controller.signal.aborted) {
+        setRoutingActionError("Stopped the current message before it finished processing.");
+      } else {
+        const message = err instanceof Error ? err.message : "Failed to send message.";
+        const maybeCompleted = /bad gateway|gateway|timeout|network|failed to fetch|502|503|504/i.test(message);
+        if (maybeCompleted) {
+          setError("Connection dropped while Melkizac was processing. Refreshing the latest chat instead of putting the sent message back in the composer…");
+          for (const delay of [1200, 3000, 6000, 10000]) {
+            window.setTimeout(() => void refreshAgent("default").catch(() => undefined), delay);
+          }
+        } else {
+          updateDraft(instruction);
+          setAttachments(sentAttachments);
+          setError(message);
+        }
+      }
     } finally {
+      if (activeMainRequestRef.current?.id === requestId) activeMainRequestRef.current = null;
+      activeMainUploadedAttachmentsRef.current = [];
+      setPendingMainMessage(null);
+      setProcessingStartedAt(null);
       setSending(false);
+      window.requestAnimationFrame(() => composerTextareaRef.current?.focus());
     }
   }
 
   async function submit() {
     await submitInstruction(draft);
+  }
+
+  async function stopMainChatProcessing() {
+    const active = activeMainRequestRef.current;
+    const requestId = active?.id ?? activeMainBackendRequestId ?? undefined;
+    if (!requestId) return;
+    active?.controller.abort();
+    activeMainRequestRef.current = null;
+    setPendingMainMessage(null);
+    setProcessingStartedAt(null);
+    setSending(false);
+    setRoutingActionBusy(null);
+    setRoutingActionMessage(null);
+    setRoutingActionError("Stopping current message…");
+    try {
+      await stopProcessingForAgent("default", requestId);
+      await refreshAgent("default").catch(() => undefined);
+      setRoutingActionError("Stopped the current message before it finished processing.");
+    } catch (err) {
+      setRoutingActionError(err instanceof Error ? `Stopped locally, but backend stop failed: ${err.message}` : "Stopped locally, but backend stop failed.");
+    }
   }
 
   function handleComposerKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -827,7 +1689,7 @@ export function MissionControl() {
     }
   }
 
-  return !hasStartedMainChat ? (
+  return !shouldShowMainChatTranscript ? (
     <div className="clean-chat-page">
       <section className="clean-chat-shell" aria-label="Clean Chat command center">
         <header className="clean-chat-mobile-topbar" aria-label="Chat controls">
@@ -925,8 +1787,10 @@ export function MissionControl() {
             value={selectedProjectId}
             onChange={(event) => setSelectedProjectId(event.target.value)}
             aria-label="Project selector"
+            aria-busy={contextHydrating && !projects.length}
+            disabled={contextHydrating && !projects.length}
           >
-            <option value="">No Project selected</option>
+            <option value="">{contextHydrating && !projects.length ? "Loading projects…" : "No Project selected"}</option>
             {projects.map((project) => <option key={project.id} value={project.id}>{projectLabel(project)}</option>)}
           </select>
         </div>
@@ -953,40 +1817,91 @@ export function MissionControl() {
         <main ref={mainChatHistoryRef} className={`main-chat-history ${voiceStatus !== "idle" ? "voice-mode" : ""}`} aria-label={voiceStatus !== "idle" ? "Voice input activation" : "Melkizac conversation history"}>
           {voiceStatus !== "idle" ? (
             renderVoiceActivation("full")
-          ) : mainChatMessages.length === 0 ? (
+          ) : mainChatMessages.length === 0 && !visiblePendingMainMessage ? (
             <div className="main-chat-empty-state">
               <span className="main-chat-avatar">ME</span>
               <strong>Starting the Melkizac conversation…</strong>
               <p>Your message will appear here while Melkizac responds.</p>
             </div>
           ) : (
-            mainChatMessages.map((message) => {
-              const isUser = message.role === "user";
-              return (
-                <article className={`main-chat-row ${isUser ? "user" : "agent"}`} key={`${message.id}-${message.role}`}>
-                  {!isUser && <span className="main-chat-avatar">ME</span>}
+            <>
+              {mainChatMessages.map((message) => {
+                const isUser = message.role === "user";
+                return (
+                  <article className={`main-chat-row ${isUser ? "user" : "agent"}`} key={`${message.id}-${message.role}`}>
+                    {!isUser && <span className="main-chat-avatar">ME</span>}
+                    <div className="main-chat-message-stack">
+                      <div className="main-chat-meta">
+                        <strong>{chatMessageLabel(message)}</strong>
+                        <span>{chatSessionLabel(message)}</span>
+                        <time>{chatMessageTime(message)}</time>
+                        <span className="main-chat-message-actions">
+                          <button className="replymsg main-chat-action" type="button" onClick={() => setMainChatReplyTo(mainChatReplyContext(message))} aria-label="Reply using this message as context" title="Reply using this message as context">
+                            <Icon name="reply" size={13} />
+                            <span>Reply</span>
+                          </button>
+                          <MainChatCopyButton text={visibleChatText(message)} />
+                        </span>
+                      </div>
+                      {message.replyTo && <div className="main-chat-reply-context">Replying to {message.replyTo.author}: {mainChatReplyPreview(message.replyTo)}</div>}
+                      <div className="main-chat-bubble">
+                        <p>{visibleChatText(message)}</p>
+                        {message.attachments?.length ? (
+                          <div className="main-chat-message-attachments">
+                            {message.attachments.map((attachment) => (
+                              attachment.url ? (
+                                <a key={attachment.id || attachment.filename} href={attachment.url} download={attachment.filename} target="_blank" rel="noreferrer">
+                                  {attachment.filename}
+                                </a>
+                              ) : (
+                                <span key={attachment.id || attachment.filename}>{attachment.filename}</span>
+                              )
+                            ))}
+                          </div>
+                        ) : null}
+                        <MainChatDownloadButton message={message} />
+                      </div>
+                    </div>
+                    {isUser && <span className="main-chat-user-avatar">M</span>}
+                  </article>
+                );
+              })}
+              {visiblePendingMainMessage && (
+                <article className="main-chat-row user pending" key="main-chat-pending-user">
                   <div className="main-chat-message-stack">
                     <div className="main-chat-meta">
-                      <strong>{chatMessageLabel(message)}</strong>
-                      <span>{chatSessionLabel(message)}</span>
-                      <time>{chatMessageTime(message)}</time>
+                      <strong>You</strong>
+                      <span>Web UI · Chat</span>
+                      <time>just now</time>
                     </div>
-                    {message.replyTo && <div className="main-chat-reply-context">Replying to {message.replyTo.author}: {message.replyTo.text}</div>}
                     <div className="main-chat-bubble">
-                      <p>{visibleChatText(message)}</p>
-                      {message.attachments?.length ? (
+                      <p>{visiblePendingMainMessage.text}</p>
+                      {visiblePendingMainMessage.attachments.length ? (
                         <div className="main-chat-message-attachments">
-                          {message.attachments.map((attachment) => (
-                            <span key={attachment.id || attachment.filename}>{attachment.filename}</span>
+                          {visiblePendingMainMessage.attachments.map((attachment) => (
+                            <span key={attachment.id}>{attachment.name}</span>
                           ))}
                         </div>
                       ) : null}
                     </div>
                   </div>
-                  {isUser && <span className="main-chat-user-avatar">M</span>}
+                  <span className="main-chat-user-avatar">M</span>
                 </article>
-              );
-            })
+              )}
+              {isMainChatProcessing && (
+                <div className="processing-inline main-chat-processing-inline" role="status" aria-live="polite" aria-label="Melkizac is processing your message">
+                  <span className="processing-inline-dots" aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                  <span>Melkizac is processing…</span>
+                  <span className="processing-inline-timer" aria-label={`Elapsed processing time ${processingElapsedLabel}`} title="Elapsed processing time">
+                    {processingElapsedLabel}
+                  </span>
+                </div>
+              )}
+            </>
           )}
           <div ref={latestMessageRef} className="main-chat-latest-sentinel" aria-hidden="true" />
         </main>
@@ -995,20 +1910,46 @@ export function MissionControl() {
           <div className="mobile-composer-prompt">
             {selectedProject ? `What should we work on in ${projectLabel(selectedProject)}?` : "What should Melkizac work on?"}
           </div>
-          {routingPreview && (
-            <ChatIntentRoutingPreview
-              preview={routingPreview.preview}
-              decision={routingPreview.decision}
-              sending={sending}
-              onEdit={() => composerTextareaRef.current?.focus()}
-            />
+          {routingActionMessage && <div className="main-chat-route-status success">{routingActionMessage}</div>}
+          {routingActionError && <div className="main-chat-route-status error">{routingActionError}</div>}
+          {mainChatReplyTo && (
+            <div className="reply-context main-chat-composer-reply" aria-label="Replying to selected message">
+              <div>
+                <b>Replying to {mainChatReplyTo.author}</b>
+                <span>{mainChatReplyPreview(mainChatReplyTo)}</span>
+              </div>
+              <button type="button" onClick={() => setMainChatReplyTo(null)} aria-label="Clear reply context" title="Clear reply context">
+                <Icon name="close" size={13} />
+              </button>
+            </div>
+          )}
+          {researchWorkflowCard && (
+            <section className="main-chat-research-card" aria-label="Main Chat workflow status">
+              <div>
+                <span className="main-chat-research-kicker">{researchWorkflowCard.kind === "project_kickoff" ? "Project workflow started" : "Research-to-Deliverable workflow started"}</span>
+                <h2>{researchWorkflowCard.title}</h2>
+                <p>{researchWorkflowCard.status}{researchWorkflowCard.idempotent ? " · Existing graph reused" : " · Kanban graph queued"}</p>
+              </div>
+              <dl>
+                <div><dt>Project</dt><dd>{researchWorkflowCard.projectId || "Project tenant pending"}</dd></div>
+                <div><dt>Current phase</dt><dd>{researchWorkflowCard.currentPhase || researchWorkflowCard.graphTemplate || researchWorkflowCard.workflowType || "queued"}</dd></div>
+                <div><dt>Tasks</dt><dd>{researchWorkflowCard.tasks.length || Object.keys(researchWorkflowCard.taskIds).length} cards</dd></div>
+                <div><dt>Next action</dt><dd>{researchWorkflowCard.nextAction || "Open Task Board for evidence"}</dd></div>
+              </dl>
+              <div className="main-chat-research-actions">
+                <button type="button" onClick={() => setView("board")}>Open Task Board</button>
+                {researchWorkflowCard.workflowType === "research_to_deliverable" && <button type="button" onClick={() => setView("research-runs")}>Open Research Runs</button>}
+                <button type="button" onClick={() => setView("projects")}>Open Project</button>
+              </div>
+            </section>
           )}
           <textarea
             ref={composerTextareaRef}
             value={draft}
             onChange={(event) => updateDraft(event.target.value)}
             onKeyDown={handleComposerKeyDown}
-            placeholder="Send a task or message to Melkizac..."
+            placeholder={isMainChatProcessing ? "Melkizac is processing…" : "Send a task or message to Melkizac..."}
+            disabled={isMainChatProcessing}
             rows={2}
           />
 
@@ -1051,8 +1992,10 @@ export function MissionControl() {
                   value={selectedProjectId}
                   onChange={(event) => setSelectedProjectId(event.target.value)}
                   aria-label="Project selector"
+                  aria-busy={contextHydrating && !projects.length}
+                  disabled={contextHydrating && !projects.length}
                 >
-                  <option value="">No Project selected</option>
+                  <option value="">{contextHydrating && !projects.length ? "Loading projects…" : "No Project selected"}</option>
                   {projects.map((project) => <option key={project.id} value={project.id}>{projectLabel(project)}</option>)}
                 </select>
               </label>
@@ -1066,7 +2009,16 @@ export function MissionControl() {
               </label>
               {renderVoiceReplyControl()}
               {renderMicButton()}
-              <button className="clean-chat-send" type="submit" disabled={sending || !draft.trim()} aria-label="Send message">↑</button>
+              <button
+                className={isMainChatProcessing ? "clean-chat-send stop-send" : "clean-chat-send"}
+                type="button"
+                onClick={() => (isMainChatProcessing ? stopMainChatProcessing() : void submit())}
+                disabled={!isMainChatProcessing && !draft.trim()}
+                aria-label={isMainChatProcessing ? "Stop current message processing" : "Send message"}
+                title={isMainChatProcessing ? "Stop current message processing" : "Send message"}
+              >
+                {isMainChatProcessing ? "■" : "↑"}
+              </button>
             </div>
           </div>
           {error && <div className="clean-chat-error">{error}</div>}

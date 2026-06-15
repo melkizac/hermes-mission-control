@@ -16,6 +16,7 @@ type Name =
   | "automations"
   | "audit"
   | "costs"
+  | "usage"
   | "settings"
   | "admin"
   | "dashboard"
@@ -27,21 +28,27 @@ type Name =
   | "plus"
   | "refresh"
   | "search"
+  | "filterPlus"
   | "send"
   | "download"
   | "edit"
   | "close"
   | "more"
+  | "trash"
+  | "chevronDown"
+  | "chevronLeft"
   | "file"
+  | "folder"
+  | "image"
   | "check"
   | "arrowDown"
   | "copy"
   | "reply"
   | "stop"
   | "mic"
-  | "spinner"
   | "sidebar"
-  | "chevronDown";
+  | "info"
+  | "spinner";
 
 const paths: Record<Name, string> = {
   logo: "M12 2l9 6-9 6-9-6 9-6zM3 14l9 6 9-6",
@@ -59,6 +66,7 @@ const paths: Record<Name, string> = {
   automations: "M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2M15 12a3 3 0 11-6 0 3 3 0 016 0z",
   audit: "M4 5h16M4 12h16M4 19h10",
   costs: "M12 3v18M17 7.5c0-1.9-1.8-3-5-3s-5 1.1-5 3 1.5 3 5 3 5 1.1 5 3-1.8 3-5 3-3.9-.4-5-2.1",
+  usage: "M4 14a8 8 0 1116 0M12 14l4-4M8 18h8",
   settings: "M19.4 13a7 7 0 000-2l2-1.6-2-3.4-2.4 1a7 7 0 00-1.7-1L14.9 3h-4l-.4 2.4a7 7 0 00-1.7 1l-2.4-1-2 3.4L4.6 11a7 7 0 000 2l-2 1.6 2 3.4 2.4-1a7 7 0 001.7 1l.4 2.4h4l.4-2.4a7 7 0 001.7-1l2.4 1 2-3.4z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
   admin: "M12 3l8 4v5c0 5-3.4 8.5-8 10-4.6-1.5-8-5-8-10V7zM12 8v6M12 17h.01",
   dashboard: "M4 4h7v7H4zM15 4h5v5h-5zM15 13h5v7h-5zM4 15h7v5H4z",
@@ -70,21 +78,27 @@ const paths: Record<Name, string> = {
   plus: "M12 5v14M5 12h14",
   refresh: "M20 6v5h-5M4 18v-5h5M18.4 9A7 7 0 006.8 6.8L4 11M5.6 15a7 7 0 0011.6 2.2L20 13",
   search: "M21 21l-4.3-4.3M11 18a7 7 0 100-14 7 7 0 000 14z",
+  filterPlus: "M4 5h16l-6.5 7.2V18l-3 1.6v-7.4zM18 15v6M15 18h6",
   send: "M12 19V5M5 12l7-7 7 7",
   download: "M12 3v12M7 11l5 5 5-5M5 21h14",
   edit: "M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z",
   close: "M18 6L6 18M6 6l12 12",
   more: "M12 6h.01M12 12h.01M12 18h.01",
+  trash: "M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3",
+  chevronDown: "M5 8l7 7 7-7",
+  chevronLeft: "M15 5l-7 7 7 7",
   file: "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6",
+  folder: "M3 7h7l2 2h9v10a2 2 0 01-2 2H5a2 2 0 01-2-2zM3 7V5a2 2 0 012-2h4l2 2h8a2 2 0 012 2v2",
+  image: "M4 5h16v14H4zM8 14l2.5-3 3 4 2-2.5L20 18M8 9h.01",
   check: "M20 6L9 17l-5-5",
   arrowDown: "M12 5v14M5 12l7 7 7-7",
   copy: "M8 8h10a2 2 0 012 2v10a2 2 0 01-2 2H8a2 2 0 01-2-2V10a2 2 0 012-2zM4 16H3a2 2 0 01-2-2V4a2 2 0 012-2h10a2 2 0 012 2v1",
   reply: "M10 7l-5 5 5 5M5 12h9a5 5 0 015 5v1",
   stop: "M7 7h10v10H7z",
   mic: "M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3zM5 11v1a7 7 0 0014 0v-1M12 19v3M8 22h8",
+  sidebar: "M4 5.5A2.5 2.5 0 016.5 3h11A2.5 2.5 0 0120 5.5v13a2.5 2.5 0 01-2.5 2.5h-11A2.5 2.5 0 014 18.5zM9 3v18M12.5 8h4M12.5 12h4M12.5 16h4",
+  info: "M12 11v6M12 7h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
   spinner: "M12 2a10 10 0 019.5 7",
-  sidebar: "M4 5h16v14H4zM9 5v14M13 9l3 3-3 3",
-  chevronDown: "M6 9l6 6 6-6",
 };
 
 export function Icon({

@@ -65,6 +65,138 @@ const pages: DocPage[] = [
     ],
   },
   {
+    id: "current-ui-map",
+    label: "Current UI map",
+    kicker: "Current HMC build",
+    title: "What each Mission Control surface is for right now.",
+    intro:
+      "The documentation page should match the product the operator can actually use today. This map translates the current HMC UI into operator language: where to start, which surface owns which decision, what proof to expect, and which views are workspace-facing versus admin/governance-facing.",
+    sections: [
+      {
+        heading: "Workspace surfaces",
+        body:
+          "These are the day-to-day operator surfaces for Melverick and workspace users. They are organized around the loop: state the intent, assign visible work, supervise execution, approve sensitive actions, and verify evidence.",
+        bullets: [
+          "Main Chat: quick direct instruction to Melkizac when durable tracking is not required.",
+          "Projects: operating spaces for business areas, goals, context, linked tasks, and evidence.",
+          "Delegate Work: outcome-first intake that creates visible agent or human work instead of hidden chat promises.",
+          "Workflow Library: reusable process templates for repeated SME operations.",
+          "Task Board: execution lane for queued, running, blocked, done, error, and human-owned tasks.",
+          "Approval Gates: approve/reject checkpoints for high-risk external, destructive, costly, or account-sensitive actions.",
+          "AI Workforce / Agent Org: profile-backed agents, responsibilities, queues, health, and handoffs.",
+        ],
+      },
+      {
+        heading: "Capability and proof surfaces",
+        body:
+          "These views explain what the workforce can do and what evidence exists after work is performed. They should prevent operators from accepting claims without proof.",
+        bullets: [
+          "Skills: reusable know-how and operating procedures available to agents.",
+          "Tools: execution capabilities such as browser, terminal, web, file, messaging, and connected APIs.",
+          "Plugins: packaged extensions and optional integrations.",
+          "Memory / Second Brain: durable context, project knowledge, wiki sources, and evidence-backed references.",
+          "Browser Activity: supervised browser sessions with URL/domain, screenshots, action logs, approval boundaries, and takeover controls.",
+          "Audit Log: session traces, source channels, timestamps, tool events, errors, retries, usage, and evidence links.",
+        ],
+      },
+      {
+        heading: "Routines, runtimes, and admin governance",
+        body:
+          "Recurring work and infrastructure readiness belong in separate governance surfaces. Operators should see simple routine status; admins should see connector setup, runtime boundaries, policies, quotas, users, and platform-level configuration.",
+        bullets: [
+          "Routines: user-facing recurring work, scheduled checks, monitors, and reports.",
+          "Runtime Connectors: where work can run, what is connected, and what capabilities are allowed.",
+          "Hermes Desktop / Admin: lower-level runtime console for models, sessions, cron, logs, config, and system health.",
+          "Users & Workspaces: account access, workspace isolation, roles, and profile-backed boundaries.",
+          "Approval Policy / Quota / Costs / Usage: governance controls for authority, spend, and model routing.",
+        ],
+      },
+      {
+        heading: "Routing rule of thumb",
+        body:
+          "If the user asks for a result, start with Main Chat or Delegate Work. If the work repeats, promote it to Workflow Library and Routines. If it touches external accounts, browser submit/post/send actions, production deploys, money, permissions, or sensitive data, require Approval Gates and evidence before completion.",
+      },
+    ],
+    cards: [
+      { title: "Chat is not the system", body: "Chat is the fastest front door, but durable work should become tasks, workflows, routines, approvals, and evidence." },
+      { title: "Task Board is the execution truth", body: "If work has status, ownership, blocker, or proof requirements, it belongs on the board." },
+      { title: "Approvals are decisions", body: "Use approvals for approve/reject checkpoints, not for ordinary manual work or missing context." },
+      { title: "Evidence closes the loop", body: "A completed task should show artifacts, screenshots, links, test output, audit traces, or another concrete proof record." },
+    ],
+    example:
+      "A Nexius course signup request starts in Main Chat, becomes a Project goal, launches a Workflow, materializes Task Board cards, pauses before external sends/submits, and finishes only when evidence links and lead-check results are attached.",
+    operatorNotes: [
+      "Keep docs aligned with visible navigation; do not document pages as ready if the current UI only exposes them as admin prototypes.",
+      "Use workspace-facing names first: Routines, Skills, Tools, Plugins, Projects, Task Board, AI Workforce, Approval Gates.",
+      "Admin docs should explain governance and isolation without exposing secrets, profile paths, tokens, or raw private data.",
+    ],
+  },
+  {
+    id: "docs-standard",
+    label: "Docs standard",
+    kicker: "Hermes + OpenClaw documentation style",
+    title: "Write Mission Control docs as operator-grade control-plane manuals.",
+    intro:
+      "Mission Control documentation now follows a combined Hermes Agent and OpenClaw style. Hermes contributes practical product documentation: quick starts, exact commands, warnings, references, and troubleshooting. OpenClaw contributes the control-plane mental model: entities, claims, evidence, implications, and follow-up actions.",
+    sections: [
+      {
+        heading: "Required page shape",
+        body:
+          "Every important page should make the operator effective quickly while preserving enough implementation detail for builders and future agents to maintain it.",
+        bullets: [
+          "Metadata: product area, audience, last verified date, source of truth, and related files.",
+          "Summary: what the feature is and why it exists.",
+          "When to use it: operator scenarios and non-goals.",
+          "How to operate it: step-by-step workflows, controls, commands, or routes.",
+          "Evidence standard: what proof should appear when work completes.",
+          "Claims / evidence: what the document asserts and what file, API, test, screenshot, or run output supports it.",
+          "Troubleshooting: symptoms, checks, fixes, and escalation path.",
+          "Follow-up actions: what to improve next or promote into a workflow/routine/skill.",
+        ],
+      },
+      {
+        heading: "Mission Control concept model",
+        body:
+          "Use one consistent relationship model across docs and UI: Intent becomes a Goal inside a Project; a Mission or Workflow breaks it into Tasks; Tasks are assigned to agents, humans, or routines; Outputs and Evidence prove completion; Audit Log preserves the operational trace.",
+        bullets: [
+          "Intent → Goal → Project / Mission → Task → Output / Evidence → Audit Log.",
+          "Workflow is the reusable process; Routine is scheduled recurring execution.",
+          "Skill is reusable know-how; Tool is execution capability; Connector grants access; Runtime is where work runs.",
+          "Approval Gate is an approve/reject decision; Human Task is manual action or missing context.",
+        ],
+      },
+      {
+        heading: "Voice and safety rules",
+        body:
+          "Docs should be practical, direct, and decision-first. Prefer operator language over internal implementation names, but include exact routes, commands, and files when they help builders verify or repair the system.",
+        bullets: [
+          "Say what the operator should do next, not just what the feature is called.",
+          "Use warnings for submit/post/send/purchase/delete/deploy/permission-change boundaries.",
+          "Never print secrets, passwords, tokens, API keys, connection strings, or raw sensitive lead/financial/customer data.",
+          "If a capability is not configured or probed, say not connected rather than implying readiness.",
+        ],
+      },
+      {
+        heading: "Source guide",
+        body:
+          "The full source style guide lives in docs/MISSION_CONTROL_DOCUMENTATION_STYLE_GUIDE.md in the Mission Control repository. This page is the operator-facing version rendered at /docs; the repository guide remains the builder reference for future documentation changes.",
+      },
+    ],
+    cards: [
+      { title: "Hermes style", body: "Product-first docs, quick starts, commands, tips, warnings, configuration references, and troubleshooting." },
+      { title: "OpenClaw style", body: "Control-plane overview, entities, claims, evidence, implications, and follow-up actions." },
+      { title: "Mission Control style", body: "Operator cockpit language: ownership, status, risk, approval, evidence, audit, and next action." },
+      { title: "Docs quality bar", body: "A page is not complete until it says how to operate, how to verify, and what to do when it breaks." },
+    ],
+    example:
+      "A Browser Activity doc should not only say ‘shows sessions’. It should define allowed actions, approval boundaries, screenshot/action-log evidence, stop/takeover controls, and the troubleshooting path when a session is stale.",
+    operatorNotes: [
+      "Use exact paths and commands for builder/admin pages; use plain business language for workspace/operator pages.",
+      "Claims without evidence should be rewritten as assumptions or removed.",
+      "When docs drift from the current UI, update the docs page or mark the capability as planned/admin-only.",
+    ],
+  },
+  {
     id: "hermes-agent",
     label: "Hermes Agent",
     kicker: "Hermes Agent foundation",

@@ -15,6 +15,7 @@ export interface UiPermissions {
 
 export const adminOnlyViews = new Set<ViewKey>([
   "runtimes",
+  "capabilities",
   "costs",
   "agent-platform-admin",
   "users-workspaces",
@@ -37,9 +38,11 @@ export const workspaceViews = new Set<ViewKey>([
   "agent-org",
   "skills",
   "memory",
+  "reflections",
   "tools",
   "plugins",
   "projects",
+  "files",
   "second-brain",
   "board",
   "approvals",
@@ -47,6 +50,7 @@ export const workspaceViews = new Set<ViewKey>([
   "browser-ops",
   "audit",
   "models",
+  "usage",
   "research-runs",
 ]);
 
@@ -87,15 +91,18 @@ export function viewLabelForRole(role: UserRole, view: ViewKey, fallback: string
     "workflow-library": "Workflow Library",
     "agent-org": "My Agent Org",
     projects: "My Projects",
+    files: "Files",
     board: "My Task Board",
     approvals: "Needs Attention",
+    reflections: "Agent Reflections",
     automations: "Routines",
     "browser-ops": "Browser Activity",
-    models: "Model Router",
     "research-runs": "Research Runs",
+    capabilities: "Capability Registry",
     plugins: "Plugins",
     "second-brain": "Workspace Knowledge",
     audit: "My Audit / Evidence",
+    usage: "Usage remaining",
   };
   return labels[view] ?? fallback;
 }

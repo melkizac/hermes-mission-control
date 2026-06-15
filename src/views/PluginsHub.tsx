@@ -3,6 +3,7 @@ import type { PluginHubRecord, PluginsHubResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
 import { Icon } from "../components/Icon";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 const client = new HttpHermesClient();
 
@@ -78,10 +79,12 @@ export function PluginsHub() {
       <header className="skills-hero">
         <div>
           <span className="stub-tag">HERMES PLUGINS</span>
-          <h1>Plugins</h1>
-          <p>
-            All Hermes plugins available to use in this workspace. Inspect bundled and user-installed plugin capabilities, enablement state, source, and setup requirements before turning anything on from the Hermes CLI.
-          </p>
+          <div className="hero-title-with-help">
+            <h1>Plugins</h1>
+            <InfoTooltip label="About Plugins">
+              All Hermes plugins available to use in this workspace. Inspect bundled and user-installed plugin capabilities, enablement state, source, and setup requirements before turning anything on from the Hermes CLI.
+            </InfoTooltip>
+          </div>
         </div>
         <div className="task-hero-actions">
           <button className="task-icon-action dark" aria-label="Refresh plugins" title="Refresh plugins" onClick={() => void load()}>
@@ -129,7 +132,9 @@ export function PluginsHub() {
             {(data?.sources ?? []).map((item) => <option key={item} value={item}>{sourceLabel(item)}</option>)}
           </select>
         </label>
-        <div className="skills-filter-note">Plugin inventory is read from `hermes plugins list --json`. Enable or disable plugins with `hermes plugins enable/disable &lt;name&gt;`; Mission Control shows availability without exposing secrets.</div>
+        <InfoTooltip className="filter-help" label="About plugin inventory">
+          Plugin inventory is read from `hermes plugins list --json`. Enable or disable plugins with `hermes plugins enable/disable &lt;name&gt;`; Mission Control shows availability without exposing secrets.
+        </InfoTooltip>
       </section>
 
       {error && <div className="skills-error">{error}</div>}
@@ -236,9 +241,13 @@ function PluginDrawer({ plugin, tab, setTab, onClose }: { plugin: PluginHubRecor
       {tab === "setup" && (
         <div className="drawer-section stack">
           <h3>CLI control</h3>
-          <p>Mission Control lists plugin availability. Use the Hermes CLI to change plugin state so the runtime can reload safely.</p>
+          <InfoTooltip className="form-help" label="About CLI plugin control">
+            Mission Control lists plugin availability. Use the Hermes CLI to change plugin state so the runtime can reload safely.
+          </InfoTooltip>
           <pre className="skill-source-pre">{`hermes plugins enable ${plugin.name}\nhermes plugins disable ${plugin.name}\nhermes plugins list --json`}</pre>
-          <p className="hint">Plugin changes may require a fresh Hermes session or gateway restart before capabilities appear in active conversations.</p>
+          <InfoTooltip className="form-help" label="About plugin reloads">
+            Plugin changes may require a fresh Hermes session or gateway restart before capabilities appear in active conversations.
+          </InfoTooltip>
         </div>
       )}
     </SlideOverDrawer>

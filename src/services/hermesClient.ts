@@ -1,4 +1,4 @@
-import type { Agent, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionPayload, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, ResearchRunCreateRequest, ResearchRunCreateResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillFileResponse, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse, WorkspaceRunDetailResponse, WorkspaceRunHistoryResponse } from "../types";
+import type { Agent, AgentHandoffMutationResponse, AgentHandoffResponse, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionPayload, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, CapabilityAssignmentMutationResponse, CapabilityMatrixResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, ResearchRunCreateRequest, ResearchRunCreateResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillFileResponse, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse, WorkspaceRunDetailResponse, WorkspaceRunHistoryResponse } from "../types";
 
 /**
  * HermesClient is the ONLY boundary between the UI and the agent runtime.
@@ -47,6 +47,9 @@ export interface HermesClient {
   automationAction(id: string, action: "pause" | "resume" | "run" | "enable_funnel_routine", payload?: AutomationActionPayload): Promise<AutomationActionResponse>;
   enableAutomationRoutine(id: string, payload: AutomationActionPayload): Promise<AutomationActionResponse>;
   listSkills(filters?: { q?: string; category?: string; source?: string }): Promise<SkillsHubResponse>;
+  getCapabilityMatrix(filters?: { agent?: string; agentId?: string; q?: string; type?: string; status?: string; risk?: string; health?: string; assigned?: string }): Promise<CapabilityMatrixResponse>;
+  assignCapability(capabilityId: string, input: { agentId: string; agent?: Record<string, unknown>; reason?: string }): Promise<CapabilityAssignmentMutationResponse>;
+  unassignCapability(capabilityId: string, input: { agentId: string; agent?: Record<string, unknown>; reason?: string }): Promise<CapabilityAssignmentMutationResponse>;
   getSkillFile(id: string): Promise<SkillFileResponse>;
   listPlugins(filters?: { q?: string; category?: string; source?: string; status?: string }): Promise<PluginsHubResponse>;
   listRuntimes(filters?: { q?: string }): Promise<RuntimeRegistryResponse>;
@@ -64,7 +67,7 @@ export interface HermesClient {
   getWorkspaceRun(id: string): Promise<WorkspaceRunDetailResponse>;
   createResearchRun(input: ResearchRunCreateRequest): Promise<ResearchRunCreateResponse>;
   saveWindowsGatewayConfig(input: Partial<{ url: string; token: string; keepToken: boolean; approvedFolders: string[] }>): Promise<WindowsGatewayConfigResponse>;
-  getCosts(filters?: { days?: number }): Promise<CostsResponse>;
+  getCosts(filters?: { days?: number; model?: string }): Promise<CostsResponse>;
   listProjects(filters?: { q?: string; area?: string }): Promise<ProjectsResponse>;
   getDelegateWorkContext(): Promise<DelegateWorkContextResponse>;
   listWorkflows(filters?: { q?: string; category?: string }): Promise<WorkflowLibraryResponse>;
@@ -83,6 +86,9 @@ export interface HermesClient {
   getMemoryContext(filters?: { q?: string; scope?: string; category?: string }): Promise<MemoryContextResponse>;
   listBoard(filters?: { q?: string; status?: BoardStatus | ""; assignee?: string; project?: string; board?: string }): Promise<BoardResponse>;
   getTaskResult(id: string): Promise<TaskResultResponse>;
+  listAgentHandoffs(filters?: { agent?: string; task_id?: string; status?: string }): Promise<AgentHandoffResponse>;
+  createAgentHandoff(input: Partial<{ from_agent: string; to_agent: string; task_id: string; objective: string; context: string; requested_output: string; risk: string; status: string; evidence: Array<Record<string, unknown>> }>): Promise<AgentHandoffMutationResponse>;
+  updateAgentHandoff(id: string, input: Partial<{ objective: string; context: string; requested_output: string; risk: string; status: string; evidence: Array<Record<string, unknown>> }>): Promise<AgentHandoffMutationResponse>;
   getOperatorLinkPreview(filters?: { task?: string; approval?: string; agent?: string }): Promise<OperatorLinkPreviewResponse>;
   createBoardTask(input: Partial<{ title: string; body: string; assignee: string; status: BoardStatus; priority: number; tenant: string; skills: string[] }>): Promise<BoardTaskMutationResponse>;
   updateBoardTask(id: string, input: Partial<{ title: string; body: string; assignee: string; status: BoardStatus; priority: number; tenant: string; result: string; skills: string[] }>): Promise<BoardTaskMutationResponse>;

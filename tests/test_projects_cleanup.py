@@ -16,6 +16,8 @@ def read_src(rel):
 def test_project_backend_filters_support_artifacts_and_canonicalizes_real_projects():
     assert app.is_support_artifact_project('cron:f29300284621')
     assert app.is_support_artifact_project('approval-reclass:cron-output-de0b73d04d992bd8')
+    assert app.is_support_artifact_project('attention-cron-output-0426b7268da92bfd')
+    assert app.is_support_artifact_project('attention_cron_output_0426b7268da92bfd')
     assert app.is_support_artifact_project('phase17-test')
     assert app.is_support_artifact_project('t_33c73874')
 
@@ -36,6 +38,7 @@ def test_project_list_returns_tidy_real_initiatives_only():
     assert 'melverick-second-brain' in ids
 
     assert not any(pid.startswith('cron-') or pid.startswith('cron_') for pid in ids)
+    assert not any(pid.startswith('attention-cron-output-') or pid.startswith('attention_cron_output_') for pid in ids)
     assert not any(pid.startswith('phase17') or pid.startswith('phase16') for pid in ids)
     assert not any(pid.startswith('t_') or pid.startswith('t-') for pid in ids)
     assert 'goal-agentic-ai-course-interest-leadgen-2026-06' not in ids
