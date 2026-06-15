@@ -469,12 +469,13 @@ export class HttpHermesClient implements HermesClient {
     return request<MemoryContextResponse>(`/api/memory${suffix}`);
   }
 
-  async listBoard(filters?: { q?: string; status?: BoardStatus | ""; assignee?: string; project?: string }): Promise<BoardResponse> {
+  async listBoard(filters?: { q?: string; status?: BoardStatus | ""; assignee?: string; project?: string; board?: string }): Promise<BoardResponse> {
     const params = new URLSearchParams();
     if (filters?.q) params.set("q", filters.q);
     if (filters?.status) params.set("status", filters.status);
     if (filters?.assignee) params.set("assignee", filters.assignee);
     if (filters?.project) params.set("project", filters.project);
+    if (filters?.board) params.set("board", filters.board);
     const suffix = params.toString() ? `?${params.toString()}` : "";
     return request<BoardResponse>(`/api/tasks${suffix}`);
   }

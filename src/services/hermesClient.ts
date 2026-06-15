@@ -81,7 +81,7 @@ export interface HermesClient {
   getSecondBrainGraph(): Promise<SecondBrainGraphResponse>;
   getSecondBrainHealth(): Promise<SecondBrainHealthResponse>;
   getMemoryContext(filters?: { q?: string; scope?: string; category?: string }): Promise<MemoryContextResponse>;
-  listBoard(filters?: { q?: string; status?: BoardStatus | ""; assignee?: string; project?: string }): Promise<BoardResponse>;
+  listBoard(filters?: { q?: string; status?: BoardStatus | ""; assignee?: string; project?: string; board?: string }): Promise<BoardResponse>;
   getTaskResult(id: string): Promise<TaskResultResponse>;
   getOperatorLinkPreview(filters?: { task?: string; approval?: string; agent?: string }): Promise<OperatorLinkPreviewResponse>;
   createBoardTask(input: Partial<{ title: string; body: string; assignee: string; status: BoardStatus; priority: number; tenant: string; skills: string[] }>): Promise<BoardTaskMutationResponse>;

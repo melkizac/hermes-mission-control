@@ -906,6 +906,10 @@ export interface BoardTask {
   workspace_path?: string | null;
   branch_name?: string | null;
   tenant?: string | null;
+  board_id?: string;
+  board_slug?: string;
+  board_label?: string;
+  board_is_default?: boolean;
   result: string;
   result_details?: BoardTaskResultDetails | null;
   mission_result?: MissionResult | null;
@@ -924,6 +928,14 @@ export interface BoardTask {
   parents: string[];
 }
 
+export interface BoardSource {
+  id: string;
+  slug: string;
+  label: string;
+  is_default: boolean;
+  source_kind: string;
+}
+
 export interface BoardResponse {
   tasks: BoardTask[];
   lanes: Record<BoardStatus, BoardTask[]>;
@@ -938,9 +950,14 @@ export interface BoardResponse {
     error: number;
     assignees: string[];
     projects: string[];
+    boards?: string[];
   };
   statuses: BoardStatus[];
   projects: string[];
+  boards?: BoardSource[];
+  sources?: BoardSource[];
+  board_errors?: Array<{ board: string; status: string; reason: string }>;
+  warnings?: Array<{ board: string; status: string; reason: string }>;
 }
 
 export interface BoardTaskMutationResponse {

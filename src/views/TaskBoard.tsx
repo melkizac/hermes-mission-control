@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Agent, BoardStatus, BoardTask } from "../types";
+import type { Agent, BoardSource, BoardStatus, BoardTask } from "../types";
 import { ArtifactCard, EvidenceTimeline, ResultSummaryPanel } from "../components/MissionFoundation";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { useStore } from "../services/store";
@@ -47,9 +47,11 @@ export function TaskBoard() {
   const [status, setStatus] = useState<BoardStatus | "">("");
   const [assignee, setAssignee] = useState("");
   const [project, setProject] = useState("");
+  const [board, setBoard] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
   const [tasks, setTasks] = useState<BoardTask[]>([]);
   const [summary, setSummary] = useState({ total: 0, todo: 0, queued: 0, scheduled: 0, running: 0, blocked: 0, done: 0, error: 0, assignees: [] as string[], projects: [] as string[] });
+  const [boards, setBoards] = useState<BoardSource[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab>("overview");
@@ -67,9 +69,10 @@ export function TaskBoard() {
   const load = async () => {
     try {
       setLoading(true);
-      const data = await client.listBoard({ q, status, assignee, project });
+      const data = await client.listBoard({ q, status, assignee, project, board });
       setTasks(data.tasks);
       setSummary({ ...data.summary, projects: data.summary.projects ?? data.projects ?? [] });
+      setBoards(data.boards ?? data.sources ?? []);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load task board");
@@ -81,12 +84,12 @@ export function TaskBoard() {
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 180);
     return () => window.clearTimeout(timer);
-  }, [q, status, assignee, project]);
+  }, [q, status, assignee, project, board]);
 
   useEffect(() => {
     setLaneVisibleCounts(initialLaneCounts());
     setListVisibleCount(TASK_PAGE_SIZE);
-  }, [q, status, assignee, project, viewMode]);
+  }, [q, status, assignee, project, board, viewMode]);
 
   useEffect(() => {
     const close = (event: KeyboardEvent) => {
@@ -299,6 +302,7 @@ export function TaskBoard() {
         <select value={status} onChange={(e) => setStatus(e.target.value as BoardStatus | "")}><option value="">All status</option>{statusOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select>
         <select value={assignee} onChange={(e) => setAssignee(e.target.value)}><option value="">All owners</option>{summary.assignees.map((item) => <option key={item} value={item}>{item}</option>)}</select>
         <select value={project} onChange={(e) => setProject(e.target.value)}><option value="">All projects</option>{summary.projects.map((item) => <option key={item} value={item}>{item}</option>)}</select>
+        <select value={board} onChange={(e) => setBoard(e.target.value)} aria-label="Filter by board source"><option value="">All boards</option>{boards.map((item) => <option key={item.id || item.slug} value={item.slug || item.id}>{item.label}{item.is_default ? " · default" : ""}</option>)}</select>
         <span>{loading ? "Loading…" : `${tasks.length} issues shown`}</span>
       </section>
 
