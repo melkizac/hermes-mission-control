@@ -575,6 +575,42 @@ export interface RouterConfig {
   error?: string;
 }
 
+
+export interface AgentRuntimeAccount {
+  id: string;
+  label: string;
+  email_hint?: string;
+  provider: string;
+  credential_env: string;
+  billing_owner?: string;
+  notes?: string;
+  configured?: boolean;
+  secret_status?: string;
+}
+
+export interface AgentRuntimeAssignment {
+  agent_id: string;
+  account_id: string;
+  model_id: string;
+  reasoning: string;
+  apply_mode: string;
+  updated_at?: string;
+  updated_by?: string;
+  note?: string;
+}
+
+export interface AgentRuntimeSwitcher {
+  ok: boolean;
+  updated_at?: string;
+  accounts: AgentRuntimeAccount[];
+  models: RouterModel[];
+  agents: Array<{ id: string; name: string; squad?: string; status?: string; processingRequests?: string[] }>;
+  assignments: Record<string, AgentRuntimeAssignment>;
+  audit: Array<{ id: string; agent_id: string; from_account?: string; to_account?: string; from_model?: string; to_model?: string; account_label?: string; model_label?: string; apply_mode?: string; changed_by?: string; timestamp?: string }>;
+  summary: { accounts: number; configured_accounts: number; agents: number; assigned: number };
+  error?: string;
+}
+
 export interface Message {
   id: string;
   role: MessageRole;

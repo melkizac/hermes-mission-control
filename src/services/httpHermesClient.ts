@@ -1,4 +1,4 @@
-import type { Agent, AgentHandoffMutationResponse, AgentHandoffResponse, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, CapabilityAssignmentMutationResponse, CapabilityAssessmentResponse, CapabilityIntakeMutationResponse, CapabilityIntakeResponse, CapabilityMatrixResponse, CapabilityRegistryResponse, CapabilitySandboxResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionPayload, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, ResearchRunCreateRequest, ResearchRunCreateResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillFileResponse, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
+import type { Agent, AgentRuntimeAssignment, AgentRuntimeSwitcher, AgentHandoffMutationResponse, AgentHandoffResponse, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, CapabilityAssignmentMutationResponse, CapabilityAssessmentResponse, CapabilityIntakeMutationResponse, CapabilityIntakeResponse, CapabilityMatrixResponse, CapabilityRegistryResponse, CapabilitySandboxResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionPayload, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, ResearchRunCreateRequest, ResearchRunCreateResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillFileResponse, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
 import { cachedJsonRequest, invalidateQueryCache } from "./queryCache";
 
@@ -142,6 +142,17 @@ export class HttpHermesClient implements HermesClient {
 
   async getModelRouter(): Promise<RouterConfig> {
     return request<RouterConfig>("/api/model-router");
+  }
+
+  async getAgentRuntimes(): Promise<AgentRuntimeSwitcher> {
+    return request<AgentRuntimeSwitcher>("/api/agent-runtimes");
+  }
+
+  async saveAgentRuntime(agentId: string, input: AgentRuntimeAssignment): Promise<AgentRuntimeSwitcher> {
+    return request<AgentRuntimeSwitcher>(`/api/agent-runtimes/${encodeURIComponent(agentId)}`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
   }
 
   async stopMessage(agentId: string, requestId?: string): Promise<{ ok: boolean; stopped: string[]; count: number }> {

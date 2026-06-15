@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../services/store";
 import { Icon } from "./Icon";
-import type { Agent, CapabilityMatrixCapability, CapabilityMatrixRow, ConfigFile } from "../types";
+import type { Agent, AgentRuntimeAssignment, AgentRuntimeSwitcher, CapabilityMatrixCapability, CapabilityMatrixRow, ConfigFile, RouterModel } from "../types";
 import { FileEditorDrawer } from "./FileEditorDrawer";
 import { AgentDetailDrawerShell, type AgentDrawerTab } from "./AgentDetailDrawerShell";
 
@@ -38,7 +38,10 @@ export function ContextPanel({
   const [capabilityLoading, setCapabilityLoading] = useState(false);
   const [capabilityMessage, setCapabilityMessage] = useState<string | null>(null);
   const [capabilityError, setCapabilityError] = useState<string | null>(null);
-  const { addSkill, removeSkill, deleteAgent, permissions, getCapabilityMatrix, assignCapability, unassignCapability } = useStore();
+  const { addSkill, removeSkill, deleteAgent, permissions, getCapabilityMatrix, assignCapability, unassignCapability, getAgentRuntimes, saveAgentRuntime } = useStore();
+  const [runtimeSwitcher, setRuntimeSwitcher] = useState<AgentRuntimeSwitcher | null>(null);
+  const [runtimeStatus, setRuntimeStatus] = useState<string>("");
+  const [runtimeSaving, setRuntimeSaving] = useState(false);
   const canEditAgent = permissions.canEditGlobalAgents;
   const canEditAgentIdentity = permissions.canEditAgentIdentity;
   const canEditFile = (file: ConfigFile) => canEditAgent || Boolean(file.editable) || (canEditAgentIdentity && file.kind === "soul");
@@ -59,6 +62,48 @@ export function ContextPanel({
       setCapabilityError(err instanceof Error ? err.message : "Unable to load capability matrix");
     } finally {
       setCapabilityLoading(false);
+    }
+  };
+
+  const loadAgentRuntime = async () => {
+    setRuntimeStatus("Loading authorised model assignments…");
+    try {
+      const data = await getAgentRuntimes();
+      setRuntimeSwitcher(data);
+      setRuntimeStatus("");
+    } catch (err) {
+      setRuntimeStatus(err instanceof Error ? err.message : "Unable to load authorised model assignments");
+    }
+  };
+
+  useEffect(() => {
+    if (!collapsed) void loadAgentRuntime();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent.id, collapsed]);
+
+  const saveAuthorisedModelAssignment = async (modelId: string) => {
+    if (!runtimeSwitcher) return;
+    const current = runtimeSwitcher.assignments?.[agent.id];
+    if (!current) {
+      setRuntimeStatus("This agent is not present in the runtime assignment registry yet.");
+      return;
+    }
+    const selectedModel = runtimeSwitcher.models.find((model) => model.id === modelId);
+    if (!selectedModel?.authorized || !selectedModel?.enabled) {
+      setRuntimeStatus("Only authorised and enabled models can be assigned to agents.");
+      return;
+    }
+    const next: AgentRuntimeAssignment = { ...current, model_id: modelId, apply_mode: current.apply_mode || "next_session", reasoning: current.reasoning || "balanced" };
+    setRuntimeSaving(true);
+    setRuntimeStatus(`Saving ${selectedModel.label || selectedModel.model} for ${agent.name}…`);
+    try {
+      const data = await saveAgentRuntime(agent.id, next);
+      setRuntimeSwitcher(data);
+      setRuntimeStatus(`Assigned ${selectedModel.label || selectedModel.model}. New sessions use this authorised model; active runs keep their existing runtime.`);
+    } catch (err) {
+      setRuntimeStatus(err instanceof Error ? err.message : "Model assignment failed");
+    } finally {
+      setRuntimeSaving(false);
     }
   };
 
@@ -86,6 +131,10 @@ export function ContextPanel({
   };
 
   const workspaceCapabilities = capabilityRow?.capabilities ?? [];
+  const runtimeAssignment = runtimeSwitcher?.assignments?.[agent.id];
+  const runtimeModels = runtimeSwitcher?.models ?? [];
+  const authorizedModels = runtimeModels.filter((model) => model.enabled && model.authorized);
+  const assignedModel = runtimeModels.find((model) => model.id === runtimeAssignment?.model_id);
 
   if (collapsed) {
     return (
@@ -131,7 +180,15 @@ export function ContextPanel({
         {tab === "overview" && (
           <>
             <div className="sec-l">Runtime</div>
-            <Info k="Model" v={<span className="mono">{agent.model}</span>} />
+            <AgentModelAssignmentControl
+              agent={agent}
+              assignment={runtimeAssignment}
+              assignedModel={assignedModel}
+              authorizedModels={authorizedModels}
+              saving={runtimeSaving}
+              status={runtimeStatus}
+              onChange={(modelId) => void saveAuthorisedModelAssignment(modelId)}
+            />
             <Info k="Profile" v={<span className="mono">{agent.profilePath}</span>} />
             <Info k="Status" v={<span className={agent.status === "active" || agent.status === "working" ? "hi" : ""}>{agent.statusLabel || cap(agent.status)}</span>} />
             <Info k="Availability" v={agent.availability || "—"} />
@@ -208,8 +265,8 @@ export function ContextPanel({
             <p className="mini-note">Hermes profile = isolated runtime identity/configuration. Secret values are never shown here.</p>
             <Info k="Profile" v={<span className="mono">{agent.profile_details?.profile_id || agent.id}</span>} />
             <Info k="Identity" v={agent.profile_details?.identity?.name || agent.name} />
-            <Info k="Provider" v={agent.profile_details?.model_routing?.provider || "runtime default"} />
-            <Info k="Model" v={<span className="mono">{agent.profile_details?.model_routing?.model || agent.model}</span>} />
+            <Info k="Provider" v={assignedModel?.provider || agent.profile_details?.model_routing?.provider || "runtime default"} />
+            <Info k="Assigned model" v={<span className="mono">{assignedModel?.model || agent.profile_details?.model_routing?.model || agent.model}</span>} />
             <Info k="Toolsets" v={String(agent.profile_details?.toolsets?.length ?? agent.tools?.length ?? 0)} />
             <Info k="Skills" v={String(agent.skills.length)} />
             <Info k="Memory" v={`${agent.profile_details?.memory?.entries ?? 0} entries`} />
@@ -460,6 +517,47 @@ function FileRow({ file, onOpen, disabled }: { file: ConfigFile; onOpen: () => v
           <Icon name="download" size={14} />
         </span>
       </div>
+    </div>
+  );
+}
+
+function modelOptionLabel(model: RouterModel) {
+  const auth = model.authorized ? "authorised" : "not authorised";
+  return `${model.label || model.model} · ${model.provider}/${model.model} · ${model.tier} · ${auth}`;
+}
+
+function AgentModelAssignmentControl({
+  agent,
+  assignment,
+  assignedModel,
+  authorizedModels,
+  saving,
+  status,
+  onChange,
+}: {
+  agent: Agent;
+  assignment?: AgentRuntimeAssignment;
+  assignedModel?: RouterModel;
+  authorizedModels: RouterModel[];
+  saving: boolean;
+  status: string;
+  onChange: (modelId: string) => void;
+}) {
+  const selectedValue = assignment?.model_id && authorizedModels.some((model) => model.id === assignment.model_id) ? assignment.model_id : "";
+  return (
+    <div className="agent-model-assignment">
+      <label className="agent-model-selector">
+        <span>Select authorised model for {agent.name}</span>
+        <select value={selectedValue} disabled={saving || authorizedModels.length === 0} onChange={(event) => onChange(event.target.value)}>
+          <option value="">{assignedModel && !assignedModel.authorized ? `${assignedModel.label || assignedModel.model} is not authorised` : "Choose authorised model"}</option>
+          {authorizedModels.map((model) => <option key={model.id} value={model.id}>{modelOptionLabel(model)}</option>)}
+        </select>
+      </label>
+      <p className="mini-note">
+        {assignedModel ? `Current assignment: ${assignedModel.provider}/${assignedModel.model}${assignedModel.authorized ? "" : " · not authorised"}.` : "Current assignment: router default."}
+        {" "}Only authorised and enabled models can be assigned to agents.
+      </p>
+      {status && <div className="mini-note runtime-status-note">{status}</div>}
     </div>
   );
 }

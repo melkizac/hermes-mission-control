@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Agent, Approval, Attachment, CapabilityAssignmentMutationResponse, CapabilityMatrixResponse, ConfigFile, Message, MissionControlMe, ModelRoutingSelection, ReplyContext, RouterConfig, Skill, ViewKey } from "../types";
+import type { Agent, AgentRuntimeAssignment, AgentRuntimeSwitcher, Approval, Attachment, CapabilityAssignmentMutationResponse, CapabilityMatrixResponse, ConfigFile, Message, MissionControlMe, ModelRoutingSelection, ReplyContext, RouterConfig, Skill, ViewKey } from "../types";
 import type { UiPermissions } from "./uiPermissions";
 import { adminOnlyViews, canAccessView, permissionsForRole, safeDefaultViewForRole } from "./uiPermissions";
 import type { HermesClient } from "./hermesClient";
@@ -50,6 +50,8 @@ interface StoreValue {
   send: (text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection }) => Promise<Message[]>;
   sendToAgent: (agentId: string, text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection }) => Promise<Message[]>;
   getModelRouter: () => Promise<RouterConfig>;
+  getAgentRuntimes: () => Promise<AgentRuntimeSwitcher>;
+  saveAgentRuntime: (agentId: string, input: AgentRuntimeAssignment) => Promise<AgentRuntimeSwitcher>;
   stopProcessing: (requestId?: string) => Promise<void>;
   stopProcessingForAgent: (agentId: string, requestId?: string) => Promise<void>;
   refreshSelected: () => Promise<void>;
@@ -291,6 +293,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const getModelRouter = useCallback(() => cachedJsonRequest("chat-page:model-router", () => client.getModelRouter(), { staleAfterMs: 60_000 }), []);
+  const getAgentRuntimes = useCallback(() => client.getAgentRuntimes(), []);
+  const saveAgentRuntime = useCallback((agentId: string, input: AgentRuntimeAssignment) => client.saveAgentRuntime(agentId, input), []);
 
   const refreshAgent = useCallback(async (agentId: string) => {
     if (!agentId) return;
@@ -400,6 +404,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     send,
     sendToAgent,
     getModelRouter,
+    getAgentRuntimes,
+    saveAgentRuntime,
     stopProcessing,
     stopProcessingForAgent,
     refreshSelected,

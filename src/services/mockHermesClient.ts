@@ -1,4 +1,4 @@
-import type { Agent, AgentHandoffMutationResponse, AgentHandoffResponse, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, CapabilityAssignmentMutationResponse, CapabilityMatrixResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, CreateResearchRunRequest, CreateResearchRunResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse, WorkspaceRunDetailResponse, WorkspaceRunHistoryResponse } from "../types";
+import type { Agent, AgentRuntimeAssignment, AgentRuntimeSwitcher, AgentHandoffMutationResponse, AgentHandoffResponse, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, CapabilityAssignmentMutationResponse, CapabilityMatrixResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, CreateResearchRunRequest, CreateResearchRunResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse, WorkspaceRunDetailResponse, WorkspaceRunHistoryResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
 import { seedAgents, seedApprovals } from "../data/mockData";
 
@@ -237,6 +237,32 @@ export class MockHermesClient implements HermesClient {
         { id: "mock-economy", label: "Mock Economy", provider: "mock", model: "economy-worker", tier: "economy", enabled: true, authorized: true, credential_env: "MOCK_API_KEY", cost_weight: 1 },
       ],
     };
+  }
+
+  async getAgentRuntimes(): Promise<AgentRuntimeSwitcher> {
+    await delay(40);
+    const router = await this.getModelRouter();
+    const assignments: AgentRuntimeSwitcher["assignments"] = {};
+    for (const agent of this.agents) {
+      assignments[agent.id] = { agent_id: agent.id, account_id: "mock-account", model_id: router.models[0]?.id || "mock-frontier", reasoning: "balanced", apply_mode: "next_session", updated_at: "mock", updated_by: "mock" };
+    }
+    return {
+      ok: true,
+      updated_at: "mock",
+      accounts: [{ id: "mock-account", label: "Mock authorised account", provider: "mock", credential_env: "MOCK_API_KEY", configured: true, secret_status: "configured" }],
+      models: router.models,
+      agents: this.agents.map((agent) => ({ id: agent.id, name: agent.name, squad: agent.squad, status: agent.status, processingRequests: agent.processingRequests })),
+      assignments,
+      audit: [],
+      summary: { accounts: 1, configured_accounts: 1, agents: this.agents.length, assigned: Object.keys(assignments).length },
+    };
+  }
+
+  async saveAgentRuntime(agentId: string, input: AgentRuntimeAssignment): Promise<AgentRuntimeSwitcher> {
+    await delay(40);
+    const data = await this.getAgentRuntimes();
+    data.assignments[agentId] = { ...input, agent_id: agentId, updated_at: "now", updated_by: "mock" };
+    return data;
   }
 
   async listWorkflows(): Promise<WorkflowLibraryResponse> {
