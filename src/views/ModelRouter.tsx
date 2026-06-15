@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { InfoTooltip } from "../components/InfoTooltip";
+import type { CostsResponse, ModelUsageWindow } from "../types";
 
 type RouterModel = {
   id: string;
@@ -43,6 +44,8 @@ type RoutePlan = {
   steps: Array<{ id: string; purpose: string; title: string; complexity: number; assigned_model?: RouterModel | null; spawn_subagent: boolean }>;
   cost_control?: { estimated_savings?: string; frontier_only_for?: string };
 };
+
+type ModelUsageLimit = NonNullable<CostsResponse["model_usage"]>;
 
 const emptyConfig: RouterConfig = { enabled: true, updated_at: "", policy: {}, models: [], summary: { total: 0, enabled: 0, authorized: 0, frontier: 0 } };
 
@@ -90,7 +93,48 @@ function authLabel(model: RouterModel) {
   return "not authorised";
 }
 
-function ModelEditor({ model, onChange, onRemove }: { model: RouterModel; onChange: (m: RouterModel) => void; onRemove: () => void }) {
+function pctLabel(value?: number | null) {
+  if (value === undefined || value === null || !Number.isFinite(Number(value))) return "—";
+  return `${Math.round(Math.max(0, Math.min(100, Number(value))))}%`;
+}
+
+function remainingPct(window?: ModelUsageWindow) {
+  const explicit = window?.remaining_percent === undefined || window?.remaining_percent === null ? NaN : Number(window.remaining_percent);
+  if (Number.isFinite(explicit)) return Math.max(0, Math.min(100, explicit));
+  return null;
+}
+
+function UsageLimitRow({ window, available = true }: { window?: ModelUsageWindow; available?: boolean }) {
+  const remaining = remainingPct(window);
+  const label = remaining === null ? "—" : pctLabel(remaining);
+  const windowLabel = window?.label || "Rate limit";
+  return (
+    <div className="usage-limit-row usage-limit-compact router-usage-row">
+      <div className="usage-limit-main usage-limit-grid">
+        <b>{windowLabel}</b>
+        <strong>{label}</strong>
+        <span>{window?.reset_label || "—"}</span>
+      </div>
+      <div className="usage-limit-progress" aria-label={`${windowLabel} has ${label} remaining`}>
+        <i className={available && remaining !== null ? "" : "unavailable"} style={{ width: `${available && remaining !== null ? remaining : 0}%` }} />
+      </div>
+      <div className="usage-limit-meta">
+        <span>{remaining === null ? "provider quota unavailable" : `${label} remaining`}</span>
+        <span>{window?.reset_label ? `resets ${window.reset_label}` : "reset unavailable"}</span>
+      </div>
+    </div>
+  );
+}
+
+function findUsageForModel(model: RouterModel, rows: ModelUsageLimit[]) {
+  const keys = new Set([model.model, model.id, `${model.provider}/${model.model}`].map((x) => String(x || "").trim()).filter(Boolean));
+  return rows.find((usage) => {
+    const ids = [usage.selected_model, ...(usage.models || []), ...(usage.aliases || [])].map((x) => String(x || "").trim());
+    return ids.some((id) => keys.has(id));
+  });
+}
+
+function ModelEditor({ model, usage, onChange, onRemove }: { model: RouterModel; usage?: ModelUsageLimit; onChange: (m: RouterModel) => void; onRemove: () => void }) {
   return <article className={`router-model-card ${model.enabled ? "" : "disabled"}`}>
     <div className="router-model-head">
       <div><b>{model.label || model.model}</b><small>{modelSummary(model)}</small></div>
@@ -106,12 +150,18 @@ function ModelEditor({ model, onChange, onRemove }: { model: RouterModel; onChan
     </div>
     <label className="wide-label">Best for<input value={(model.best_for || []).join(", ")} onChange={(e) => onChange({ ...model, best_for: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })} placeholder="planning, strategy, extraction" /></label>
     <label className="wide-label">Notes<textarea value={model.notes || ""} onChange={(e) => onChange({ ...model, notes: e.target.value })} /></label>
-    <div className="router-actions"><label className="toggle-line"><input type="checkbox" checked={model.enabled} onChange={(e) => onChange({ ...model, enabled: e.target.checked })} /> Enabled for agent assignment</label><button className="btn ghost small" onClick={onRemove}>Remove</button></div>
+    <div className="router-actions"><label className="toggle-line"><input type="checkbox" checked={model.enabled} onChange={(e) => onChange({ ...model, enabled: e.target.checked })} /> Enabled for routing</label><button className="btn ghost small" onClick={onRemove}>Remove</button></div>
+    <div className={`router-model-usage ${usage && usage.available !== false && !usage.error ? "" : "unavailable"}`}>
+      {usage?.error && <p>{usage.error}</p>}
+      <UsageLimitRow window={usage?.daily} available={Boolean(usage && usage.available !== false && !usage.error)} />
+      <UsageLimitRow window={usage?.weekly} available={Boolean(usage && usage.available !== false && !usage.error)} />
+    </div>
   </article>;
 }
 
 export function ModelRouter() {
   const [draft, setDraft] = useState<RouterConfig>(emptyConfig);
+  const [costs, setCosts] = useState<CostsResponse | null>(null);
   const [instruction, setInstruction] = useState("Plan and execute a client-facing automation feature, split the work into sub-agents, then verify the result and control cost.");
   const [plan, setPlan] = useState<RoutePlan | null>(null);
   const [status, setStatus] = useState<string>("Loading…");
@@ -122,8 +172,9 @@ export function ModelRouter() {
 
   const load = async () => {
     try {
-      const data = await request<RouterConfig>("/api/model-router");
+      const [data, costData] = await Promise.all([request<RouterConfig>("/api/model-router"), request<CostsResponse>("/api/costs?days=30")]);
       setDraft(JSON.parse(JSON.stringify(data)));
+      setCosts(costData);
       setStatus("");
     } catch (e) { setStatus(e instanceof Error ? e.message : String(e)); }
   };
@@ -176,13 +227,14 @@ export function ModelRouter() {
   };
 
   const hermesActive = draft.hermes_settings?.active;
+  const usageModels = costs?.model_usage_models?.length ? costs.model_usage_models : costs?.model_usage ? [costs.model_usage] : [];
 
   return <div className="page router-page">
     <section className="hero router-hero">
       <div>
-        <span className="stub-tag">MODEL ROUTER</span>
-        <div className="hero-title-with-help"><h1>Authorised models available for agents</h1><InfoTooltip label="About Model Router">Register models, verify server-side authorisation, and control which models may be assigned from each agent detail drawer.</InfoTooltip></div>
-        <p>Only authorised and enabled models can be assigned to agents. Secrets stay server-side; this page shows model availability and credential status only.</p>
+        <span className="stub-tag">SETTINGS · MODELS</span>
+        <div className="hero-title-with-help"><h1>Models & rate limits</h1><InfoTooltip label="About Models & rate limits">Register models, verify server-side authorisation, control agent routing, and view provider rate-limit windows in one Settings surface.</InfoTooltip></div>
+        <p>Each model card combines the authorised routing fields with provider rate-limit remaining bars. Secrets stay server-side; this page shows model availability, credential status, and quota evidence only.</p>
       </div>
       <button className="btn dark" onClick={() => void save()} disabled={saving}>{saving ? "Saving…" : "Save allow-list"}</button>
     </section>
@@ -214,8 +266,8 @@ export function ModelRouter() {
     </section>
 
     <section className="router-panel">
-      <div className="section-head"><div><h2>Assignable model list</h2><p>These are the models an operator can select in the agent detail drawer. Save changes here, then open an agent and use the model dropdown selector.</p></div><button className="btn ghost" onClick={addModel}>Add model manually</button></div>
-      <div className="router-model-grid">{draft.models.map((model, index) => <ModelEditor key={model.id || index} model={model} onChange={(next) => setDraft({ ...draft, models: draft.models.map((m, i) => i === index ? next : m) })} onRemove={() => setDraft({ ...draft, models: draft.models.filter((_, i) => i !== index) })} />)}</div>
+      <div className="section-head"><div><h2>Model access & rate limits</h2><p>These cards replace the separate model routing and rate-limit pages: edit routing metadata, authorisation status, and provider quota remaining together.</p></div><button className="btn ghost" onClick={addModel}>Add model manually</button></div>
+      <div className="router-model-grid">{draft.models.map((model, index) => <ModelEditor key={model.id || index} model={model} usage={findUsageForModel(model, usageModels)} onChange={(next) => setDraft({ ...draft, models: draft.models.map((m, i) => i === index ? next : m) })} onRemove={() => setDraft({ ...draft, models: draft.models.filter((_, i) => i !== index) })} />)}</div>
       {draft.models.length === 0 && <div className="empty big">No models registered yet. Add the current Hermes CLI model or add one manually.</div>}
     </section>
 

@@ -4148,6 +4148,41 @@ input, select, textarea { font-family: inherit; }
   resize: vertical;
 }
 
+
+.router-model-usage {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.router-model-usage p {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.router-model-usage.unavailable .usage-limit-progress i {
+  background: #cbd5e1;
+}
+
+.router-usage-row {
+  padding: 10px 0 2px;
+}
+
+.router-usage-row .usage-limit-main b {
+  font-size: 16px;
+}
+
+.router-usage-row .usage-limit-grid strong {
+  font-size: 16px;
+}
+
+.router-usage-row .usage-limit-progress {
+  height: 8px;
+  margin: 8px 0 7px;
+}
+
 .router-actions {
   display: flex;
   justify-content: space-between;

@@ -54,7 +54,6 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
     label: "Workforce",
     items: [
       { key: "agents", label: "Agents", icon: "agents" },
-      { key: "models", label: "Model Router", icon: "modelRouter" },
       { key: "agent-org", label: "Org Chart", icon: "agentOrg" },
       { key: "skills", label: "Skills", icon: "skills" },
       { key: "memory", label: "Memory", icon: "memory" },
@@ -70,7 +69,7 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
     items: [
       { key: "profile", label: "Profile", icon: "profile" },
       { key: "settings", label: "Settings", icon: "settings" },
-      { key: "usage", label: "Rate limits", icon: "usage" },
+      { key: "models", label: "Models & limits", icon: "modelRouter" },
       { href: "/docs#daily-flow", label: "Docs", icon: "file" },
       { action: "logout", label: "Log out", icon: "logout" },
     ],
@@ -94,7 +93,6 @@ const adminConsoleGroups: NavGroup[] = [
       { key: "runtimes", label: "Runtime Connectors", icon: "runtimes" },
       { key: "workflow-library", label: "Workflow Templates Admin", icon: "skills" },
       { key: "research-runs", label: "Research Run Monitor", icon: "audit" },
-      { key: "models", label: "Model Router", icon: "modelRouter" },
       { key: "capabilities", label: "Capabilities", icon: "setup" },
       { key: "automations", label: "Routine Governance", icon: "automations" },
     ],
@@ -228,7 +226,7 @@ export function NavRail() {
   const visibleGroups = uiMode === "admin" ? adminConsoleGroups : simplifiedWorkspaceGroups;
   const workspaceSystemGroup = simplifiedWorkspaceGroups.find((group) => group.system);
   const workspaceSystemItems = workspaceSystemGroup?.items ?? [];
-  const settingsActive = view === "profile" || view === "settings" || view === "usage";
+  const settingsActive = view === "profile" || view === "settings" || view === "models" || view === "usage";
   const workforceSelectorItems = simplifiedWorkspaceGroups
     .find((group) => group.label === "Workforce")
     ?.items.filter((item): item is NavRouteItem => isRouteItem(item) && workforceSelectorKeys.includes(item.key)) ?? [];
