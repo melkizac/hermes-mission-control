@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent } from "react";
 import { useStore } from "../services/store";
 import { Icon } from "./Icon";
 import type { Agent, Attachment, Message, ModelRoutingSelection, ProjectChatResponse, ReplyContext, RouterConfig } from "../types";
@@ -98,6 +98,7 @@ export function ChatThread({
   agent,
   onOpenDetails,
   onOpenWorkerLog,
+  onOpenRateLimits,
   projectChats,
   selectedProjectId = "all",
   selectedSessionId = "all",
@@ -105,6 +106,7 @@ export function ChatThread({
   agent: Agent;
   onOpenDetails?: () => void;
   onOpenWorkerLog?: () => void;
+  onOpenRateLimits?: () => void;
   projectChats?: ProjectChatResponse | null;
   selectedProjectId?: string;
   selectedSessionId?: string;
@@ -116,26 +118,30 @@ export function ChatThread({
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pendingMessage, setPendingMessage] = useState<{ text: string; attachments: Attachment[]; replyTo?: ReplyContext } | null>(null);
-  const [processingStartedAt, setProcessingStartedAt] = useState<number | null>(null);
+  const [pendingMessage, setPendingMessage] = useState<{ agentId: string; text: string; attachments: Attachment[]; replyTo?: ReplyContext } | null>(null);
+  const [processingStartedAt, setProcessingStartedAt] = useState<{ agentId: string; startedAt: number } | null>(null);
   const [processingNow, setProcessingNow] = useState(() => Date.now());
   const [routerConfig, setRouterConfig] = useState<RouterConfig | null>(null);
+  const [modelRouterLoading, setModelRouterLoading] = useState(false);
   const [modelSelection, setModelSelection] = useState(() => window.localStorage.getItem("hmc:model-selection") || "auto");
   const [lastSeenKey, setLastSeenKey] = useState<string | null | undefined>(undefined);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const [agentActionMenuOpen, setAgentActionMenuOpen] = useState(false);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const activeRequestRef = useRef<{ id: string; controller: AbortController } | null>(null);
+  const agentActionMenuRef = useRef<HTMLDivElement | null>(null);
+  const activeRequestRef = useRef<{ id: string; agentId: string; controller: AbortController } | null>(null);
   const unreadRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const p = statusPill[agent.status] || statusPill.degraded;
   const storageKey = `hmc:last-seen-message:${agent.id}`;
   const enabledModels = useMemo(() => (routerConfig?.models ?? []).filter((model) => model.enabled), [routerConfig]);
   const selectedModel = useMemo(() => enabledModels.find((model) => model.id === modelSelection), [enabledModels, modelSelection]);
-  const modelRouting: ModelRoutingSelection = selectedModel ? { mode: "manual", modelId: selectedModel.id } : { mode: "auto" };
   const modelSelectorLabel = selectedModel
     ? `${selectedModel.label || selectedModel.model} · ${selectedModel.tier}${selectedModel.authorized ? "" : " · key missing"}`
+    : modelRouterLoading
+      ? "Loading model options…"
     : routerConfig?.enabled === false
       ? "Default Hermes model"
       : "Auto-select by complexity";
@@ -153,10 +159,11 @@ export function ChatThread({
     () => projectChats?.projects.find((project) => project.id === selectedProjectId)?.name,
     [projectChats, selectedProjectId],
   );
-  const activeSessionTitle = useMemo(
-    () => projectSessions.find((session) => session.id === selectedSessionId)?.title,
+  const activeSession = useMemo(
+    () => projectSessions.find((session) => session.id === selectedSessionId),
     [projectSessions, selectedSessionId],
   );
+  const activeSessionTitle = activeSession?.title;
   const sortedMessages = useMemo(
     () =>
       [...scopedMessages].sort(
@@ -189,18 +196,21 @@ export function ChatThread({
     () => sortedMessages.find((m) => m.role === "user" && m.requestId === activeBackendRequestId),
     [activeBackendRequestId, sortedMessages],
   );
+  const activeLocalRequest = activeRequestRef.current?.agentId === agent.id ? activeRequestRef.current : null;
   const pendingBackendUserVisible = useMemo(
-    () => sortedMessages.some((m) => m.role === "user" && m.requestId === activeRequestRef.current?.id && Boolean(m.text?.trim() || m.attachments?.length)),
-    [sortedMessages],
+    () => sortedMessages.some((m) => m.role === "user" && m.requestId === activeLocalRequest?.id && Boolean(m.text?.trim() || m.attachments?.length)),
+    [activeLocalRequest?.id, sortedMessages],
   );
-  const visiblePendingMessage = pendingBackendUserVisible ? null : pendingMessage;
+  const visiblePendingMessage = pendingMessage?.agentId === agent.id && !pendingBackendUserVisible ? pendingMessage : null;
   const activeBackendStartedAt = activeBackendUserMessage?.ts
     ? activeBackendUserMessage.ts * 1000
     : activeBackendRequestDetail?.started_at
       ? activeBackendRequestDetail.started_at * 1000
       : null;
-  const isProcessing = sending || Boolean(activeBackendRequestId);
-  const effectiveProcessingStartedAt = processingStartedAt ?? activeBackendStartedAt;
+  const activeLocalStartedAt = processingStartedAt?.agentId === agent.id ? processingStartedAt.startedAt : null;
+  const sendingForThisAgent = sending && activeLocalRequest?.agentId === agent.id;
+  const isProcessing = sendingForThisAgent || Boolean(activeBackendRequestId);
+  const effectiveProcessingStartedAt = activeLocalStartedAt ?? activeBackendStartedAt;
   const processingElapsedLabel = effectiveProcessingStartedAt ? formatRunDuration(processingNow - effectiveProcessingStartedAt) : "0:00";
 
   const resizeComposerInput = () => {
@@ -227,6 +237,15 @@ export function ChatThread({
   }, []);
 
   useEffect(() => {
+    if (!agentActionMenuOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!agentActionMenuRef.current?.contains(event.target as Node)) setAgentActionMenuOpen(false);
+    };
+    window.addEventListener("mousedown", onPointerDown);
+    return () => window.removeEventListener("mousedown", onPointerDown);
+  }, [agentActionMenuOpen]);
+
+  useEffect(() => {
     if (!effectiveProcessingStartedAt) return;
     setProcessingNow(Date.now());
     const timer = window.setInterval(() => setProcessingNow(Date.now()), 1000);
@@ -239,8 +258,29 @@ export function ChatThread({
     return () => window.clearInterval(poll);
   }, [activeBackendRequestId, refreshSelected]);
 
-  useEffect(() => {
+  const ensureModelRouter = useCallback(async () => {
+    if (routerConfig || modelRouterLoading) return routerConfig;
+    setModelRouterLoading(true);
     let alive = true;
+    try {
+      const cfg = await getModelRouter();
+      if (!alive) return cfg;
+      setRouterConfig(cfg);
+      const exists = modelSelection === "auto" || (cfg.models ?? []).some((model) => model.enabled && model.id === modelSelection);
+      if (!exists) setModelSelection("auto");
+      return cfg;
+    } catch {
+      if (alive) setRouterConfig(null);
+      return null;
+    } finally {
+      if (alive) setModelRouterLoading(false);
+    }
+  }, [getModelRouter, modelRouterLoading, modelSelection, routerConfig]);
+
+  useEffect(() => {
+    if (modelSelection === "auto") return;
+    let alive = true;
+    setModelRouterLoading(true);
     void getModelRouter()
       .then((cfg) => {
         if (!alive) return;
@@ -250,6 +290,9 @@ export function ChatThread({
       })
       .catch(() => {
         if (alive) setRouterConfig(null);
+      })
+      .finally(() => {
+        if (alive) setModelRouterLoading(false);
       });
     return () => {
       alive = false;
@@ -259,6 +302,13 @@ export function ChatThread({
   useEffect(() => {
     window.localStorage.setItem("hmc:model-selection", modelSelection);
   }, [modelSelection]);
+
+  const resolveModelRouting = async (): Promise<ModelRoutingSelection> => {
+    if (modelSelection === "auto") return { mode: "auto" };
+    const cfg = routerConfig ?? await ensureModelRouter();
+    const manualModel = (cfg?.models ?? []).find((model) => model.enabled && model.id === modelSelection);
+    return manualModel ? { mode: "manual", modelId: manualModel.id } : { mode: "auto" };
+  };
 
   useEffect(() => {
     const previousSeen = window.localStorage.getItem(storageKey);
@@ -315,17 +365,18 @@ export function ChatThread({
     if ((!text && sentAttachments.length === 0) || isProcessing || uploading) return;
     const controller = new AbortController();
     const requestId = `ui-${agent.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    activeRequestRef.current = { id: requestId, controller };
+    activeRequestRef.current = { id: requestId, agentId: agent.id, controller };
     setDraft("");
     setAttachments([]);
     setReplyTo(null);
-    setPendingMessage({ text, attachments: sentAttachments, replyTo: sentReplyTo ?? undefined });
+    setPendingMessage({ agentId: agent.id, text, attachments: sentAttachments, replyTo: sentReplyTo ?? undefined });
     const startedAt = Date.now();
-    setProcessingStartedAt(startedAt);
+    setProcessingStartedAt({ agentId: agent.id, startedAt });
     setProcessingNow(startedAt);
     setSending(true);
     setError(null);
     try {
+      const modelRouting = await resolveModelRouting();
       await send(text, sentAttachments, { signal: controller.signal, requestId, replyTo: sentReplyTo ?? undefined, modelRouting });
     } catch (err) {
       if (controller.signal.aborted) {
@@ -355,12 +406,12 @@ export function ChatThread({
   };
 
   const stopCurrentMessage = async () => {
-    const active = activeRequestRef.current;
+    const active = activeRequestRef.current?.agentId === agent.id ? activeRequestRef.current : null;
     const requestId = active?.id ?? activeBackendRequestId ?? undefined;
     if (!requestId) return;
     active?.controller.abort();
-    setPendingMessage(null);
-    setProcessingStartedAt(null);
+    setPendingMessage((current) => current?.agentId === agent.id ? null : current);
+    setProcessingStartedAt((current) => current?.agentId === agent.id ? null : current);
     setSending(false);
     setError("Stopping current message…");
     try {
@@ -439,26 +490,67 @@ export function ChatThread({
           {agent.statusLabel || agent.status} · {agent.activityState || agent.availability || "runtime"} · session #{agent.sessionCount}
         </span>
         <div className="right">
-          {onOpenWorkerLog && (
-            <button className="btn agent-worker-log-trigger" onClick={onOpenWorkerLog}>
-              Worker log
-            </button>
+          {(onOpenWorkerLog || onOpenDetails || onOpenRateLimits) && (
+            <div className="agent-action-menu" ref={agentActionMenuRef}>
+              <button
+                className="iconbtn agent-action-menu-trigger"
+                type="button"
+                aria-label="Open agent actions"
+                aria-haspopup="menu"
+                aria-expanded={agentActionMenuOpen}
+                onClick={() => setAgentActionMenuOpen((open) => !open)}
+              >
+                <Icon name="more" size={16} />
+              </button>
+              {agentActionMenuOpen && (
+                <div className="agent-action-dropdown" role="menu" aria-label="Agent actions">
+                  {onOpenWorkerLog && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setAgentActionMenuOpen(false);
+                        onOpenWorkerLog();
+                      }}
+                    >
+                      Agent Log
+                    </button>
+                  )}
+                  {onOpenDetails && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setAgentActionMenuOpen(false);
+                        onOpenDetails();
+                      }}
+                    >
+                      Details
+                    </button>
+                  )}
+                  {onOpenRateLimits && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setAgentActionMenuOpen(false);
+                        onOpenRateLimits();
+                      }}
+                    >
+                      Rate limits
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           )}
-          {onOpenDetails && (
-            <button className="btn agent-details-trigger" onClick={onOpenDetails}>
-              Details
-            </button>
-          )}
-          <button className="iconbtn">
-            <Icon name="more" size={16} />
-          </button>
         </div>
       </div>
 
       <div className="thread scroll" ref={threadRef} onScroll={updateJumpButton}>
         <div className="divider">
           {selectedSessionId !== "all"
-            ? `Session view · ${activeSessionTitle ?? selectedSessionId}`
+            ? `Session view · ${activeSessionTitle ?? selectedSessionId}${activeSession?.relationship_type ? ` · ${activeSession.relationship_type.replace(/[_-]+/g, " ")}` : ""}`
             : selectedProjectId !== "all"
               ? `Project view · ${activeProjectName ?? selectedProjectId}`
               : "Global Command Chat · sorted into projects and sessions"}
@@ -576,10 +668,12 @@ export function ChatThread({
               <select
                 value={selectedModel ? selectedModel.id : "auto"}
                 onChange={(e) => setModelSelection(e.target.value)}
+                onFocus={() => void ensureModelRouter()}
+                onPointerDown={() => void ensureModelRouter()}
                 disabled={isProcessing || uploading}
                 aria-label="Select AI model for this message"
               >
-                <option value="auto">Auto</option>
+                <option value="auto">{modelRouterLoading ? "Auto · loading models…" : "Auto"}</option>
                 {enabledModels.map((model) => (
                   <option key={model.id} value={model.id}>
                     {(model.label || model.model)} · {model.tier}{model.authorized ? "" : " · key missing"}
@@ -771,14 +865,24 @@ function MessageView({ m, agent, onReply }: { m: Message; agent: Agent; onReply?
               <div>
                 <div className="fn">{a.filename}</div>
                 <div className="ameta">
-                  {a.path} · {Math.round(a.sizeBytes / 1000)} KB
+                  {a.path} · {Math.round(a.sizeBytes / 1000)} KB{a.version ? ` · ${a.version}` : ""}{a.qaStatus ? ` · QA ${a.qaStatus}` : ""}
                 </div>
               </div>
-              <button className="dl">
-                <Icon name="download" size={15} />
-              </button>
+              {a.downloadUrl || a.url ? (
+                <a className="dl" href={a.downloadUrl || a.url} target="_blank" rel="noreferrer" download aria-label={`Download ${a.filename}`}>
+                  <Icon name="download" size={15} />
+                </a>
+              ) : (
+                <button className="dl" type="button" disabled aria-label="No download available">
+                  <Icon name="download" size={15} />
+                </button>
+              )}
             </div>
             {a.preview && <div className="prev">{a.preview}</div>}
+            <div className="artifact-actions">
+              {(a.previewUrl || a.url) && <a href={a.previewUrl || a.url} target="_blank" rel="noreferrer">Preview</a>}
+              {a.driveUrl && <a href={a.driveUrl} target="_blank" rel="noreferrer">Drive</a>}
+            </div>
           </div>
         </div>
       </div>

@@ -4,6 +4,7 @@ import { HttpHermesClient } from "../services/httpHermesClient";
 import { formatSingaporeTime } from "../utils/time";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
 import { Icon } from "../components/Icon";
+import { InfoTooltip } from "../components/InfoTooltip";
 import hermesSkillIcon from "../assets/hermes-skill-icon.png";
 import openclawSkillIcon from "../assets/openclaw-skill-icon.png";
 
@@ -106,10 +107,12 @@ export function SkillsHub() {
       <header className="skills-hero">
         <div>
           <span className="stub-tag">SKILL LIBRARY</span>
-          <h1>Skills Hub</h1>
-          <p>
-            Inventory across Hermes, OpenClaw, and shared SKILL.md files. Search capabilities, inspect source labels and routing evidence, and open dense details in a right-side drawer.
-          </p>
+          <div className="hero-title-with-help">
+            <h1>Skills Hub</h1>
+            <InfoTooltip label="About Skills Hub">
+              Inventory across Hermes, OpenClaw, and shared SKILL.md files. Search capabilities, inspect source labels and routing evidence, and open dense details in a right-side drawer.
+            </InfoTooltip>
+          </div>
         </div>
         <div className="task-hero-actions">
           <button className="task-icon-action dark" aria-label="Refresh skills hub" title="Refresh skills hub" onClick={() => void load()}>
@@ -150,7 +153,9 @@ export function SkillsHub() {
             {(data?.sources ?? []).map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
         </label>
-        <div className="skills-filter-note">Assignment evidence combines default channel agents, named profiles, cron routines, and Kanban task skill fields.</div>
+        <InfoTooltip className="filter-help" label="About assignment evidence">
+          Assignment evidence combines default channel agents, named profiles, cron routines, and Kanban task skill fields.
+        </InfoTooltip>
       </section>
 
       {error && <div className="skills-error">{error}</div>}
@@ -188,7 +193,9 @@ export function SkillsHub() {
               <label className="field"><span>Category</span><input value={installCategory} onChange={(event) => setInstallCategory(event.target.value)} placeholder="user-installed" /></label>
               <label className="field"><span>Description</span><input value={installDescription} onChange={(event) => setInstallDescription(event.target.value)} placeholder="What this skill helps users do" /></label>
               <label className="field"><span>SKILL.md content (optional)</span><textarea value={installContent} onChange={(event) => setInstallContent(event.target.value)} placeholder="Paste full SKILL.md here, or leave blank to create a starter skill." rows={10} /></label>
-              <p className="hint">Writes to the active Hermes profile under ~/.hermes/skills. Existing skills are protected from accidental overwrite.</p>
+              <InfoTooltip className="form-help" label="About skill installs">
+                Writes to the active Hermes profile under ~/.hermes/skills. Existing skills are protected from accidental overwrite.
+              </InfoTooltip>
               {installStatus && <div className="skills-error install-status">{installStatus}</div>}
             </div>
             <div className="drawer-foot"><button className="btn" onClick={() => setInstallOpen(false)}>Close</button><button className="btn dark" disabled={installing || (!installName.trim() && !installContent.trim())} onClick={() => void installSkill()}>{installing ? "Installing…" : "Install"}</button></div>

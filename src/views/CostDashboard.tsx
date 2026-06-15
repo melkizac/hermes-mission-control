@@ -3,6 +3,7 @@ import type { CostBreakdownRow, CostSessionRecord, CostUsageRecord, CostsRespons
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { formatSingaporeTime } from "../utils/time";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 const client = new HttpHermesClient();
 const windows = [7, 14, 30, 90, 365];
@@ -69,10 +70,12 @@ export function CostDashboard() {
       <header className="cost-hero">
         <div>
           <span className="stub-tag">COST OPS</span>
-          <h1>Cost Dashboard</h1>
-          <p>
-            Token, session, tool-call, and estimated spend telemetry from Hermes state.db. Costs prefer actual billing fields when present and fall back to Hermes estimates.
-          </p>
+          <div className="hero-title-with-help">
+            <h1>Cost Dashboard</h1>
+            <InfoTooltip label="About costs">
+              Token, session, tool-call, and estimated spend telemetry from Hermes state.db. Costs prefer actual billing fields when present and fall back to Hermes estimates.
+            </InfoTooltip>
+          </div>
         </div>
         <div className="cost-window">
           <span>Window</span>

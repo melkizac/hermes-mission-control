@@ -9,18 +9,37 @@ def read(rel):
 
 def test_step1_user_mode_nav_groups_and_labels_are_canonical():
     nav = read('components/NavRail.tsx')
+    docs = Path('/opt/hermes-mission-control/source/docs/HERMES_MISSION_CONTROL.md').read_text(encoding='utf-8')
+
+    # Product IA evidence: docs/HERMES_MISSION_CONTROL.md documents the compact
+    # workspace rail with a Workforce resource selector and bottom Settings menu.
+    for documented_label in ['Org Chart', 'Skills / Memory / Tools / Plugins resource selector', 'Bottom Settings menu', 'Log out']:
+        assert documented_label in docs
 
     expected = [
         'const simplifiedWorkspaceGroups',
         'label: "Workspace"',
         'label: "Chat"',
+        'label: "Dashboard"',
         'label: "Projects"',
         'label: "Task Board"',
+        'label: "Operations"',
+        'label: "Routines"',
+        'label: "Workflows"',
+        'label: "Workforce"',
         'label: "Agents"',
-        'label: "AI Workforce"',
+        'label: "Org Chart"',
+        'label: "Skills"',
+        'label: "Memory"',
+        'label: "Tools"',
+        'label: "Plugins"',
         'label: "Approvals"',
+        'label: "Profile"',
         'label: "Settings"',
-        'label: "Logout"',
+        'label: "Usage remaining"',
+        'label: "Docs"',
+        'label: "Log out"',
+        'className="settings-dock"',
     ]
     for needle in expected:
         assert needle in nav
@@ -34,19 +53,16 @@ def test_step1_user_mode_nav_groups_and_labels_are_canonical():
         'My AI Workforce',
         'My Agents',
         'My Agent Org',
-        'Routines',
         'Knowledge & Evidence',
         'Workspace Knowledge',
         'My Audit / Evidence',
         'Account',
-        'Profile',
     ]:
         assert f'label: "{legacy_label}"' not in workspace_block
 
     assert 'label: "Operate"' not in nav
     assert 'label: "Work"' not in workspace_block
     assert 'label: "Evidence"' not in workspace_block
-    assert 'settings-dock' not in nav
 
 
 def test_step1_user_workspace_permissions_allow_user_mode_pages():

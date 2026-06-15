@@ -42,6 +42,18 @@ def test_phase2_backend_builds_task_result_payload_and_result_routes():
         assert needle in app
 
 
+def test_phase2_artifact_download_route_uses_real_root_containment_guard():
+    app = app_py()
+    start = app.index('def task_artifact_response')
+    end = app.index('def task_result_response', start)
+    artifact_response = app[start:end]
+
+    assert 'def task_artifact_response' in app
+    assert "'/api/tasks/'" in app and "'/artifacts/'" in app
+    assert 'target == root or target.is_relative_to(root)' in artifact_response
+    assert 'str(target).startswith(str(root))' not in artifact_response
+
+
 def test_phase2_ui_renders_artifact_evidence_result_view_from_task_drawer():
     task_board = src('views/TaskBoard.tsx')
     hermes_client = src('services/hermesClient.ts')

@@ -10,18 +10,22 @@ import { AgentVoice } from "./views/AgentVoice";
 import { AgentOrg } from "./views/AgentOrg";
 import { Runtimes } from "./views/Runtimes";
 import { Projects } from "./views/Projects";
+import { FileSystem } from "./views/FileSystem";
 import { DelegateWork } from "./views/DelegateWork";
 import { WorkflowLibrary } from "./views/WorkflowLibrary";
 import { SecondBrain } from "./views/SecondBrain";
 import { Approvals } from "./views/Approvals";
+import { Reflections } from "./views/Reflections";
 import { AuditLog } from "./views/AuditLog";
 import { Automations } from "./views/Automations";
 import { TaskBoard } from "./views/TaskBoard";
 import { SkillsHub } from "./views/SkillsHub";
 import { MemoryContext } from "./views/MemoryContext";
 import { ToolsHub } from "./views/ToolsHub";
+import { CapabilityRegistry } from "./views/CapabilityRegistry";
 import { PluginsHub } from "./views/PluginsHub";
 import { CostDashboard } from "./views/CostDashboard";
+import { UsageRemaining } from "./views/UsageRemaining";
 import { ModelRouter } from "./views/ModelRouter";
 import { HermesDesktopAdmin } from "./views/HermesDesktopAdmin";
 import { MissionControlDocs } from "./views/MissionControlDocs";
@@ -32,6 +36,7 @@ import { BrowserOperations } from "./views/BrowserOperations";
 import { ResearchRuns } from "./views/ResearchRuns";
 import { Placeholder } from "./views/Placeholder";
 import { parseMissionControlDeepLink } from "./services/deepLinks";
+import { recordRouteTelemetry } from "./services/performanceTelemetry";
 
 const docsPaths = new Set(["/mission-control-docs", "/mission-control-guide", "/docs"]);
 const publicPaths = new Set(["/", "/login"]);
@@ -74,6 +79,10 @@ function Shell() {
     return () => mediaQuery.removeEventListener("change", syncMobileChatOnly);
   }, []);
 
+  useEffect(() => {
+    recordRouteTelemetry(view);
+  }, [view]);
+
   if (docsPaths.has(pathname)) {
     return <MissionControlDocs />;
   }
@@ -113,15 +122,19 @@ function Shell() {
         {canRenderView && view === "agent-org" && <AgentOrg />}
         {canRenderView && view === "runtimes" && <Runtimes />}
         {canRenderView && view === "projects" && <Projects />}
+        {canRenderView && view === "files" && <FileSystem />}
         {canRenderView && view === "second-brain" && <SecondBrain />}
         {canRenderView && view === "approvals" && <Approvals />}
         {canRenderView && view === "board" && <TaskBoard />}
         {canRenderView && view === "skills" && <SkillsHub />}
         {canRenderView && view === "memory" && <MemoryContext />}
+        {canRenderView && view === "reflections" && <Reflections />}
         {canRenderView && view === "tools" && <ToolsHub />}
+        {canRenderView && view === "capabilities" && <CapabilityRegistry />}
         {canRenderView && view === "plugins" && <PluginsHub />}
         {canRenderView && view === "automations" && <Automations />}
         {canRenderView && view === "audit" && <AuditLog />}
+        {canRenderView && view === "usage" && <UsageRemaining />}
         {canRenderView && view === "costs" && <CostDashboard />}
         {canRenderView && view === "models" && <ModelRouter />}
         {canRenderView && view === "settings" && <HermesDesktopAdmin />}
@@ -192,11 +205,14 @@ function NeedsAttentionBell() {
       const nextCount = summary ? pendingFromSummary : pendingFromItems;
       if (alive) setApprovalCount(nextCount);
     }
-    void loadApprovalCount();
-    const timer = window.setInterval(loadApprovalCount, 15000);
+    const timer = window.setTimeout(() => {
+      void loadApprovalCount();
+    }, 11000);
+    const interval = window.setInterval(loadApprovalCount, 15000);
     return () => {
       alive = false;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
+      window.clearInterval(interval);
     };
   }, [approvals.length]);
 

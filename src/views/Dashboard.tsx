@@ -3,6 +3,7 @@ import { useStore } from "../services/store";
 import { MobileOperatorDock, type MobileOperatorAction } from "../components/MobileOperatorDock";
 import type { AutomationsResponse, BoardResponse, CostsResponse, InboxResponse, ProjectsResponse, SecondBrainResponse, ViewKey } from "../types";
 import { formatSingaporeShort, formatSingaporeTime } from "../utils/time";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 type RuntimeStatus = {
   now: string;
@@ -119,9 +120,9 @@ export function Dashboard() {
   const inboxSummary = data.inbox?.summary;
   const highRisk = inboxSummary?.high_risk ?? data.inbox?.items.filter((i) => i.risk === "high" || i.risk === "critical").length ?? 0;
   const failedRoutines = data.automations?.summary.error ?? 0;
-  const blockedTasks = (data.board?.summary.blocked ?? 0) + (data.board?.summary.error ?? 0);
+  const blockedTasks = data.board?.summary.blocked ?? 0;
   const runningBoardTasks = boardTasks.filter((task) => task.status === "running").slice(0, 5);
-  const blockedBoardTasks = boardTasks.filter((task) => task.status === "blocked" || task.status === "error").slice(0, 5);
+  const blockedBoardTasks = boardTasks.filter((task) => task.status === "blocked").slice(0, 5);
   const queuedHumanTasks = boardTasks.filter((task) => task.assignee?.toLowerCase().includes("melverick") && task.status !== "done").slice(0, 3);
   const activeAgents = agents.filter((a) => a.status === "active" || a.status === "working" || a.status === "waiting");
   const runningTasks = activeAgents.length;
@@ -200,8 +201,10 @@ export function Dashboard() {
       <div className="home-topbar cockpit-topbar">
         <div>
           <div className="crumb">Dashboard › Agent operating metrics</div>
-          <h1>Dashboard</h1>
-          <p>See what agents are doing, what needs intervention, what produced evidence, and whether runtimes are healthy.</p>
+          <div className="hero-title-with-help">
+            <h1>Dashboard</h1>
+            <InfoTooltip label="About Dashboard">See what agents are doing, what needs intervention, what produced evidence, and whether runtimes are healthy.</InfoTooltip>
+          </div>
         </div>
       </div>
 

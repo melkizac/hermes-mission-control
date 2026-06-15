@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../components/Icon";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 type VoiceStatus = "idle" | "listening" | "demo" | "error";
 type AudioMetrics = {
@@ -208,10 +209,12 @@ export function AgentVoice() {
       <header className="agent-voice-hero">
         <div className="agent-voice-titleblock">
           <span className="stub-tag">AGENT VOICE INTERFACE</span>
-          <h1>JARVIS-style Live Voice Visualizer</h1>
-          <p>
-            A low-latency voice-reactive canvas that morphs rings, particles, color, and frequency bands from live speech features. It uses the browser Web Audio pipeline for the deployed Mission Control page, with a demo oscillator fallback for environments without microphone permission.
-          </p>
+          <div className="hero-title-with-help">
+            <h1>JARVIS-style Live Voice Visualizer</h1>
+            <InfoTooltip label="About voice visualizer">
+              A low-latency voice-reactive canvas that morphs rings, particles, color, and frequency bands from live speech features. It uses the browser Web Audio pipeline for the deployed Mission Control page, with a demo oscillator fallback for environments without microphone permission.
+            </InfoTooltip>
+          </div>
         </div>
         <div className="agent-voice-actions">
           <span className={`agent-voice-status ${status}`}>{statusLabel(status)}</span>
