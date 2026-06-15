@@ -57,7 +57,6 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
       { key: "agent-org", label: "Org Chart", icon: "agentOrg" },
       { key: "skills", label: "Skills", icon: "skills" },
       { key: "memory", label: "Memory", icon: "memory" },
-      { key: "reflections", label: "Reflections", icon: "memory" },
       { key: "tools", label: "Tools", icon: "setup" },
       { key: "plugins", label: "Plugins", icon: "setup" },
       { key: "approvals", label: "Approvals", icon: "approvals" },
@@ -67,8 +66,9 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
     label: "System",
     system: true,
     items: [
-      { key: "profile", label: "Profile", icon: "profile" },
-      { key: "settings", label: "Settings", icon: "settings" },
+      { key: "profile", label: "Account / Profile", icon: "profile" },
+      { key: "workspace-preferences", label: "Workspace Preferences", icon: "settings" },
+      { key: "agent-voice", label: "Agent Voice", icon: "mic" },
       { key: "usage", label: "Rate limits", icon: "usage" },
       { href: "/docs#daily-flow", label: "Docs", icon: "file" },
       { action: "logout", label: "Log out", icon: "logout" },
@@ -95,6 +95,7 @@ const adminConsoleGroups: NavGroup[] = [
       { key: "research-runs", label: "Research Run Monitor", icon: "audit" },
       { key: "models", label: "Model Router", icon: "modelRouter" },
       { key: "capabilities", label: "Capabilities", icon: "setup" },
+      { key: "quota", label: "Quota", icon: "usage" },
       { key: "automations", label: "Routine Governance", icon: "automations" },
     ],
   },
@@ -227,7 +228,7 @@ export function NavRail() {
   const visibleGroups = uiMode === "admin" ? adminConsoleGroups : simplifiedWorkspaceGroups;
   const workspaceSystemGroup = simplifiedWorkspaceGroups.find((group) => group.system);
   const workspaceSystemItems = workspaceSystemGroup?.items ?? [];
-  const settingsActive = view === "profile" || view === "settings" || view === "usage";
+  const settingsActive = view === "profile" || view === "workspace-preferences" || view === "agent-voice" || view === "usage";
   const workforceSelectorItems = simplifiedWorkspaceGroups
     .find((group) => group.label === "Workforce")
     ?.items.filter((item): item is NavRouteItem => isRouteItem(item) && workforceSelectorKeys.includes(item.key)) ?? [];

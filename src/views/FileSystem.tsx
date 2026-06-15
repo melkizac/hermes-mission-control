@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Icon } from "../components/Icon";
 import { formatSingaporeTime } from "../utils/time";
 import { InfoTooltip } from "../components/InfoTooltip";
+import { useStore } from "../services/store";
 
 type FileRoot = {
   id: string;
@@ -81,6 +82,7 @@ async function requestPreview(root: string, path: string): Promise<PreviewPayloa
 }
 
 export function FileSystem() {
+  const { setView } = useStore();
   const [root, setRoot] = useState("outputs");
   const [path, setPath] = useState("");
   const [data, setData] = useState<FilePayload | null>(null);
@@ -160,8 +162,8 @@ export function FileSystem() {
         <div>
           <span className="stub-tag">VPS FILE ACCESS</span>
           <div className="hero-title-with-help">
-            <h1>File System</h1>
-            <InfoTooltip label="About file access">Browse generated outputs, uploads, and Second Brain files directly from Mission Control. Download files without SSH/SFTP.</InfoTooltip>
+            <h1>Files</h1>
+            <InfoTooltip label="About Files">Files are uploaded or generated artifacts: reports, screenshots, decks, exports, and other downloadable outputs. Use Knowledge for curated notes/context and Evidence for audit proof.</InfoTooltip>
           </div>
         </div>
         <button className="btn" onClick={() => void load()} disabled={loading}>
@@ -169,6 +171,24 @@ export function FileSystem() {
           Refresh
         </button>
       </header>
+
+      <section className="ia-link-grid" aria-label="Files Knowledge Evidence guide">
+        <button className="ia-link-card on" onClick={() => void load()}>
+          <span>Files</span>
+          <b>Uploaded/generated artifacts</b>
+          <p>Browse downloadable outputs, uploads, reports, screenshots, and working files.</p>
+        </button>
+        <button className="ia-link-card" onClick={() => setView("second-brain")}>
+          <span>Knowledge</span>
+          <b>Curated context</b>
+          <p>Open the searchable wiki and maintained notes that agents use as reusable context.</p>
+        </button>
+        <button className="ia-link-card" onClick={() => setView("evidence")}>
+          <span>Evidence</span>
+          <b>Audit trail and proof</b>
+          <p>Jump to build logs, browser proof, approvals, task results, and command traces.</p>
+        </button>
+      </section>
 
       <section className="fs-root-grid">
         {(data?.roots || []).map((item) => (

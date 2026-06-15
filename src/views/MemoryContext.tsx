@@ -4,13 +4,29 @@ import { SlideOverDrawer } from "../components/SlideOverDrawer";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import type { MemoryContextEntry, MemoryContextResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainItem, SecondBrainNoteResponse } from "../types";
 import { InfoTooltip } from "../components/InfoTooltip";
+import { Reflections } from "./Reflections";
 
 const client = new HttpHermesClient();
 
 type ScopeFilter = "" | "user" | "memory";
-type PageTab = "memory" | "knowledge" | "sources";
+type PageTab = "memory" | "knowledge" | "reflections" | "sources";
+type MemoryScopeView = "about" | "workspace" | "agent" | "recent";
 type DrawerKind = { kind: "memory"; id: string } | { kind: "note"; path: string } | null;
 type DrawerTab = "summary" | "source" | "links" | "governance";
+
+const MEMORY_SCOPE_TABS: Array<[MemoryScopeView, string]> = [
+  ["about", "About me"],
+  ["workspace", "Workspace memory"],
+  ["agent", "Agent/session context"],
+  ["recent", "Recent use"],
+];
+
+const MEMORY_SCOPE_COPY: Record<MemoryScopeView, string> = {
+  about: "About me is durable user profile memory used for tone, preferences, and identity assumptions.",
+  workspace: "Workspace memory is durable operational context shared with agents in this workspace.",
+  agent: "Agent/session context shows operational facts agents may use while working, without changing permissions.",
+  recent: "Recent use summarizes recently updated memory entries so changes are easy to audit.",
+};
 
 function toneForCategory(category: string) {
   const c = category.toLowerCase();
@@ -37,6 +53,7 @@ export function MemoryContext() {
   const [scope, setScope] = useState<ScopeFilter>("");
   const [category, setCategory] = useState("");
   const [pageTab, setPageTab] = useState<PageTab>("memory");
+  const [scopeView, setScopeView] = useState<MemoryScopeView>("about");
   const [drawer, setDrawer] = useState<DrawerKind>(null);
   const [tab, setTab] = useState<DrawerTab>("summary");
   const [loading, setLoading] = useState(true);
@@ -71,6 +88,13 @@ export function MemoryContext() {
   const entries = memory?.entries ?? [];
   const notes = kb?.wiki ?? [];
   const sources = kb?.raw_sources ?? [];
+  const scopedEntries = useMemo(() => {
+    if (scopeView === "about") return entries.filter((entry) => entry.scope === "user");
+    if (scopeView === "workspace") return entries.filter((entry) => entry.scope === "memory");
+    if (scopeView === "agent") return entries.filter((entry) => entry.category.toLowerCase().includes("workflow") || entry.category.toLowerCase().includes("environment") || entry.source_label.toLowerCase().includes("profile"));
+    if (scopeView === "recent") return [...entries].sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at))).slice(0, 12);
+    return entries;
+  }, [entries, scopeView]);
   const selectedMemory = useMemo(() => (drawer?.kind === "memory" ? entries.find((entry) => entry.id === drawer.id) ?? null : null), [entries, drawer]);
 
   const openMemory = (entry: MemoryContextEntry) => {
@@ -117,21 +141,35 @@ export function MemoryContext() {
       </header>
 
       <section className="skills-metrics memory-metrics">
-        <Metric label="Agent memory" value={memory?.summary.total ?? entries.length} sub="Hermes durable facts" />
-        <Metric label="KB notes" value={kb?.summary.wiki_pages ?? 0} sub="Obsidian wiki pages" tone="good" />
-        <Metric label="Sources" value={kb?.summary.raw_sources ?? 0} sub="Raw evidence files" />
-        <Metric label="Graph links" value={graph?.summary.edges ?? kb?.summary.links ?? 0} sub="Wikilink relationships" />
-        <Metric label="Chunks" value={kb?.summary.chunks ?? 0} sub="Semantic-search-ready" />
-        <Metric label="Health" value={health?.health.status ?? memory?.summary.redacted ?? "—"} sub="KB governance state" tone={health?.health.status === "healthy" ? "good" : undefined} />
+        <Metric label="Agent memory" value={memory?.summary?.total ?? entries.length} sub="Hermes durable facts" />
+        <Metric label="KB notes" value={kb?.summary?.wiki_pages ?? 0} sub="Obsidian wiki pages" tone="good" />
+        <Metric label="Sources" value={kb?.summary?.raw_sources ?? 0} sub="Raw evidence files" />
+        <Metric label="Graph links" value={graph?.summary?.edges ?? kb?.summary?.links ?? 0} sub="Wikilink relationships" />
+        <Metric label="Chunks" value={kb?.summary?.chunks ?? 0} sub="Semantic-search-ready" />
+        <Metric label="Health" value={health?.health?.status ?? memory?.summary?.redacted ?? "—"} sub="KB governance state" tone={health?.health?.status === "healthy" ? "good" : undefined} />
       </section>
 
       <nav className="memory-tabs" aria-label="Memory and knowledge tabs">
         {[
           ["memory", "Agent Memory"],
           ["knowledge", "Second Brain"],
+          ["reflections", "Reflections"],
           ["sources", "Sources & Evidence"],
         ].map(([key, label]) => <button key={key} className={pageTab === key ? "on" : ""} onClick={() => setPageTab(key as PageTab)}>{label}</button>)}
       </nav>
+
+      {pageTab === "memory" && <MemoryPrivacyBoundary />}
+
+      {pageTab === "memory" && (
+        <section className="memory-scope-switcher" aria-label="Memory scope views">
+          {MEMORY_SCOPE_TABS.map(([key, label]) => (
+            <button key={key} className={`memory-scope-card ${scopeView === key ? "on" : ""}`} onClick={() => setScopeView(key)}>
+              <span>{label}</span>
+              <p>{MEMORY_SCOPE_COPY[key]}</p>
+            </button>
+          ))}
+        </section>
+      )}
 
       {pageTab === "memory" && (
         <section className="skills-filters memory-filters memory-only-filters">
@@ -161,8 +199,9 @@ export function MemoryContext() {
 
       {error && <div className="skills-error">{error}</div>}
 
-      {pageTab === "memory" && <MemoryPanel entries={entries} loading={loading} selectedId={selectedMemory?.id ?? null} openEntry={openMemory} />}
+      {pageTab === "memory" && <MemoryPanel entries={scopedEntries} loading={loading} selectedId={selectedMemory?.id ?? null} openEntry={openMemory} scopeView={scopeView} />}
       {pageTab === "knowledge" && <KnowledgePanel notes={notes} loading={loading} openNote={openNote} />}
+      {pageTab === "reflections" && <Reflections />}
       {pageTab === "sources" && <SourcesPanel sources={sources} loading={loading} openNote={openNote} />}
 
       {selectedMemory && (
@@ -208,12 +247,33 @@ export function MemoryContext() {
   );
 }
 
-function MemoryPanel({ entries, loading, selectedId, openEntry }: { entries: MemoryContextEntry[]; loading: boolean; selectedId: string | null; openEntry: (entry: MemoryContextEntry) => void }) {
+function MemoryPrivacyBoundary() {
+  return (
+    <section className="memory-privacy-boundary" aria-label="Memory privacy boundaries">
+      <div>
+        <span>Privacy boundary</span>
+        <h2>Memory is not Admin Capabilities</h2>
+        <p>Admin Capabilities governs skills, tools, plugins, connectors, and runtime permissions. Memory only guides agent context and personalization; it does not grant new tool access.</p>
+      </div>
+      <div className="memory-controls-disabled">
+        <b>Editing policy</b>
+        <p>Edit and delete are read-only here until the memory backend exposes audited safe mutation endpoints.</p>
+        <div>
+          <button disabled title="Memory edit is not supported by the current API">Edit memory</button>
+          <button disabled title="Memory delete is not supported by the current API">Delete memory</button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MemoryPanel({ entries, loading, selectedId, openEntry, scopeView }: { entries: MemoryContextEntry[]; loading: boolean; selectedId: string | null; openEntry: (entry: MemoryContextEntry) => void; scopeView: MemoryScopeView }) {
+  const label = scopeView === "about" ? "About me" : scopeView === "workspace" ? "Workspace memory" : scopeView === "agent" ? "Agent/session context" : "Recent use";
   return (
     <section className="ops-list memory-list memory-list-full">
-      <div className="ops-list-head"><span>Memory entries</span><small>{loading ? "Loading…" : `${entries.length} shown`}</small></div>
+      <div className="ops-list-head"><span>{label}</span><small>{loading ? "Loading…" : `${entries.length} shown`}</small></div>
       {entries.map((entry) => <MemoryRow key={entry.id} entry={entry} active={entry.id === selectedId} onSelect={() => openEntry(entry)} />)}
-      {!loading && entries.length === 0 && <div className="empty big">No memories matched this filter.</div>}
+      {!loading && entries.length === 0 && <div className="empty big">No memories matched this scope and filter.</div>}
     </section>
   );
 }
@@ -247,7 +307,7 @@ function MemorySource({ entry }: { entry: MemoryContextEntry }) {
 }
 
 function MemoryGovernance({ entry, policy }: { entry: MemoryContextEntry; policy?: MemoryContextResponse["policy"] }) {
-  return <div className="memory-drawer-stack"><section className="skill-section"><h3>Why this matters</h3><p>{entry.scope === "user" ? "User profile memory affects tone, preferences, identity assumptions, and safety rules." : "Operational memory affects environment assumptions, project conventions, and recurring workflow behavior."}</p></section><section className="skill-section"><h3>Display policy</h3><p>{policy?.summary ?? "Read-only display with likely secret redaction."}</p></section><section className="skill-section"><h3>Recommended controls</h3><div className="drawer-section-list">{(policy?.recommended_controls ?? ["Request correction", "Request deletion", "Show audit trail"]).map((item) => <div className="skill-route" key={item}><b>{item}</b></div>)}</div></section></div>;
+  return <div className="memory-drawer-stack"><section className="skill-section"><h3>Why this matters</h3><p>{entry.scope === "user" ? "User profile memory affects tone, preferences, identity assumptions, and safety rules." : "Operational memory affects environment assumptions, project conventions, and recurring workflow behavior."}</p></section><section className="skill-section"><h3>Privacy and capability boundary</h3><p>Memory is not Admin Capabilities. It can shape future agent context, but it cannot enable tools, plugins, connectors, or runtime permissions.</p></section><section className="skill-section"><h3>Display policy</h3><p>{policy?.summary ?? "Read-only display with likely secret redaction."}</p></section><section className="skill-section"><h3>Available controls</h3><div className="memory-controls-disabled"><p>Edit and delete are read-only here until the memory backend exposes audited safe mutation endpoints.</p><button disabled title="Memory edit is not supported by the current API">Edit memory</button><button disabled title="Memory delete is not supported by the current API">Delete memory</button></div></section><section className="skill-section"><h3>Recommended controls</h3><div className="drawer-section-list">{(policy?.recommended_controls ?? ["Request correction", "Request deletion", "Show audit trail"]).map((item) => <div className="skill-route" key={item}><b>{item}</b></div>)}</div></section></div>;
 }
 
 function NoteSummary({ note }: { note: SecondBrainNoteResponse }) {

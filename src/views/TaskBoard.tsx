@@ -10,11 +10,22 @@ import { SlideOverDrawer } from "../components/SlideOverDrawer";
 import { Icon } from "../components/Icon";
 import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh";
 import { InfoTooltip } from "../components/InfoTooltip";
+import { OnboardingEmptyState } from "../components/OnboardingEmptyState";
 
 const client = new HttpHermesClient();
 const TASK_PAGE_SIZE = 5;
-type BoardSourceOption = { id: string; slug: string; label: string; isDefault?: boolean };
 type BoardLaneKey = "todo" | "scheduled" | "running" | "blocked" | "done";
+type WorkTypeKey = "human" | "agent" | "routine" | "cron" | "internal" | "implementation" | "review";
+type WorkTypeChip = { key: WorkTypeKey; label: string; helper: string };
+const workTypeDefinitions: Record<WorkTypeKey, WorkTypeChip> = {
+  human: { key: "human", label: "Human", helper: "Needs or records a person-led decision, approval, or manual action" },
+  agent: { key: "agent", label: "Agent", helper: "Owned by an AI worker profile" },
+  routine: { key: "routine", label: "Routine", helper: "Produced by a recurring workflow or automation" },
+  cron: { key: "cron", label: "Cron", helper: "Scheduled job output or watchdog attention card" },
+  internal: { key: "internal", label: "Internal", helper: "Mission Control / Hermes runtime housekeeping" },
+  implementation: { key: "implementation", label: "Implementation", helper: "Build, code, deployment, or operational change work" },
+  review: { key: "review", label: "Review", helper: "Waiting for review, approval, QA, or evidence inspection" },
+};
 const initialLaneCounts = (): Record<BoardLaneKey, number> => ({ todo: TASK_PAGE_SIZE, scheduled: TASK_PAGE_SIZE, running: TASK_PAGE_SIZE, blocked: TASK_PAGE_SIZE, done: TASK_PAGE_SIZE });
 const statusOptions: { key: BoardStatus; label: string; helper: string }[] = [
   { key: "todo", label: "To-do", helper: "Backlog and accepted work not started yet" },
@@ -100,14 +111,10 @@ export function TaskBoard() {
   const [status, setStatus] = useState<BoardStatus | "">("");
   const [assignee, setAssignee] = useState("");
   const [project, setProject] = useState("");
-  // Default to the canonical Hermes Admin Console board so the visible Task Board
-  // counts match `hermes kanban list`. Operators can still choose All Boards for
-  // cross-profile/named-board reconciliation work.
-  const [board, setBoard] = useState("default");
+  const board = "default";
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
   const [tasks, setTasks] = useState<BoardTask[]>([]);
   const [summary, setSummary] = useState({ total: 0, triage: 0, todo: 0, scheduled: 0, ready: 0, running: 0, blocked: 0, error: 0, review: 0, done: 0, assignees: [] as string[], projects: [] as string[], boards: [] as string[] });
-  const [boardOptions, setBoardOptions] = useState<BoardSourceOption[]>([]);
   const [boardWarnings, setBoardWarnings] = useState<string[]>([]);
   const [projectOptions, setProjectOptions] = useState<ProjectRecord[]>([]);
   const [boardScopedProjects, setBoardScopedProjects] = useState<string[]>([]);
@@ -135,12 +142,6 @@ export function TaskBoard() {
     }
     if (boardResult.status === "rejected") throw boardResult.reason;
     const data = boardResult.value;
-    setBoardOptions((data.boards ?? []).map((item) => ({
-      id: item.id || item.slug,
-      slug: item.slug || item.id,
-      label: item.label || item.slug || item.id,
-      isDefault: item.is_default,
-    })));
     setBoardWarnings((data.board_errors ?? data.warnings ?? []).map((warning) => `${warning.board || "Task source"}: ${warning.reason || warning.status}`));
     setTasks((current) => data.tasks.map((next) => {
       const previous = current.find((item) => item.id === next.id);
@@ -419,12 +420,21 @@ ${JSON.stringify(payload, null, 2)}`);
             </div>
             <div className="task-title-actions" aria-label="Task board actions">
               <button
-                className={"task-icon-action primary" + (showCreate ? " on" : "")}
+                className="task-icon-action primary"
+                data-active={showCreate ? "true" : "false"}
                 aria-label={showCreate ? "Close add action form" : "Add action"}
                 title={showCreate ? "Close add action form" : "Add action"}
                 onClick={() => setShowCreate((value) => !value)}
               >
                 <Icon name="plus" size={18} />
+              </button>
+              <button
+                className="task-icon-action dark"
+                aria-label="Refresh task board"
+                title="Refresh task board"
+                onClick={() => void refreshState.refresh("manual")}
+              >
+                <Icon name="refresh" size={17} />
               </button>
             </div>
           </div>
@@ -465,10 +475,6 @@ ${JSON.stringify(payload, null, 2)}`);
         </div>
         <select value={status} onChange={(e) => setStatus(e.target.value as BoardStatus | "")} aria-label="Status selector"><option value="">All status</option>{statusOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}</select>
         <select value={assignee} onChange={(e) => setAssignee(e.target.value)} aria-label="Owner selector"><option value="">All owners</option>{summary.assignees.map((item) => <option key={item} value={item}>{item}</option>)}</select>
-        <select className="task-board-filter" value={board} onChange={(e) => setBoard(e.target.value)} aria-label="Board selector">
-          <option value="">All Boards</option>
-          {boardOptions.map((item) => <option key={item.id || item.slug} value={item.slug || item.id}>{item.label}{item.isDefault ? " · default" : ""}</option>)}
-        </select>
         <select value={project} onChange={(e) => setProject(e.target.value)} aria-label="Project selector">
           <option value="">All Projects</option>
           {projectFilterOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
@@ -478,6 +484,20 @@ ${JSON.stringify(payload, null, 2)}`);
 
       {notice && <div className="task-notice">{notice}</div>}
       {(error || refreshState.error) && <div className="task-error">{error || refreshState.error}</div>}
+
+      {!loading && tasks.length === 0 && (
+        <OnboardingEmptyState
+          title={q || status || assignee || project ? "No tasks match the current board filters" : "Create the first trackable task"}
+          actions={[
+            { label: "Clear filters", onClick: () => { setQ(""); setStatus(""); setAssignee(""); setProject(""); }, disabled: !q && !status && !assignee && !project },
+            { label: "Add action", variant: "primary", onClick: () => setShowCreate(true) },
+            { label: "Send agent task", onClick: () => setView("agents") },
+          ]}
+          notes={["Task Board is populated from real Kanban cards and agent/routine work.", "No sample tasks are added when a board is empty."]}
+        >
+          {q || status || assignee || project ? "Clear filters to return to the full board, or add a real task if this project has no work yet." : "Capture a concrete action with an owner, acceptance criteria, and project context so agents and humans can coordinate from the same evidence trail."}
+        </OnboardingEmptyState>
+      )}
 
       {viewMode === "cards" ? (
         <section className="task-kanban task-kanban-full" aria-label="Task board grouped by Not Started, In Progress, and Attention & Outcomes">
@@ -553,6 +573,7 @@ function TaskListRow({ task, active, onSelect }: { task: BoardTask; active: bool
           <span className={`tag ${task.status === "blocked" || task.status === "error" ? "warn" : task.status === "done" ? "good" : "muted"}`}>{pendingTag(task.status)}</span>
         </div>
         <p>{copy.description}</p>
+        <WorkTypeChips task={task} compact />
         <small className="mono">{task.id}</small>
       </div>
       <div className="ops-row-meta">
@@ -630,6 +651,7 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
           <ReleaseLaneOverview task={task} compact />
           <div className="task-kv project-task-kv">
             <Info label="Owner" value={task.assignee || "unassigned"} />
+            <div className="task-info"><span>Work type</span><WorkTypeChips task={task} compact /></div>
             <Info label="Status" value={projectData.currentStage} />
             <Info label="Updated" value={formatSingaporeTime(task.updated_at)} />
             <Info label="Project" value={projectData.displayProjectId} />
@@ -1032,6 +1054,37 @@ function taskText(task: BoardTask) {
   return `${task.title || ""}\n${task.body || ""}`;
 }
 
+function pushWorkType(chips: WorkTypeChip[], seen: Set<WorkTypeKey>, key: WorkTypeKey) {
+  if (seen.has(key)) return;
+  seen.add(key);
+  chips.push(workTypeDefinitions[key]);
+}
+
+function deriveWorkTypeChips(task: BoardTask): WorkTypeChip[] {
+  const text = `${task.title || ""}\n${task.body || ""}\n${task.result || ""}\n${task.assignee || ""}\n${task.tenant || ""}\n${task.workflow_template_id || ""}\n${task.current_step_key || ""}`.toLowerCase();
+  const chips: WorkTypeChip[] = [];
+  const seen = new Set<WorkTypeKey>();
+  const isCron = task.tenant?.startsWith("cron:") || /\bcron\b|source job|scheduled routine|watchdog|routed to the task board/.test(text);
+  if (isCron) pushWorkType(chips, seen, "cron");
+  if (task.status === "scheduled" || task.workflow_template_id || /routine|automation|recurring|scheduled/.test(text)) pushWorkType(chips, seen, "routine");
+  if (task.status === "review" || /review|required review|approval|approve|qa|sign[- ]?off/.test(text)) pushWorkType(chips, seen, "review");
+  if (taskResultNeedsHuman(task) || classifyHumanTask(task) !== "agent") pushWorkType(chips, seen, "human");
+  if (/implement|implementation|build|deploy|ship|frontend|backend|code|fix|test|qa|release|hmc-/.test(text)) pushWorkType(chips, seen, "implementation");
+  if (/internal|runtime|hermes|mission control|kanban|dispatcher|worker|profile|memory|admin/.test(text)) pushWorkType(chips, seen, "internal");
+  if (task.assignee && !["melverick", "human", "user", "operator"].includes(task.assignee.toLowerCase())) pushWorkType(chips, seen, "agent");
+  if (chips.length === 0) pushWorkType(chips, seen, "agent");
+  return chips.slice(0, 3);
+}
+
+function WorkTypeChips({ task, compact = false }: { task: BoardTask; compact?: boolean }) {
+  const chips = deriveWorkTypeChips(task);
+  return (
+    <div className={`task-work-type-row ${compact ? "compact" : ""}`} aria-label="Task work type cues">
+      {chips.map((chip) => <span className={`task-work-type-chip work-type-${chip.key}`} title={chip.helper} key={chip.key}>{chip.label}</span>)}
+    </div>
+  );
+}
+
 function cleanupInlineText(value: string, fallback = "No description yet.") {
   const cleaned = value
     .replace(/```[\s\S]*?```/g, " ")
@@ -1422,6 +1475,7 @@ function TaskCard({ task, selected, dragging, onSelect, onDragStart, onDragEnd, 
       <button className="task-card-main" onClick={onSelect}>
         <h2>{copy.title}</h2>
         <p>{copy.description}</p>
+        <WorkTypeChips task={task} compact />
       </button>
       <footer className="task-card-date-footer">
         <span>{formatSingaporeTime(task.updated_at)}</span>

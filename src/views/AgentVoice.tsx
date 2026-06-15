@@ -210,11 +210,12 @@ export function AgentVoice() {
         <div className="agent-voice-titleblock">
           <span className="stub-tag">AGENT VOICE INTERFACE</span>
           <div className="hero-title-with-help">
-            <h1>JARVIS-style Live Voice Visualizer</h1>
+            <h1>Agent Voice</h1>
             <InfoTooltip label="About voice visualizer">
-              A low-latency voice-reactive canvas that morphs rings, particles, color, and frequency bands from live speech features. It uses the browser Web Audio pipeline for the deployed Mission Control page, with a demo oscillator fallback for environments without microphone permission.
+              Agent Voice is now a first-class Mission Control route. It uses the browser Web Audio pipeline for live microphone visualization, and keeps the chat composer microphone as a shortcut into this page until dictation/send is deliberately productized.
             </InfoTooltip>
           </div>
+          <p>First-class voice workspace for live microphone state, visual diagnostics, and demo-mode QA. The chat composer mic now opens this route instead of showing a dead-end disabled control.</p>
         </div>
         <div className="agent-voice-actions">
           <span className={`agent-voice-status ${status}`}>{statusLabel(status)}</span>
@@ -267,8 +268,8 @@ export function AgentVoice() {
           <p>Canvas rendering is isolated from React state. Audio metrics update every animation frame, while React HUD values are throttled to every third frame to keep the interface responsive.</p>
         </div>
         <div>
-          <h2>Java note</h2>
-          <p>If we later need a native kiosk app, the same signal model can be ported to Processing or LWJGL. For this web page, Web Audio is the lowest-latency deployment path.</p>
+          <h2>Product boundary</h2>
+          <p>Voice is intentionally a first-class route today. Composer dictation and automatic send remain out of scope until a separate consent, transcript, and audit trail flow is designed.</p>
         </div>
       </section>
     </div>

@@ -7,6 +7,8 @@ import { formatSingaporeTime } from "../utils/time";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
 import { Icon } from "../components/Icon";
 import { InfoTooltip } from "../components/InfoTooltip";
+import { OnboardingEmptyState } from "../components/OnboardingEmptyState";
+import { useStore } from "../services/store";
 
 const client = new HttpHermesClient();
 const tabs: Array<{ key: InboxStatus | "all"; label: string; helper: string }> = [
@@ -24,6 +26,34 @@ function metadataString(item: InboxItem, key: string): string | null {
 
 function readableToken(value?: string | null): string {
   return (value || "").replace(/[_-]+/g, " ").trim();
+}
+
+function decisionState(item: InboxItem): string {
+  if (item.status === "drafted") return "Needs decision";
+  if (item.status === "ready") return "Reviewed — final decision";
+  if (item.status === "sent") return "Approved / done";
+  if (item.status === "rejected") return "Rejected";
+  return readableToken(item.status) || "Decision state unknown";
+}
+
+function projectRelation(item: InboxItem): string {
+  const projectName = item.project_name || metadataString(item, "project_name") || metadataString(item, "project") || metadataString(item, "tenant");
+  const projectId = item.project_id || metadataString(item, "project_id");
+  const taskId = item.task_id || metadataString(item, "task_id") || metadataString(item, "kanban_task_id");
+  const relation = [projectName || projectId, taskId ? `task ${taskId}` : null].filter(Boolean).join(" · ");
+  return relation || "No project/task link supplied";
+}
+
+function evidencePreview(item: InboxItem): string {
+  const evidence = item.evidence || metadataString(item, "evidence") || metadataString(item, "evidence_url") || metadataString(item, "evidence_path") || metadataString(item, "source_excerpt");
+  if (evidence) return evidence;
+  const body = (item.body || item.description || "").replace(/\s+/g, " ").trim();
+  if (body) return body.length > 240 ? `${body.slice(0, 237)}…` : body;
+  return "No evidence attached — approval disabled until evidence is visible.";
+}
+
+function hasEvidence(item: InboxItem): boolean {
+  return evidencePreview(item) !== "No evidence attached — approval disabled until evidence is visible.";
 }
 
 function approvalTarget(item: InboxItem): string {
@@ -80,6 +110,7 @@ function riskLabel(risk: string): string {
 }
 
 export function Approvals() {
+  const { setView } = useStore();
   const [data, setData] = useState<InboxResponse | null>(null);
   const [status, setStatus] = useState<InboxStatus | "all">("drafted");
   const [q, setQ] = useState("");
@@ -173,6 +204,8 @@ export function Approvals() {
     await load();
   };
 
+  const canApproveSelected = selected ? hasEvidence(selected) : false;
+
   return (
     <div className="inbox-page scroll">
       <header className="inbox-hero">
@@ -222,7 +255,7 @@ export function Approvals() {
           <article className="inbox-card" key={item.id}>
             <button className="inbox-card-main" onClick={() => open(item)}>
               <div className="inbox-card-top">
-                <span className={`inbox-status ${item.status}`}>{statusLabel(item.status)}</span>
+                <span className={`inbox-status ${item.status}`}>{decisionState(item)}</span>
                 {(item.risk === "high" || item.risk === "critical") && <span className={`inbox-risk ${item.risk}`}>{riskLabel(item.risk)}</span>}
               </div>
               <h2>{item.title}</h2>
@@ -232,6 +265,11 @@ export function Approvals() {
               </div>
               <p>{item.description}</p>
               <small className="inbox-approval-effect">{approvalEffect(item)}</small>
+              <div className="inbox-decision-group">
+                <div><span>Project</span><b>{projectRelation(item)}</b></div>
+                <div><span>Agent</span><b>{item.agent_name || item.agent_id || "Mission Control"}</b></div>
+                <div><span>Evidence</span><b>{evidencePreview(item)}</b></div>
+              </div>
               <div className="inbox-meta">
                 <span>{item.destination}</span>
                 <span>{item.provenance}</span>
@@ -243,13 +281,27 @@ export function Approvals() {
               {(item.status === "drafted" || item.status === "ready") && (
                 <span className="inbox-decision-actions">
                   <button className="approval-decision-button reject" onClick={() => void runAction(item, "reject")}>Reject</button>
-                  <button className="approval-decision-button approve" onClick={() => void runAction(item, "approve")}>Approve</button>
+                  <button className="approval-decision-button approve" disabled={!hasEvidence(item)} title={!hasEvidence(item) ? "Evidence is required before approval" : "Approve"} onClick={() => void runAction(item, "approve")}>Approve</button>
+                  <button className="approval-decision-button snooze" disabled title="Snooze is not supported by the current inbox API yet">Snooze</button>
                 </span>
               )}
             </footer>
           </article>
         ))}
-        {!loading && items.length === 0 && <div className="empty big">No approval gates in this view.</div>}
+        {!loading && items.length === 0 && (
+          <OnboardingEmptyState
+            compact
+            title={q ? "No approval gates match this filter" : "No approval gates need a decision"}
+            actions={[
+              { label: "Clear search", onClick: () => setQ(""), disabled: !q },
+              { label: "Open Task Board", variant: "primary", onClick: () => setView("board") },
+              { label: "Set approval-producing workflows", onClick: () => setView("workflow-library") },
+            ]}
+            notes={["Approvals appear only when a real agent action or routine output needs operator permission.", "Attention-only blockers are routed to Task Board instead of being mixed into approval gates."]}
+          >
+            {q ? "Clear the search or switch tabs to inspect other decision states." : "When agents request permission to publish, send, submit, or use high-risk output, the decision card and evidence will appear here."}
+          </OnboardingEmptyState>
+        )}
       </section>
 
       {selected && (
@@ -269,8 +321,11 @@ export function Approvals() {
 
             <div className="inbox-kv">
               <Info label="Kind" value={selected.kind} />
+              <Info label="Decision state" value={decisionState(selected)} />
               <Info label="Risk" value={selected.risk} />
               <Info label="Destination" value={selected.destination} />
+              <Info label="Project / task" value={projectRelation(selected)} />
+              <Info label="Agent" value={selected.agent_name || selected.agent_id} />
               <Info label="Source" value={selected.source_path ?? selected.source_id ?? selected.source} />
               <Info label="Created" value={formatSingaporeTime(selected.created_at)} />
               <Info label="Reviewed" value={selected.reviewed_at ?? "—"} />
@@ -282,6 +337,7 @@ export function Approvals() {
               <p><strong>If you click Approve:</strong> {approvalEffect(selected)}</p>
               <p><strong>Destination:</strong> {selected.destination || "—"}</p>
               <p><strong>Source:</strong> {selected.source_path ?? selected.source_id ?? selected.source}</p>
+              <p><strong>Evidence:</strong> {evidencePreview(selected)}</p>
             </section>
 
             <section className="inbox-section">
@@ -298,7 +354,8 @@ export function Approvals() {
                 {(selected.status === "drafted" || selected.status === "ready") && (
                   <span className="inbox-decision-actions drawer">
                     <button className="approval-decision-button reject" onClick={() => void runAction(selected, "reject")}>Reject</button>
-                    <button className="approval-decision-button approve" onClick={() => void runAction(selected, "approve")}>Approve</button>
+                    <button className="approval-decision-button approve" disabled={!canApproveSelected} title={!canApproveSelected ? "Evidence is required before approval" : "Approve"} onClick={() => void runAction(selected, "approve")}>Approve</button>
+                    <button className="approval-decision-button snooze" disabled title="Snooze is not supported by the current inbox API yet">Snooze</button>
                   </span>
                 )}
               </div>

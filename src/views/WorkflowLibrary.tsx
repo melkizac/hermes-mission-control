@@ -4,6 +4,8 @@ import { HttpHermesClient } from "../services/httpHermesClient";
 import { ArtifactCard, EvidenceTimeline, RiskBadges } from "../components/MissionFoundation";
 import { Icon } from "../components/Icon";
 import { InfoTooltip } from "../components/InfoTooltip";
+import { OnboardingEmptyState } from "../components/OnboardingEmptyState";
+import { useStore } from "../services/store";
 
 const client = new HttpHermesClient();
 
@@ -12,6 +14,7 @@ function compact(value: number | undefined | null) {
 }
 
 export function WorkflowLibrary() {
+  const { setView } = useStore();
   const [data, setData] = useState<WorkflowLibraryResponse | null>(null);
   const [q, setQ] = useState("");
   const [category, setCategory] = useState("");
@@ -153,7 +156,20 @@ export function WorkflowLibrary() {
               </button>
             </article>
           ))}
-          {workflows.length === 0 && <div className="empty big">No packaged workflows matched this filter.</div>}
+          {workflows.length === 0 && (
+            <OnboardingEmptyState
+              compact
+              title={q || category ? "No workflows match this filter" : "No packaged workflows are available yet"}
+              actions={[
+                { label: "Clear filters", onClick: () => { setQ(""); setCategory(""); }, disabled: !q && !category },
+                { label: "Create a manual task", variant: "primary", onClick: () => setView("board") },
+                { label: "Check routines", onClick: () => setView("automations") },
+              ]}
+              notes={["Workflow cards come from real packaged workflow definitions and launch real Task Board work.", "No demo workflows are injected when the library is empty."]}
+            >
+              {q || category ? "Try a broader search, remove the category filter, or create a one-off Task Board item while a packaged workflow is added." : "Add packaged workflows before launching repeatable operating loops. Until then, use Task Board or Routines for real work."}
+            </OnboardingEmptyState>
+          )}
         </section>
       </div>
 

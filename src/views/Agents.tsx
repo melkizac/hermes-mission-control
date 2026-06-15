@@ -6,6 +6,7 @@ import { ContextPanel } from "../components/ContextPanel";
 import { WorkerTranscriptDrawer } from "../components/WorkerTranscriptDrawer";
 import { cachedJsonRequest } from "../services/queryCache";
 import type { Agent, ModelUsageLimitSummary, ModelUsageWindow, ProjectChatResponse } from "../types";
+import { OnboardingEmptyState } from "../components/OnboardingEmptyState";
 
 async function fetchProjectChats(): Promise<ProjectChatResponse> {
   return cachedJsonRequest(
@@ -137,7 +138,7 @@ function AgentRateLimitsDrawer({ agent, onClose }: { agent: Agent; onClose: () =
 }
 
 export function Agents() {
-  const { selected, loading } = useStore();
+  const { agents, selected, loading, setView } = useStore();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [workerLogOpen, setWorkerLogOpen] = useState(false);
   const [rateLimitsOpen, setRateLimitsOpen] = useState(false);
@@ -254,7 +255,20 @@ export function Agents() {
         </>
       ) : (
         <div className="center mc-empty">
-          {loading ? "Loading agents…" : "Select an agent from the roster to begin."}
+          {loading ? "Loading agents…" : agents.length === 0 ? (
+            <OnboardingEmptyState
+              compact
+              title="Connect or create your first agent"
+              actions={[
+                { label: "Create a first task", variant: "primary", onClick: () => setView("board") },
+                { label: "Browse workflows", onClick: () => setView("workflow-library") },
+                { label: "Check account setup", onClick: () => setView("profile") },
+              ]}
+              notes={["The roster is empty because no real agent profiles are visible to this workspace.", "Mission Control does not add demo agents in authenticated production mode."]}
+            >
+              Add or expose a real Hermes profile/agent, then return here to chat, inspect details, and assign work.
+            </OnboardingEmptyState>
+          ) : "Select an agent from the roster to begin."}
         </div>
       )}
     </div>

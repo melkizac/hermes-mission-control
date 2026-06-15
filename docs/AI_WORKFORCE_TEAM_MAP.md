@@ -1,9 +1,10 @@
 # AI Workforce Team Map
 
 Status: canonical operating map  
-Updated: 2026-06-10  
+Updated: 2026-06-12  
 Owner: Melverick Ng  
-Primary orchestrator: Melkizac / default Hermes agent
+Primary orchestrator: Melkizac / default Hermes agent  
+Standard operating model: `AI_WORKFORCE_LOOP_OPERATING_MODEL.md`
 
 ## Purpose
 
@@ -18,6 +19,8 @@ Melkizac is the front-door and governance layer, not the default executor for ev
 3. Route execution to the correct agent/profile where a role exists.
 4. Keep work visible through HMC/Kanban using goals, tasks, handoffs, runs, approvals, outputs, and evidence.
 5. Verify the result before reporting completion.
+
+All non-trivial work should follow the standard loop operating model: Goal → Plan/Route → Act → Observe → Adjust → Verify → Report/Escalate. Completion means verified evidence, not agent self-report. See `AI_WORKFORCE_LOOP_OPERATING_MODEL.md`.
 
 ## Canonical team map
 

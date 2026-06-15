@@ -4,6 +4,7 @@ import { HttpHermesClient } from "../services/httpHermesClient";
 import { formatSingaporeTime } from "../utils/time";
 import { Icon } from "../components/Icon";
 import { InfoTooltip } from "../components/InfoTooltip";
+import { useStore } from "../services/store";
 
 const client = new HttpHermesClient();
 type Tab = "overview" | "wiki" | "raw" | "schema" | "index" | "health";
@@ -40,6 +41,7 @@ function BrainCard({ item, onOpen }: { item: SecondBrainItem; onOpen: (item: Sec
 }
 
 export function SecondBrain() {
+  const { setView } = useStore();
   const [data, setData] = useState<SecondBrainResponse | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [q, setQ] = useState("");
@@ -83,7 +85,7 @@ export function SecondBrain() {
   }, [data]);
 
   if (!data && loading) {
-    return <div className="second-brain-page scroll"><div className="task-error">Loading Second Brain…</div></div>;
+    return <div className="second-brain-page scroll"><div className="task-error">Loading Knowledge…</div></div>;
   }
 
   const summary = data?.summary;
@@ -100,10 +102,10 @@ export function SecondBrain() {
     <div className="second-brain-page scroll">
       <header className="brain-hero">
         <div>
-          <span className="stub-tag">KARPATHY-STYLE LLM WIKI</span>
+          <span className="stub-tag">CURATED KNOWLEDGE</span>
           <div className="hero-title-with-help">
-            <h1>Second Brain</h1>
-            <InfoTooltip label="About Second Brain">{summary?.description || "Raw sources, maintained markdown wiki, schema rules, index, and log."}</InfoTooltip>
+            <h1>Knowledge</h1>
+            <InfoTooltip label="About Knowledge">Knowledge is curated/searchable notes and reusable workspace context. Use Files for downloadable artifacts and Evidence for proof of work, approvals, commands, and QA.</InfoTooltip>
           </div>
         </div>
         <div className="brain-path-card">
@@ -114,6 +116,24 @@ export function SecondBrain() {
           </button>
         </div>
       </header>
+
+      <section className="ia-link-grid" aria-label="Files Knowledge Evidence guide">
+        <button className="ia-link-card" onClick={() => setView("files")}>
+          <span>Files</span>
+          <b>Uploaded/generated artifacts</b>
+          <p>Open reports, decks, screenshots, exports, and other downloadable outputs.</p>
+        </button>
+        <button className="ia-link-card on" onClick={() => void load()}>
+          <span>Knowledge</span>
+          <b>Curated/searchable context</b>
+          <p>Search maintained wiki pages, immutable source notes, schema rules, and index health.</p>
+        </button>
+        <button className="ia-link-card" onClick={() => setView("evidence")}>
+          <span>Evidence</span>
+          <b>Audit trail and proof</b>
+          <p>Review task results, approvals, command logs, browser proof, and verification traces.</p>
+        </button>
+      </section>
 
       <section className="brain-metrics">
         <Metric label="Wiki Pages" value={summary?.wiki_pages ?? 0} sub="compiled markdown" tone="good" />

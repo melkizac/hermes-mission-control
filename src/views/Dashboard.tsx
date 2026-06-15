@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useStore } from "../services/store";
 import { MobileOperatorDock, type MobileOperatorAction } from "../components/MobileOperatorDock";
-import type { AutomationsResponse, BoardResponse, CostsResponse, InboxResponse, ProjectsResponse, SecondBrainResponse, ViewKey } from "../types";
+import type { AutomationsResponse, BoardResponse, CostsResponse, InboxResponse, ModelUsageLimitSummary, ProjectsResponse, SecondBrainResponse, ViewKey } from "../types";
 import { formatSingaporeShort, formatSingaporeTime } from "../utils/time";
 import { InfoTooltip } from "../components/InfoTooltip";
+import { OnboardingEmptyState } from "../components/OnboardingEmptyState";
 
 type RuntimeStatus = {
   now: string;
@@ -45,6 +46,13 @@ type CockpitLink = {
   tone?: "neutral" | "warn" | "bad";
 };
 
+type RateLimitWarning = CockpitLink & {
+  model: string;
+  window: string;
+  percent: number;
+  reset: string;
+};
+
 async function request<T>(path: string): Promise<T> {
   const url = `${window.location.protocol}//${window.location.host}${path}`;
   const res = await fetch(url, { credentials: "include", headers: { Accept: "application/json" } });
@@ -75,6 +83,58 @@ function shortTime(value?: string | null) {
 function taskAge(value?: string | null) {
   const label = shortTime(value);
   return label === "—" ? "time unknown" : label;
+}
+
+function usageWindowWarning(model: string, windowLabel: string, window?: ModelUsageLimitSummary["daily"]): RateLimitWarning | null {
+  if (!window) return null;
+  const percent = Number(window.percent_used ?? 0);
+  if (percent < 75) return null;
+  const remaining = Math.max(0, Number(window.remaining_hours ?? 0));
+  const tone = percent >= 90 ? "bad" : "warn";
+  return {
+    title: `${model} ${windowLabel} limit ${Math.round(percent)}% used`,
+    detail: `${remaining.toFixed(1)}h remaining · resets ${window.reset_label || shortTime(window.reset_at)}`,
+    view: "costs",
+    tone,
+    model,
+    window: windowLabel,
+    percent,
+    reset: window.reset_label || shortTime(window.reset_at),
+  };
+}
+
+function collectRateLimitWarnings(costs: CostsResponse | null): RateLimitWarning[] {
+  const seen = new Set<string>();
+  const summaries = [costs?.model_usage, ...(costs?.model_usage_models ?? []), ...(costs?.model_usage?.additional_model_usages ?? [])].filter(Boolean) as ModelUsageLimitSummary[];
+  const warnings: RateLimitWarning[] = [];
+  for (const summary of summaries) {
+    const model = summary.selected_model || "Selected model";
+    const keyBase = `${model}:${summary.metered_feature || "model"}`;
+    if (summary.available === false || summary.error) {
+      const key = `${keyBase}:unavailable`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        warnings.push({
+          title: `${model} rate-limit data unavailable`,
+          detail: summary.error || "Open Usage to reconnect or verify limit telemetry.",
+          view: "costs",
+          tone: "warn",
+          model,
+          window: "telemetry",
+          percent: 0,
+          reset: "unknown",
+        });
+      }
+    }
+    for (const warning of [usageWindowWarning(model, "daily", summary.daily), usageWindowWarning(model, "weekly", summary.weekly)]) {
+      if (!warning) continue;
+      const key = `${keyBase}:${warning.window}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      warnings.push(warning);
+    }
+  }
+  return warnings.sort((a, b) => b.percent - a.percent).slice(0, 5);
 }
 
 export function Dashboard() {
@@ -128,18 +188,21 @@ export function Dashboard() {
   const runningTasks = activeAgents.length;
   const idleAgents = agents.filter((a) => a.status === "idle").length;
   const draftApprovals = inboxSummary?.drafted ?? approvals.length;
-  const totalAttention = draftApprovals + highRisk + failedRoutines + blockedTasks + (!apiOk ? 1 : 0) + (!gatewayOk ? 1 : 0);
   const today = data.costs?.summary.last_24h;
   const week = data.costs?.summary.last_7d;
+  const rateLimitWarnings = collectRateLimitWarnings(data.costs);
+  const totalAttention = draftApprovals + highRisk + failedRoutines + blockedTasks + rateLimitWarnings.length + (!apiOk ? 1 : 0) + (!gatewayOk ? 1 : 0);
   const nextAutomations = [...automationRows].filter((a) => a.enabled).sort((a, b) => (a.next_run_at || "zz").localeCompare(b.next_run_at || "zz")).slice(0, 5);
   const latestOutputs = automationRows.flatMap((a) => (a.recent_outputs || []).map((o) => ({ ...o, automation: a.name, status: a.last_status || a.status }))).sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || "")).slice(0, 6);
   const recentSessions = data.sessions.slice(0, 6);
+  const isFirstRunEmpty = !loading && agents.length === 0 && boardTasks.length === 0 && automationRows.length === 0 && recentSessions.length === 0 && latestOutputs.length === 0;
 
   const healthWarnings = [
     apiOk ? null : "Hermes API needs attention",
     gatewayOk ? null : "Gateway process not detected",
     failedRoutines ? `${failedRoutines} routine error${failedRoutines === 1 ? "" : "s"}` : null,
     highRisk ? `${highRisk} high-risk approval${highRisk === 1 ? "" : "s"}` : null,
+    rateLimitWarnings.length ? `${rateLimitWarnings.length} model rate-limit warning${rateLimitWarnings.length === 1 ? "" : "s"}` : null,
     data.brain && data.brain.summary.health !== "healthy" ? "Second Brain health warning" : null,
   ].filter(Boolean) as string[];
 
@@ -149,6 +212,7 @@ export function Dashboard() {
     ...(failedRoutines ? [{ title: `${failedRoutines} routine failure${failedRoutines === 1 ? "" : "s"}`, detail: "Open Routines to inspect last error and output evidence.", tone: "warn" as const, view: "automations" as const }] : []),
     ...(!apiOk ? [{ title: "Hermes API is not healthy", detail: "Agent execution may be unavailable until API health recovers.", tone: "bad" as const, view: "settings" as const }] : []),
     ...(!gatewayOk ? [{ title: "Gateway is offline", detail: "Desktop/local runtime bridge is not currently detected.", tone: "bad" as const, view: "settings" as const }] : []),
+    ...rateLimitWarnings.map((warning) => ({ title: warning.title, detail: warning.detail, tone: warning.tone, view: warning.view })),
     ...(draftApprovals ? [{ title: `${draftApprovals} draft approval${draftApprovals === 1 ? "" : "s"}`, detail: "Approve, edit, or reject pending AI output.", tone: "neutral" as const, view: "approvals" as const }] : []),
   ].slice(0, 7);
 
@@ -223,6 +287,21 @@ export function Dashboard() {
           <Metric label="Routines enabled" value={`${status?.cron?.enabled ?? 0}/${status?.cron?.total ?? 0}`} detail={`${failedRoutines} failed`} tone={failedRoutines ? "warn" : "good"} />
         </div>
       </section>
+
+      {isFirstRunEmpty && (
+        <OnboardingEmptyState
+          eyebrow="START HERE"
+          title="Connect your first project and agent workflow"
+          actions={[
+            { label: "Create a project", variant: "primary", onClick: () => setView("projects") },
+            { label: "Send first agent task", onClick: () => setView("agents") },
+            { label: "Browse workflows", onClick: () => setView("workflow-library") },
+          ]}
+          notes={["No demo metrics are inserted here; cards appear only after real projects, tasks, routines, sessions, or approvals exist.", "Use Projects for operating context, Agents for one-off work, and Workflows/Routines for repeatable loops."]}
+        >
+          Mission Control is ready, but this workspace has no live operating data yet. Start with a real project or a first agent task; the dashboard will become an evidence-backed cockpit as work runs.
+        </OnboardingEmptyState>
+      )}
 
       {(error || healthWarnings.length > 0) && (
         <section className="attention-strip cockpit-alerts">
@@ -333,6 +412,19 @@ export function Dashboard() {
                 </button>
               ))}
               {nextAutomations.length === 0 && <div className="cockpit-empty">No enabled upcoming routines are visible.</div>}
+            </div>
+          </Panel>
+
+          <Panel title="Rate-limit warnings" action="Usage" onAction={() => setView("costs")}>
+            <div className="cockpit-list">
+              {rateLimitWarnings.map((warning) => (
+                <button className={`cockpit-row ${warning.tone || "warn"}`} key={`${warning.model}-${warning.window}`} onClick={() => setView("costs")}>
+                  <span className="row-signal" />
+                  <div><b>{warning.title}</b><small>{warning.detail}</small></div>
+                  <em>{warning.window}</em>
+                </button>
+              ))}
+              {rateLimitWarnings.length === 0 && <div className="cockpit-empty good">No model usage window is near its limit. Open Usage for detailed spend and quota telemetry.</div>}
             </div>
           </Panel>
 

@@ -11,6 +11,7 @@ import { AgentOrg } from "./views/AgentOrg";
 import { Runtimes } from "./views/Runtimes";
 import { Projects } from "./views/Projects";
 import { FileSystem } from "./views/FileSystem";
+import { EvidenceHub } from "./views/EvidenceHub";
 import { DelegateWork } from "./views/DelegateWork";
 import { WorkflowLibrary } from "./views/WorkflowLibrary";
 import { SecondBrain } from "./views/SecondBrain";
@@ -34,7 +35,7 @@ import { LoginPage } from "./views/LoginPage";
 import { AdminSetupPage } from "./views/AdminSetupPage";
 import { BrowserOperations } from "./views/BrowserOperations";
 import { ResearchRuns } from "./views/ResearchRuns";
-import { Placeholder } from "./views/Placeholder";
+import { AccountSettings } from "./views/AccountSettings";
 import { parseMissionControlDeepLink } from "./services/deepLinks";
 import { recordRouteTelemetry } from "./services/performanceTelemetry";
 
@@ -116,13 +117,15 @@ function Shell() {
         {canRenderView && view === "dashboard" && <Dashboard />}
         {canRenderView && view === "delegate-work" && <DelegateWork />}
         {canRenderView && view === "workflow-library" && <WorkflowLibrary />}
-        {canRenderView && view === "profile" && <Placeholder title="Account Settings" blurb="Account identity and operator preferences for your Mission Control workspace." />}
+        {canRenderView && view === "profile" && <AccountSettings />}
+        {canRenderView && view === "workspace-preferences" && <AccountSettings initialSection="preferences" />}
         {canRenderView && view === "agents" && <Agents />}
         {canRenderView && view === "agent-voice" && <AgentVoice />}
         {canRenderView && view === "agent-org" && <AgentOrg />}
         {canRenderView && view === "runtimes" && <Runtimes />}
         {canRenderView && view === "projects" && <Projects />}
         {canRenderView && view === "files" && <FileSystem />}
+        {canRenderView && view === "evidence" && <EvidenceHub />}
         {canRenderView && view === "second-brain" && <SecondBrain />}
         {canRenderView && view === "approvals" && <Approvals />}
         {canRenderView && view === "board" && <TaskBoard />}
@@ -191,7 +194,7 @@ function AdminUserModeToggle() {
 
 function NeedsAttentionBell() {
   const { approvals, setView } = useStore();
-  const [approvalCount, setApprovalCount] = useState(approvals.length);
+  const [pendingDecisionCount, setPendingDecisionCount] = useState(approvals.length);
 
   useEffect(() => {
     let alive = true;
@@ -203,8 +206,9 @@ function NeedsAttentionBell() {
         ? inbox.items.filter((item: any) => item?.status === "drafted" || item?.status === "ready").length
         : approvals.length;
       const nextCount = summary ? pendingFromSummary : pendingFromItems;
-      if (alive) setApprovalCount(nextCount);
+      if (alive) setPendingDecisionCount(nextCount);
     }
+    void loadApprovalCount();
     const timer = window.setTimeout(() => {
       void loadApprovalCount();
     }, 11000);
@@ -216,19 +220,19 @@ function NeedsAttentionBell() {
     };
   }, [approvals.length]);
 
-  if (approvalCount <= 0) return null;
+  if (pendingDecisionCount <= 0) return null;
 
-  const countLabel = approvalCount === 1 ? "1 pending approval" : `${approvalCount} pending approvals`;
+  const countLabel = pendingDecisionCount === 1 ? "1 approval decision needs attention" : `${pendingDecisionCount} approval decisions need attention`;
 
   return (
     <button
       className="top-attention-bell has-items"
-      aria-label={`Pending approvals: ${approvalCount}`}
+      aria-label={`Needs Attention: ${pendingDecisionCount} approval decision${pendingDecisionCount === 1 ? "" : "s"}`}
       onClick={() => setView("approvals")}
       title={countLabel}
     >
       <Icon name="bell" size={18} />
-      <span className="attention-count">{approvalCount > 99 ? "99+" : approvalCount}</span>
+      <span className="attention-count">{pendingDecisionCount > 99 ? "99+" : pendingDecisionCount}</span>
     </button>
   );
 }

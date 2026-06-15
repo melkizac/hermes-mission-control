@@ -779,6 +779,38 @@ export interface MissionControlMe {
   ok: boolean;
   user: MissionControlUser;
   workspace: MissionControlWorkspace;
+  hermes_profile?: {
+    id: string;
+    owner_user_id: string;
+    profile_name: string;
+    display_name: string;
+    status: string;
+    profile_path?: string;
+    created_at?: number | string;
+    updated_at?: number | string;
+  } | null;
+  runtime?: {
+    id: string;
+    user_id: string;
+    profile_id: string;
+    kind: string;
+    status: string;
+    container_name?: string;
+    image?: string;
+    host_home?: string;
+    container_home?: string;
+    last_error?: string;
+    created_at?: number | string;
+    updated_at?: number | string;
+  } | null;
+  agent_access?: {
+    role?: string;
+    can_select?: boolean;
+    can_assign_to_own_projects?: boolean;
+    can_assign_to_users?: boolean;
+    can_edit_global_definition?: boolean;
+    can_manage_runtime?: boolean;
+  } | null;
 }
 
 export interface AuditSession {
@@ -1678,6 +1710,11 @@ export interface InboxItem {
   destination: string;
   agent_id: string;
   agent_name: string;
+  project_id?: string | null;
+  project_name?: string | null;
+  task_id?: string | null;
+  evidence?: string | null;
+  evidence_url?: string | null;
   created_at: string;
   updated_at: string;
   reviewed_at?: string | null;
@@ -2436,6 +2473,7 @@ export type ViewKey =
   | "delegate-work"
   | "workflow-library"
   | "profile"
+  | "workspace-preferences"
   | "agents"
   | "agent-voice"
   | "agent-org"
@@ -2446,6 +2484,7 @@ export type ViewKey =
   | "plugins"
   | "projects"
   | "files"
+  | "evidence"
   | "second-brain"
   | "board"
   | "skills"

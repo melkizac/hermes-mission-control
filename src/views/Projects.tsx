@@ -5,6 +5,8 @@ import { queryCacheEventName } from "../services/queryCache";
 import { formatSingaporeTime } from "../utils/time";
 import { Icon } from "../components/Icon";
 import { InfoTooltip } from "../components/InfoTooltip";
+import { OnboardingEmptyState } from "../components/OnboardingEmptyState";
+import { useStore } from "../services/store";
 
 const client = new HttpHermesClient();
 type Tab = "overview" | "workflow" | "operations" | "knowledge" | "activity" | "sessions";
@@ -186,6 +188,7 @@ function ProjectCard({ project, onOpen }: { project: ProjectRecord; onOpen: (pro
 }
 
 export function Projects() {
+  const { setView } = useStore();
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [summary, setSummary] = useState({ total: 0, active: 0, open_actions: 0, blocked: 0, knowledge: 0, workspaces: 0 });
   const [q, setQ] = useState("");
@@ -308,7 +311,20 @@ export function Projects() {
 
       <section className="projects-grid professional">
         {projects.map((project) => <ProjectCard key={project.id} project={project} onOpen={openProject} />)}
-        {!loading && projects.length === 0 && <div className="project-empty">No projects matched. Try clearing the filters or adding project notes/tasks.</div>}
+        {!loading && projects.length === 0 && (
+          <OnboardingEmptyState
+            className="project-empty onboarding-project-empty"
+            title={q ? "No projects match this search" : "Create your first operating project"}
+            actions={[
+              { label: "Clear search", onClick: () => setQ(""), disabled: !q },
+              { label: "Create a Task Board action", variant: "primary", onClick: () => setView("board") },
+              { label: "Upload knowledge", onClick: () => setView("second-brain") },
+            ]}
+            notes={["Projects are populated from real project notes, Kanban tasks, workspaces, artifacts, and sessions.", "No fake project cards are shown in authenticated production mode."]}
+          >
+            {q ? "Try clearing the filter or search for a known project, task ID, workspace path, or artifact." : "Add project context by creating a project-scoped task, uploading knowledge, or asking an agent to start a concrete workstream."}
+          </OnboardingEmptyState>
+        )}
       </section>
 
       {selected && (

@@ -7,6 +7,7 @@ import { Icon } from "../components/Icon";
 import { useStore } from "../services/store";
 import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh";
 import { InfoTooltip } from "../components/InfoTooltip";
+import { OnboardingEmptyState } from "../components/OnboardingEmptyState";
 
 const client = new HttpHermesClient();
 
@@ -23,7 +24,7 @@ function money(value: number | undefined | null) {
 }
 
 export function Automations() {
-  const { uiMode, permissions } = useStore();
+  const { uiMode, permissions, setView } = useStore();
   const [data, setData] = useState<AutomationsResponse | null>(null);
   const [targetData, setTargetData] = useState<FunnelTargetsResponse | null>(null);
   const [connectorData, setConnectorData] = useState<BrowserConnectorsResponse | null>(null);
@@ -420,7 +421,20 @@ export function Automations() {
               onAction={(action) => void runAction(automation, action)}
             />
           ))}
-          {!loading && automations.length === 0 && <div className="empty big">No routines matched this filter.</div>}
+          {!loading && automations.length === 0 && (
+            <OnboardingEmptyState
+              compact
+              title={q || state ? "No routines match this filter" : "Start your first routine"}
+              actions={[
+                { label: "Clear filters", onClick: () => { setQ(""); setState(""); }, disabled: !q && !state },
+                { label: "Browse workflow library", variant: "primary", onClick: () => setView("workflow-library") },
+                { label: "Open Task Board", onClick: () => setView("board") },
+              ]}
+              notes={["Routine entries come from real Hermes cron jobs or governed routine records.", "No fake scheduled work is shown when the workspace has not configured routines yet."]}
+            >
+              {q || state ? "Clear filters to see all configured routines, or create a new routine from an approved workflow template." : "Use Workflow Library to create a governed routine, or create a Task Board item for one-off agent work before scheduling it."}
+            </OnboardingEmptyState>
+          )}
         </section>
       ) : (
         <section className="ops-list automation-list-view">
@@ -435,7 +449,20 @@ export function Automations() {
               onAction={(action) => void runAction(automation, action)}
             />
           ))}
-          {!loading && automations.length === 0 && <div className="empty big">No routines matched this filter.</div>}
+          {!loading && automations.length === 0 && (
+            <OnboardingEmptyState
+              compact
+              title={q || state ? "No routines match this filter" : "Start your first routine"}
+              actions={[
+                { label: "Clear filters", onClick: () => { setQ(""); setState(""); }, disabled: !q && !state },
+                { label: "Browse workflow library", variant: "primary", onClick: () => setView("workflow-library") },
+                { label: "Open Task Board", onClick: () => setView("board") },
+              ]}
+              notes={["Routine entries come from real Hermes cron jobs or governed routine records.", "No fake scheduled work is shown when the workspace has not configured routines yet."]}
+            >
+              {q || state ? "Clear filters to see all configured routines, or create a new routine from an approved workflow template." : "Use Workflow Library to create a governed routine, or create a Task Board item for one-off agent work before scheduling it."}
+            </OnboardingEmptyState>
+          )}
         </section>
       )}
 

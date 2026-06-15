@@ -52,7 +52,7 @@ export function EvidenceHub() {
     { title: "Browser evidence", detail: "Screenshots, current/final URLs, browser activity, and no-submit boundaries.", target: "browser-ops", metric: browser?.sessions?.length ?? "—", action: "Open browser proof" },
     { title: "Task results", detail: "Task result drawers with evidence timelines, artifacts, and next actions.", target: "board", metric: board?.summary.done ?? 0, action: "Open task results" },
     { title: "Run traces", detail: "Audit history across agents, tools, sessions, and channel sources.", target: "audit", metric: sessions.length, action: "Open audit trail" },
-    { title: "Screenshots and files", detail: "Generated files, browser screenshots, reports, and linked artifacts.", target: "automations", metric: "Proof", action: "Open artifacts" },
+    { title: "Screenshots and files", detail: "Generated files, browser screenshots, reports, and linked artifacts.", target: "files", metric: "Files", action: "Open artifacts" },
   ];
 
   return (
@@ -61,10 +61,27 @@ export function EvidenceHub() {
         <span className="eyebrow">Results & Proof</span>
         <div className="hero-title-with-help">
           <h1>Evidence</h1>
-          <InfoTooltip label="About Evidence">Proof of what agents did: screenshots, final links, task results, run traces, and generated artifacts.</InfoTooltip>
+          <InfoTooltip label="About Evidence">Evidence is the audit trail and proof layer: task results, commands, approvals, browser sessions, screenshots, build/deploy logs, and verification traces. Use Files for downloadable artifacts and Knowledge for curated context.</InfoTooltip>
         </div>
         <button className="btn" onClick={() => setView("audit")}>Open detailed audit</button>
       </div>
+      <section className="ia-link-grid" aria-label="Files Knowledge Evidence guide">
+        <button className="ia-link-card" onClick={() => setView("files")}>
+          <span>Files</span>
+          <b>Uploaded/generated artifacts</b>
+          <p>Download reports, screenshots, decks, exports, and generated working files.</p>
+        </button>
+        <button className="ia-link-card" onClick={() => setView("second-brain")}>
+          <span>Knowledge</span>
+          <b>Curated/searchable context</b>
+          <p>Open maintained notes, source material, wiki pages, and reusable agent context.</p>
+        </button>
+        <button className="ia-link-card on" onClick={() => setView("evidence")}>
+          <span>Evidence</span>
+          <b>Audit trail and proof</b>
+          <p>Inspect task results, approvals, command logs, browser proof, and QA traces.</p>
+        </button>
+      </section>
       <section className="hub-grid" aria-label="Evidence sections">
         {tiles.map((tile) => (
           <button className="hub-card" key={tile.title} onClick={() => setView(tile.target)}>

@@ -111,7 +111,7 @@ export function ChatThread({
   selectedProjectId?: string;
   selectedSessionId?: string;
 }) {
-  const { send, stopProcessing, uploadAttachment, refreshSelected, getModelRouter } = useStore();
+  const { send, stopProcessing, uploadAttachment, refreshSelected, getModelRouter, setView } = useStore();
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [replyTo, setReplyTo] = useState<ReplyContext | null>(null);
@@ -681,7 +681,7 @@ export function ChatThread({
                 ))}
               </select>
             </label>
-            <button className="mic" type="button" disabled aria-label="Voice input unavailable" title="Voice input unavailable">
+            <button className="mic" type="button" onClick={() => setView("agent-voice")} aria-label="Open Agent Voice visualizer" title="Open Agent Voice">
               <Icon name="mic" size={18} />
             </button>
             <button

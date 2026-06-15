@@ -4355,6 +4355,8 @@ def create_attention_task_from_cron_output(path, raw, job, risk, review_reason):
     name = job.get('name') or job_id
     priority = 85 if risk in ('high', 'critical') else 60
     title = f'Attention needed: {name}'
+    tenant = f'cron:{job_id}'
+    idempotency_key = f'attention-cron-output:{job_id}'
     body = (
         'This item was routed to the Task Board because it needs operator attention, '
         'not an Approve/Reject decision.\n\n'
@@ -4367,15 +4369,36 @@ def create_attention_task_from_cron_output(path, raw, job, risk, review_reason):
     try:
         if con.execute('SELECT 1 FROM tasks WHERE id=?', (task_id,)).fetchone():
             return False
+        open_existing = con.execute('''
+            SELECT id FROM tasks
+            WHERE (idempotency_key=? OR (tenant=? AND title=?))
+              AND lower(coalesce(status, '')) NOT IN ('done', 'archived')
+            ORDER BY created_at DESC
+            LIMIT 1
+        ''', (idempotency_key, tenant, title)).fetchone()
+        if open_existing:
+            existing_id = open_existing['id']
+            con.execute('''UPDATE tasks
+                SET body=?, priority=max(coalesce(priority, 0), ?), idempotency_key=coalesce(idempotency_key, ?)
+                WHERE id=?''', (body, priority, idempotency_key, existing_id))
+            con.execute('INSERT INTO task_comments(task_id,author,body,created_at) VALUES (?,?,?,?)', (
+                existing_id, 'mission-control-attention-router',
+                f'Deduped repeated cron attention output for {name} ({job_id}); latest output: {path}; reason: {review_reason}',
+                now,
+            ))
+            con.execute('INSERT INTO task_events(task_id,run_id,kind,payload,created_at) VALUES (?,?,?,?,?)',
+                        (existing_id, None, 'deduped_cron_attention_output', json.dumps({'source':'cron-output-attention-router', 'cron_output': str(path), 'review_reason': review_reason, 'job_id': job_id}), now))
+            con.commit()
+            return False
         con.execute('''INSERT INTO tasks
-            (id,title,body,assignee,status,priority,created_by,created_at,started_at,completed_at,workspace_kind,workspace_path,tenant,skills,model_override,session_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (
+            (id,title,body,assignee,status,priority,created_by,created_at,started_at,completed_at,workspace_kind,workspace_path,tenant,skills,model_override,session_id,idempotency_key)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (
             task_id, title, body, 'Melverick', 'queued', priority,
             'mission-control-attention-router', created_at, None, None, 'scratch', None,
-            f'cron:{job_id}', json.dumps([]), None, None
+            tenant, json.dumps([]), None, None, idempotency_key
         ))
         con.execute('INSERT INTO task_events(task_id,run_id,kind,payload,created_at) VALUES (?,?,?,?,?)',
-                    (task_id, None, 'created', json.dumps({'source':'cron-output-attention-router', 'cron_output': str(path), 'review_reason': review_reason}), now))
+                    (task_id, None, 'created', json.dumps({'source':'cron-output-attention-router', 'cron_output': str(path), 'review_reason': review_reason, 'job_id': job_id}), now))
         con.commit()
         return True
     finally:
@@ -5970,7 +5993,14 @@ def list_task_board(filters=None, identity=None):
         t.pop('_sort_ts', None)
         t.pop('_created_sort_ts', None)
         t.pop('_active_rank', None)
-    projects = sorted({t['tenant'] for t in tasks if t.get('tenant')})
+    # Cron watchdog/automation attention rows use synthetic tenants like
+    # `cron:<job_id>`. They are task provenance, not user-facing Projects, so
+    # keep the tasks visible but remove those synthetic tenants from the
+    # Project filter/summary.
+    projects = sorted({
+        t['tenant'] for t in tasks
+        if t.get('tenant') and not str(t.get('tenant') or '').lower().startswith('cron')
+    })
     boards = [public_kanban_board_source(s) for s in all_sources]
     active_boards = sorted({t.get('board_slug') for t in tasks if t.get('board_slug')})
     if q:
@@ -18536,7 +18566,12 @@ class Handler(BaseHTTPRequestHandler):
                 agent_id = safe_id(parts[2]) or 'default'
                 route, route_status = resolve_agent_runtime_route(identity, agent_id) if identity else ({}, 401)
                 chat_channel_id = route.get('channel_id') if route_status == 200 and isinstance(route, dict) else None
-                self.send_json(agent_payload(agent_id, st=agent_list_status_payload(), include_artifacts=False, chat_channel_id=chat_channel_id, identity=identity, route=route if isinstance(route, dict) else None, message_limit=80, include_runtime_details=False, include_message_project_context=False))
+                # The roster endpoint is intentionally lightweight, but the
+                # explicit /api/agents/<id> detail endpoint backs the Agent
+                # Details drawer.  Keep transcript payload bounded while
+                # returning the runtime/config/tool/skill/task/output fields
+                # the drawer tabs render.
+                self.send_json(agent_payload(agent_id, st=agent_list_status_payload(), include_artifacts=True, chat_channel_id=chat_channel_id, identity=identity, route=route if isinstance(route, dict) else None, message_limit=80, include_runtime_details=True, include_message_project_context=False))
             else:
                 self.send_json({'error': 'not found'}, 404)
         elif parsed.path == '/api/approvals':
