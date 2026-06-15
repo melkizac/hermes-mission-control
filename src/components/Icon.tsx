@@ -39,7 +39,9 @@ type Name =
   | "reply"
   | "stop"
   | "mic"
-  | "spinner";
+  | "spinner"
+  | "sidebar"
+  | "chevronDown";
 
 const paths: Record<Name, string> = {
   logo: "M12 2l9 6-9 6-9-6 9-6zM3 14l9 6 9-6",
@@ -81,6 +83,8 @@ const paths: Record<Name, string> = {
   stop: "M7 7h10v10H7z",
   mic: "M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3zM5 11v1a7 7 0 0014 0v-1M12 19v3M8 22h8",
   spinner: "M12 2a10 10 0 019.5 7",
+  sidebar: "M4 5h16v14H4zM9 5v14M13 9l3 3-3 3",
+  chevronDown: "M6 9l6 6 6-6",
 };
 
 export function Icon({

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "../services/store";
 import { Icon } from "./Icon";
 import logoUrl from "../assets/melverick-os-logo.jpg";
@@ -6,12 +6,25 @@ import type { ViewKey } from "../types";
 
 type NavRouteItem = { key: ViewKey; label: string; icon: Parameters<typeof Icon>[0]["name"] };
 type NavActionItem = { action: "logout"; label: string; icon: Parameters<typeof Icon>[0]["name"] };
-type NavItem = NavRouteItem | NavActionItem;
+type NavLinkItem = { href: string; label: string; icon: Parameters<typeof Icon>[0]["name"] };
+type NavItem = NavRouteItem | NavActionItem | NavLinkItem;
 
-type NavGroup = { label: string; items: NavItem[] };
+type NavGroup = { label: string; items: NavItem[]; system?: boolean };
+
+const workforceSelectorKeys: ViewKey[] = ["skills", "memory", "tools", "plugins"];
 
 function isRouteItem(item: NavItem): item is NavRouteItem {
   return "key" in item;
+}
+
+function isLinkItem(item: NavItem): item is NavLinkItem {
+  return "href" in item;
+}
+
+function navItemKey(item: NavItem) {
+  if (isRouteItem(item)) return item.key;
+  if (isLinkItem(item)) return item.href;
+  return item.action;
 }
 
 const simplifiedWorkspaceGroups: NavGroup[] = [
@@ -41,8 +54,7 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
     items: [
       { key: "agents", label: "Agents", icon: "agents" },
       { key: "models", label: "Model Router", icon: "modelRouter" },
-      { key: "agent-voice", label: "Agent Voice", icon: "mic" },
-      { key: "agent-org", label: "AI Workforce", icon: "agentOrg" },
+      { key: "agent-org", label: "Org Chart", icon: "agentOrg" },
       { key: "skills", label: "Skills", icon: "skills" },
       { key: "memory", label: "Memory", icon: "memory" },
       { key: "tools", label: "Tools", icon: "setup" },
@@ -52,9 +64,12 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
   },
   {
     label: "System",
+    system: true,
     items: [
-      { key: "profile", label: "Settings", icon: "settings" },
-      { action: "logout", label: "Logout", icon: "logout" },
+      { key: "profile", label: "Profile", icon: "profile" },
+      { key: "settings", label: "Settings", icon: "settings" },
+      { href: "/docs#daily-flow", label: "Docs", icon: "file" },
+      { action: "logout", label: "Log out", icon: "logout" },
     ],
   },
 ];
@@ -63,10 +78,10 @@ const adminConsoleGroups: NavGroup[] = [
   {
     label: "Platform",
     items: [
-      { key: "settings", label: "Hermes Desktop", icon: "dashboard" },
-      { key: "users-workspaces", label: "User Access", icon: "profile" },
+      { key: "settings", label: "Admin Console", icon: "dashboard" },
+      { key: "users-workspaces", label: "Users & Workspaces", icon: "profile" },
       { key: "workspace-runtime-console", label: "Workspace Runtime Console", icon: "runtimes" },
-      { key: "agent-platform-admin", label: "Agent Platform Admin", icon: "agentOrg" },
+      { key: "agent-platform-admin", label: "Platform Agent Org", icon: "agentOrg" },
       { key: "shared-agent-templates", label: "Shared Agent Templates", icon: "agents" },
     ],
   },
@@ -74,7 +89,10 @@ const adminConsoleGroups: NavGroup[] = [
     label: "Runtime",
     items: [
       { key: "runtimes", label: "Runtime Connectors", icon: "runtimes" },
-      { key: "automations", label: "Workflow Routine Admin", icon: "automations" },
+      { key: "workflow-library", label: "Workflow Templates Admin", icon: "skills" },
+      { key: "research-runs", label: "Research Run Monitor", icon: "audit" },
+      { key: "models", label: "Model Router", icon: "modelRouter" },
+      { key: "automations", label: "Routine Governance", icon: "automations" },
     ],
   },
   {
@@ -82,8 +100,7 @@ const adminConsoleGroups: NavGroup[] = [
     items: [
       { key: "audit", label: "Global Audit Log", icon: "audit" },
       { key: "costs", label: "Costs / Usage", icon: "costs" },
-      { key: "approval-policy", label: "Approval Policy", icon: "approvals" },
-      { key: "quota", label: "Quota", icon: "dashboard" },
+      { key: "approval-policy", label: "Approval Rules", icon: "approvals" },
     ],
   },
 ];
@@ -103,19 +120,8 @@ const adminConsoleGroups: NavGroup[] = [
 // label: "Knowledge & Evidence"
 
 type RailStatus = {
-  runtime?: { version?: string; profiles?: number };
   gateway?: { running?: boolean };
-  sessions?: { total?: number; active_recent?: number };
 };
-
-function plural(value: number, singular: string) {
-  return `${value} ${singular}${value === 1 ? "" : "s"}`;
-}
-
-function systemLabel(online: boolean, active: number) {
-  if (!online) return "Attention needed";
-  return active > 0 ? "System online" : "Online";
-}
 
 async function requestStatus(): Promise<RailStatus> {
   const url = `${window.location.protocol}//${window.location.host}/api/status`;
@@ -125,8 +131,11 @@ async function requestStatus(): Promise<RailStatus> {
 }
 
 export function NavRail() {
-  const { view, setView, uiMode, agents, me } = useStore();
+  const { view, setView, uiMode } = useStore();
   const [status, setStatus] = useState<RailStatus | null>(null);
+  const [workforceMenuOpen, setWorkforceMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem("hmc-nav-collapsed") === "true");
 
   useEffect(() => {
     let alive = true;
@@ -138,24 +147,34 @@ export function NavRail() {
         if (alive) setStatus(null);
       }
     };
-    void load();
-    const timer = window.setInterval(load, 15000);
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 10000);
+    const interval = window.setInterval(load, 15000);
     return () => {
       alive = false;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
+      window.clearInterval(interval);
     };
   }, []);
 
-  const fallbackActive = agents.filter((a) => a.status === "active" || a.status === "working" || a.status === "waiting").length;
-  const activeSessions = status?.sessions?.active_recent ?? fallbackActive;
-  const totalSessions = status?.sessions?.total ?? agents.reduce((n, a) => n + a.sessionCount, 0);
-  const sessionPercent = useMemo(() => {
-    if (!totalSessions) return 0;
-    return Math.max(4, Math.min(100, Math.round((activeSessions / totalSessions) * 100)));
-  }, [activeSessions, totalSessions]);
+  useEffect(() => {
+    window.localStorage.setItem("hmc-nav-collapsed", String(collapsed));
+    if (collapsed) {
+      setSettingsOpen(false);
+      setWorkforceMenuOpen(false);
+    }
+  }, [collapsed]);
+
   const gatewayOnline = status?.gateway?.running ?? true;
-  const systemStatus = systemLabel(gatewayOnline, activeSessions);
   const visibleGroups = uiMode === "admin" ? adminConsoleGroups : simplifiedWorkspaceGroups;
+  const workspaceSystemGroup = simplifiedWorkspaceGroups.find((group) => group.system);
+  const workspaceSystemItems = workspaceSystemGroup?.items ?? [];
+  const settingsActive = view === "profile" || view === "settings";
+  const workforceSelectorItems = simplifiedWorkspaceGroups
+    .find((group) => group.label === "Workforce")
+    ?.items.filter((item): item is NavRouteItem => isRouteItem(item) && workforceSelectorKeys.includes(item.key)) ?? [];
+  const workforceSelectorActive = workforceSelectorKeys.includes(view);
 
   async function handleLogout() {
     try {
@@ -170,32 +189,110 @@ export function NavRail() {
   }
 
   return (
-    <nav className="rail">
+    <nav className={"rail" + (collapsed ? " collapsed" : "")} aria-label={collapsed ? "Mission Control navigation collapsed" : "Mission Control navigation"}>
       <div className="ws">
-        <span className="mark">
-          <img src={logoUrl} alt="Melverick_OS logo" />
-        </span>
-        <b>Melverick_OS</b>
-        <span className="workspace-pill">{me?.workspace?.name ?? "Workspace"}</span>
-        <span className="chev">⌄</span>
+        <button
+          className="rail-brand-toggle"
+          onClick={() => setCollapsed((next) => !next)}
+          aria-label={collapsed ? "Open sidebar" : "Close sidebar"}
+          aria-expanded={!collapsed}
+          data-tooltip={collapsed ? "Open sidebar" : "Close sidebar"}
+        >
+          <span className="mark">
+            <img src={logoUrl} alt="Melverick_OS logo" />
+          </span>
+          <span className="rail-toggle-icon" aria-hidden="true">
+            <Icon name="sidebar" size={18} />
+          </span>
+        </button>
+        <b className="brand-name">Melverick_OS</b>
+        <span
+          className="brand-status-dot"
+          style={{ background: gatewayOnline ? "var(--good)" : "var(--bad)" }}
+          aria-label={gatewayOnline ? "System online" : "System offline"}
+          title={gatewayOnline ? "System online" : "System offline"}
+        />
+        {!collapsed && (
+          <button
+            className="rail-collapse-button"
+            onClick={() => setCollapsed(true)}
+            aria-label="Close sidebar"
+            data-tooltip="Close sidebar"
+          >
+            <Icon name="sidebar" size={18} />
+          </button>
+        )}
       </div>
 
       <div className="nav scroll">
         {visibleGroups.map((group) => (
-          <div className="nav-group" key={group.label || "primary-chat"}>
+          <div className={"nav-group" + (group.system ? " system-nav" : "")} key={group.label || "primary-chat"}>
             {group.label && <div className="nlabel">{group.label}</div>}
             {group.items.map((it) => {
+              if (uiMode !== "admin" && group.label === "Workforce" && isRouteItem(it) && workforceSelectorKeys.includes(it.key)) {
+                if (it.key !== workforceSelectorKeys[0]) return null;
+                const selectedItem = workforceSelectorItems.find((item) => item.key === view) ?? workforceSelectorItems[0];
+                return (
+                  <div className="workforce-selector" key="workforce-selector">
+                    <button
+                      className={"nitem workforce-selector-trigger" + (workforceSelectorActive ? " on" : "")}
+                      onClick={() => setWorkforceMenuOpen((open) => !open)}
+                      aria-haspopup="menu"
+                      aria-expanded={workforceMenuOpen}
+                      data-tooltip={selectedItem.label}
+                      title={collapsed ? selectedItem.label : undefined}
+                    >
+                      <Icon name={selectedItem.icon} size={17} />
+                      <span className="nav-text">{selectedItem.label}</span>
+                      <span className={"nav-right-icon workforce-chevron" + (workforceMenuOpen ? " open" : "")}>
+                        <Icon name="chevronDown" size={15} />
+                      </span>
+                    </button>
+                    {workforceMenuOpen && !collapsed && (
+                      <div className="workforce-menu" role="menu" aria-label="Workforce resources">
+                        {workforceSelectorItems.map((item) => {
+                          const active = view === item.key;
+                          return (
+                            <button
+                              key={item.key}
+                              className={"workforce-menu-item" + (active ? " on" : "")}
+                              onClick={() => {
+                                setView(item.key);
+                                setWorkforceMenuOpen(false);
+                              }}
+                              role="menuitem"
+                            >
+                              <Icon name={item.icon} size={17} />
+                              <span>{item.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
               const active = isRouteItem(it) && view === it.key;
-              const key = isRouteItem(it) ? it.key : it.action;
+              const key = navItemKey(it);
+              if (isLinkItem(it)) {
+                return (
+                  <a key={key} className="nitem" href={it.href} data-tooltip={it.label} title={collapsed ? it.label : undefined}>
+                    <Icon name={it.icon} size={17} />
+                    <span className="nav-text">{it.label}</span>
+                  </a>
+                );
+              }
               const onClick = isRouteItem(it) ? () => setView(it.key) : () => void handleLogout();
               return (
                 <button
                   key={key}
                   className={"nitem" + (active ? " on" : "")}
                   onClick={onClick}
+                  data-tooltip={it.label}
+                  title={collapsed ? it.label : undefined}
                 >
                   <Icon name={it.icon} size={17} />
-                  {it.label}
+                  <span className="nav-text">{it.label}</span>
                 </button>
               );
             })}
@@ -203,21 +300,56 @@ export function NavRail() {
         ))}
       </div>
 
-      <div className="gw">
-        <div className="row">
-          <span className="dot" style={{ background: gatewayOnline ? "var(--good)" : "var(--bad)" }} /> {systemStatus}
+      {uiMode !== "admin" && !collapsed && (
+        <div className="settings-dock">
+          {settingsOpen && (
+            <div className="settings-menu" role="menu" aria-label="System menu">
+              {workspaceSystemItems.map((it, index) => {
+                const active = isRouteItem(it) && view === it.key;
+                const key = navItemKey(it);
+                if (isLinkItem(it)) {
+                  return (
+                    <div key={key}>
+                      {index === 2 && <div className="settings-menu-divider" />}
+                      <a className="settings-menu-item" href={it.href} role="menuitem">
+                        <Icon name={it.icon} size={17} />
+                        {it.label}
+                      </a>
+                    </div>
+                  );
+                }
+                const onClick = isRouteItem(it)
+                  ? () => {
+                      setView(it.key);
+                      setSettingsOpen(false);
+                    }
+                  : () => {
+                      setSettingsOpen(false);
+                      void handleLogout();
+                    };
+                return (
+                  <div key={key}>
+                    {index === 2 && <div className="settings-menu-divider" />}
+                    <button className={"settings-menu-item" + (active ? " on" : "")} onClick={onClick} role="menuitem">
+                      <Icon name={it.icon} size={17} />
+                      {it.label}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <button
+            className={"settings-trigger" + (settingsActive || settingsOpen ? " on" : "")}
+            onClick={() => setSettingsOpen((open) => !open)}
+            aria-haspopup="menu"
+            aria-expanded={settingsOpen}
+          >
+            <Icon name="settings" size={18} />
+            Settings
+          </button>
         </div>
-        <div className="sub status-main">
-          {gatewayOnline ? plural(activeSessions, "active session") : "Gateway offline"}
-        </div>
-        {gatewayOnline && totalSessions > 0 && (
-          <div className="bar" aria-label={`${activeSessions} active of ${totalSessions} total sessions`}>
-            <i style={{ width: `${sessionPercent}%` }} />
-          </div>
-        )}
-        <a className="sub status-link" href="/docs#daily-flow">View docs →</a>
-      </div>
-
+      )}
     </nav>
   );
 }
