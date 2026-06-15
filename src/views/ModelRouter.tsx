@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 type ModelTier = "frontier" | "balanced" | "standard" | "economy" | "low_cost" | string;
 
@@ -247,7 +248,10 @@ export function ModelRouter() {
 
   return <div className="page router-page">
     <section className="hero router-hero">
-      <div><span className="stub-tag">MODEL ROUTER</span><h1>Cost-aware AI Model Router</h1><p>Register available models, check authorisation, and let Mission Control decide which model tier should handle planning, execution, verification, and sub-agent work.</p></div>
+      <div>
+        <span className="stub-tag">MODEL ROUTER</span>
+        <div className="hero-title-with-help"><h1>Cost-aware AI Model Router</h1><InfoTooltip label="About Model Router">Register available models, check authorisation, and let Mission Control decide which model tier should handle planning, execution, verification, and sub-agent work.</InfoTooltip></div>
+      </div>
       <button className="btn dark" onClick={() => void save()} disabled={saving}>{saving ? "Saving…" : "Save routing policy"}</button>
     </section>
 
@@ -263,8 +267,7 @@ export function ModelRouter() {
     <section className="router-panel agent-runtime-switcher-panel">
       <div className="section-head">
         <div>
-          <h2>Agent runtime switcher</h2>
-          <p>Choose whether each agent should use the Nexius Labs company account or Melverick personal account, then pair it with an authorised model. Secrets stay server-side; active runs keep their original runtime.</p>
+          <div className="section-title-with-help"><h2>Agent runtime switcher</h2><InfoTooltip label="About agent runtime switching">Choose whether each agent should use the Nexius Labs company account or Melverick personal account, then pair it with an authorised model. Secrets stay server-side; active runs keep their original runtime.</InfoTooltip></div>
         </div>
         <button className="btn ghost" onClick={() => void loadRuntimeSwitcher()}>Refresh runtime status</button>
       </div>

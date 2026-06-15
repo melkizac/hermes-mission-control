@@ -498,6 +498,8 @@ export function ChatThread({
                 aria-label="Open agent actions"
                 aria-haspopup="menu"
                 aria-expanded={agentActionMenuOpen}
+                title="Agent actions"
+                data-tooltip="Agent actions"
                 onClick={() => setAgentActionMenuOpen((open) => !open)}
               >
                 <Icon name="more" size={16} />
@@ -513,7 +515,7 @@ export function ChatThread({
                         onOpenWorkerLog();
                       }}
                     >
-                      Agent Log
+                      Worker log
                     </button>
                   )}
                   {onOpenDetails && (

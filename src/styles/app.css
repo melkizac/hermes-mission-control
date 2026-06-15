@@ -1586,7 +1586,7 @@ input, select, textarea { font-family: inherit; }
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  z-index: 35;
+  z-index: 120;
   min-width: 156px;
   border: 1px solid #e1e7ef;
   border-radius: 14px;

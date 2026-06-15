@@ -212,7 +212,7 @@ export function NavRail() {
   }, [settingsOpen, usagePeekOpen]);
 
   useEffect(() => {
-    if (!settingsOpen) setUsagePeekOpen(false);
+    if (settingsOpen) setUsagePeekOpen(true);
   }, [settingsOpen]);
 
   useEffect(() => {
@@ -406,6 +406,7 @@ export function NavRail() {
                           }}
                           aria-label={usagePeekOpen ? "Hide rate limits details" : "Show rate limits details"}
                           aria-expanded={usagePeekOpen}
+                          title={usagePeekOpen ? "Hide rate limits details" : "Show rate limits details"}
                         >
                           <Icon name="chevronDown" size={15} />
                         </button>
@@ -431,6 +432,9 @@ export function NavRail() {
             onClick={() => setSettingsOpen((open) => !open)}
             aria-haspopup="menu"
             aria-expanded={settingsOpen}
+            aria-label={settingsOpen ? "Hide Settings menu with rate limit details" : "Open Settings menu with rate limit details"}
+            title="Settings and rate limit details"
+            data-tooltip="Settings"
           >
             <Icon name="settings" size={18} />
             Settings
