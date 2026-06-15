@@ -40,6 +40,10 @@ def test_agent_chat_project_context_and_model_router_progressively_hydrate():
     assert "projectChatsHydrating" in roster
     assert "composer is ready now" in roster
     assert 'cachedJsonRequest("chat-page:model-router"' in store
+    assert '}, 10000);' not in store
+    assert '}, 12000);' not in store
+    assert '}, 250);' in store
+    assert '}, 1000);' in store
     assert "ensureModelRouter" in chat_thread
     assert "onFocus={() => void ensureModelRouter()}" in chat_thread
     assert "if (modelSelection === \"auto\") return;" in chat_thread

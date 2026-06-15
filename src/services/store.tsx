@@ -119,10 +119,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setSelectedId((cur) => cur ?? a[0]?.id ?? null);
         })
         .catch(() => undefined);
-    }, 10000);
+    }, 250);
     window.setTimeout(() => {
       void client.listApprovals().then(setApprovals).catch(() => setApprovals([]));
-    }, 12000);
+    }, 1000);
   }, [uiMode]);
 
   useLayoutEffect(() => {
