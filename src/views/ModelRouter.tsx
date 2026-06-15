@@ -45,9 +45,51 @@ type RoutePlan = {
   cost_control?: { estimated_savings?: string; frontier_only_for?: string };
 };
 
+type AgentRuntimeAccount = {
+  id: string;
+  label: string;
+  email_hint?: string;
+  provider: string;
+  credential_env?: string;
+  billing_owner?: string;
+  notes?: string;
+  configured?: boolean;
+  secret_status?: string;
+};
+
+type AgentRuntimeAssignment = {
+  agent_id: string;
+  account_id: string;
+  model_id: string;
+  reasoning: string;
+  apply_mode: string;
+  updated_at?: string;
+  updated_by?: string;
+  note?: string;
+};
+
+type AgentRuntimeSwitcher = {
+  ok: boolean;
+  updated_at?: string;
+  accounts: AgentRuntimeAccount[];
+  models: RouterModel[];
+  agents: Array<{ id: string; name: string; squad?: string; status?: string }>;
+  assignments: Record<string, AgentRuntimeAssignment>;
+  audit: Array<Record<string, unknown>>;
+  summary: { accounts: number; configured_accounts: number; agents: number; assigned: number };
+  error?: string;
+};
+
 type ModelUsageLimit = NonNullable<CostsResponse["model_usage"]>;
 
+type AdminConsoleModelCard = {
+  account: AgentRuntimeAccount;
+  model?: RouterModel;
+  assignedAgents: Array<{ id: string; name: string }>;
+};
+
 const emptyConfig: RouterConfig = { enabled: true, updated_at: "", policy: {}, models: [], summary: { total: 0, enabled: 0, authorized: 0, frontier: 0 } };
+const emptyRuntime: AgentRuntimeSwitcher = { ok: true, accounts: [], models: [], agents: [], assignments: {}, audit: [], summary: { accounts: 0, configured_accounts: 0, agents: 0, assigned: 0 } };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${window.location.protocol}//${window.location.host}${path}`, {
@@ -70,27 +112,6 @@ function tierLabel(tier: string) {
 function modelSummary(model?: RouterModel | null) {
   if (!model) return "No enabled model";
   return `${model.provider}/${model.model} · ${tierLabel(model.tier)} · cost weight ${model.cost_weight || 1}`;
-}
-
-function providerCredentialEnv(provider: string) {
-  const mapping: Record<string, string> = {
-    openrouter: "OPENROUTER_API_KEY",
-    openai: "OPENAI_API_KEY",
-    anthropic: "ANTHROPIC_API_KEY",
-    nous: "NOUS_API_KEY",
-    google: "GOOGLE_API_KEY",
-    gemini: "GEMINI_API_KEY",
-    deepseek: "DEEPSEEK_API_KEY",
-    xai: "XAI_API_KEY",
-    "openai-codex": "",
-  };
-  return mapping[provider.toLowerCase()] ?? "";
-}
-
-function authLabel(model: RouterModel) {
-  if (!model.enabled) return "disabled";
-  if (model.authorized) return "authorised";
-  return "not authorised";
 }
 
 function pctLabel(value?: number | null) {
@@ -126,7 +147,8 @@ function UsageLimitRow({ window, available = true }: { window?: ModelUsageWindow
   );
 }
 
-function findUsageForModel(model: RouterModel, rows: ModelUsageLimit[]) {
+function findUsageForModel(model: RouterModel | undefined, rows: ModelUsageLimit[]) {
+  if (!model) return undefined;
   const keys = new Set([model.model, model.id, `${model.provider}/${model.model}`].map((x) => String(x || "").trim()).filter(Boolean));
   return rows.find((usage) => {
     const ids = [usage.selected_model, ...(usage.models || []), ...(usage.aliases || [])].map((x) => String(x || "").trim());
@@ -134,46 +156,79 @@ function findUsageForModel(model: RouterModel, rows: ModelUsageLimit[]) {
   });
 }
 
-function ModelEditor({ model, usage, onChange, onRemove }: { model: RouterModel; usage?: ModelUsageLimit; onChange: (m: RouterModel) => void; onRemove: () => void }) {
-  return <article className={`router-model-card ${model.enabled ? "" : "disabled"}`}>
+function modelForAccount(account: AgentRuntimeAccount, runtime: AgentRuntimeSwitcher) {
+  const assignment = Object.values(runtime.assignments || {}).find((item) => item.account_id === account.id);
+  const assignedModel = runtime.models.find((model) => model.id === assignment?.model_id);
+  if (assignedModel) return assignedModel;
+  return runtime.models.find((model) => model.provider === account.provider && model.enabled) || runtime.models[0];
+}
+
+function providerModelLabel(account: AgentRuntimeAccount, model?: RouterModel) {
+  const provider = model?.provider || account.provider || "provider";
+  const modelId = model?.model || "model not assigned";
+  return `${provider}/${modelId}`;
+}
+
+function AccountModelCard({ card, usage }: { card: AdminConsoleModelCard; usage?: ModelUsageLimit }) {
+  const { account, model, assignedAgents } = card;
+  const ready = Boolean(account.configured || account.provider === "openai-codex");
+  return <article className={`router-model-card admin-console-model-card ${ready ? "" : "disabled"}`}>
     <div className="router-model-head">
-      <div><b>{model.label || model.model}</b><small>{modelSummary(model)}</small></div>
-      <span className={`auth-pill ${model.enabled && model.authorized ? "ok" : "missing"}`}>{authLabel(model)}</span>
+      <div>
+        <b>{account.label}</b>
+        <small>{providerModelLabel(account, model)} · credential / quota bucket</small>
+      </div>
+      <span className={`auth-pill ${ready ? "ok" : "missing"}`}>{ready ? "authorised account" : "credential missing"}</span>
     </div>
-    <div className="router-grid-form">
-      <label>Label<input value={model.label || ""} onChange={(e) => onChange({ ...model, label: e.target.value })} /></label>
-      <label>Provider<input value={model.provider || ""} onChange={(e) => onChange({ ...model, provider: e.target.value })} /></label>
-      <label>Model ID<input value={model.model || ""} onChange={(e) => onChange({ ...model, model: e.target.value })} /></label>
-      <label>Tier<select value={model.tier || "economy"} onChange={(e) => onChange({ ...model, tier: e.target.value })}><option value="frontier">frontier</option><option value="balanced">balanced</option><option value="economy">economy</option><option value="standard">standard</option><option value="low_cost">low_cost</option></select></label>
-      <label>Credential env var<input value={model.credential_env || ""} onChange={(e) => onChange({ ...model, credential_env: e.target.value.toUpperCase() })} placeholder="OPENAI_API_KEY" /></label>
-      <label>Cost weight<input type="number" min={1} max={100} value={model.cost_weight || 1} onChange={(e) => onChange({ ...model, cost_weight: Number(e.target.value) })} /></label>
+    <div className="router-cli-grid compact">
+      <div><span>Credential/account</span><b>{account.label}</b></div>
+      <div><span>Provider</span><b>{account.provider || model?.provider || "—"}</b></div>
+      <div><span>Model</span><b>{model?.model || "—"}</b></div>
+      <div><span>Quota owner</span><b>{account.billing_owner || "—"}</b></div>
     </div>
-    <label className="wide-label">Best for<input value={(model.best_for || []).join(", ")} onChange={(e) => onChange({ ...model, best_for: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })} placeholder="planning, strategy, extraction" /></label>
-    <label className="wide-label">Notes<textarea value={model.notes || ""} onChange={(e) => onChange({ ...model, notes: e.target.value })} /></label>
-    <div className="router-actions"><label className="toggle-line"><input type="checkbox" checked={model.enabled} onChange={(e) => onChange({ ...model, enabled: e.target.checked })} /> Enabled for routing</label><button className="btn ghost small" onClick={onRemove}>Remove</button></div>
+    <p className="muted">Separate Codex authorisation/quota bucket. This is not a separate model ID; both current Codex accounts run the same main model when assigned.</p>
+    {model && <div className="runtime-account-meta"><span>{tierLabel(model.tier)}</span><span>{model.enabled ? "enabled for routing" : "routing disabled"}</span><span>{model.secret_status || "Hermes auth"}</span></div>}
     <div className={`router-model-usage ${usage && usage.available !== false && !usage.error ? "" : "unavailable"}`}>
       {usage?.error && <p>{usage.error}</p>}
       <UsageLimitRow window={usage?.daily} available={Boolean(usage && usage.available !== false && !usage.error)} />
       <UsageLimitRow window={usage?.weekly} available={Boolean(usage && usage.available !== false && !usage.error)} />
     </div>
+    <div className="runtime-account-meta"><span>{assignedAgents.length ? `${assignedAgents.map((agent) => agent.name).join(", ")} assigned` : "No agent assigned"}</span></div>
   </article>;
 }
 
 export function ModelRouter() {
   const [draft, setDraft] = useState<RouterConfig>(emptyConfig);
+  const [runtime, setRuntime] = useState<AgentRuntimeSwitcher>(emptyRuntime);
   const [costs, setCosts] = useState<CostsResponse | null>(null);
   const [instruction, setInstruction] = useState("Plan and execute a client-facing automation feature, split the work into sub-agents, then verify the result and control cost.");
   const [plan, setPlan] = useState<RoutePlan | null>(null);
   const [status, setStatus] = useState<string>("Loading…");
   const [saving, setSaving] = useState(false);
 
-  const authorizedModels = useMemo(() => draft.models.filter((model) => model.enabled && model.authorized), [draft.models]);
-  const blockedModels = useMemo(() => draft.models.filter((model) => !model.enabled || !model.authorized), [draft.models]);
+  const adminConsoleCards = useMemo<AdminConsoleModelCard[]>(() => {
+    return runtime.accounts.map((account) => {
+      const model = modelForAccount(account, runtime);
+      const assignedAgents = Object.values(runtime.assignments || {})
+        .filter((assignment) => assignment.account_id === account.id)
+        .map((assignment) => runtime.agents.find((agent) => agent.id === assignment.agent_id))
+        .filter((agent): agent is { id: string; name: string } => Boolean(agent));
+      return { account, model, assignedAgents };
+    });
+  }, [runtime]);
+
+  const uniqueAdminModels = useMemo(() => new Set(adminConsoleCards.map((card) => providerModelLabel(card.account, card.model)).filter(Boolean)), [adminConsoleCards]);
+  const usageModels = costs?.model_usage_models?.length ? costs.model_usage_models : costs?.model_usage ? [costs.model_usage] : [];
 
   const load = async () => {
     try {
-      const [data, costData] = await Promise.all([request<RouterConfig>("/api/model-router"), request<CostsResponse>("/api/costs?days=30")]);
+      const [data, runtimeData, costData] = await Promise.all([
+        request<RouterConfig>("/api/model-router"),
+        request<AgentRuntimeSwitcher>("/api/agent-runtimes"),
+        request<CostsResponse>("/api/costs?days=30"),
+      ]);
       setDraft(JSON.parse(JSON.stringify(data)));
+      setRuntime(runtimeData);
       setCosts(costData);
       setStatus("");
     } catch (e) { setStatus(e instanceof Error ? e.message : String(e)); }
@@ -181,69 +236,39 @@ export function ModelRouter() {
   useEffect(() => { void load(); }, []);
 
   const save = async () => {
-    setSaving(true); setStatus("Saving model allow-list…");
+    setSaving(true); setStatus("Saving routing policy…");
     try {
-      const data = await request<RouterConfig>("/api/model-router", { method: "POST", body: JSON.stringify(draft) });
-      setDraft(JSON.parse(JSON.stringify(data))); setStatus("Saved. Authorisation status refreshed from server-side env vars. Agent selectors will only show authorised + enabled models.");
+      const allowedModelIds = new Set(adminConsoleCards.map((card) => card.model?.id).filter(Boolean));
+      const adminConsoleModelsOnly = draft.models.filter((model) => allowedModelIds.has(model.id));
+      const data = await request<RouterConfig>("/api/model-router", { method: "POST", body: JSON.stringify({ ...draft, models: adminConsoleModelsOnly }) });
+      setDraft(JSON.parse(JSON.stringify(data))); setStatus("Saved. Model allow-list now only contains models referenced by the Hermes Admin Console runtime accounts.");
     } catch (e) { setStatus(e instanceof Error ? e.message : String(e)); }
     finally { setSaving(false); }
   };
 
   const testRoute = async () => {
-    setStatus("Analysing task complexity and selecting models…");
+    setStatus("Analysing task complexity and selecting from Admin Console models…");
     try {
       const data = await request<RoutePlan>("/api/model-router/route", { method: "POST", body: JSON.stringify({ instruction }) });
       setPlan(data); setStatus("");
     } catch (e) { setStatus(e instanceof Error ? e.message : String(e)); }
   };
 
-  const addModel = () => {
-    const n = draft.models.length + 1;
-    setDraft({ ...draft, models: [...draft.models, { id: `custom-${Date.now()}`, label: `Custom model ${n}`, provider: "openrouter", model: "provider/model-id", tier: "economy", enabled: true, credential_env: "OPENROUTER_API_KEY", cost_weight: 1, best_for: ["simple_qa"], notes: "" }] });
-  };
-
-  const addHermesCliModel = () => {
-    const active = draft.hermes_settings?.active;
-    if (!active?.provider || !active?.model) {
-      setStatus("No active Hermes CLI model found. Set one with `hermes model` or `hermes config set model.provider/model.default` first.");
-      return;
-    }
-    const id = `${active.provider}-${active.model}`.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-|-$/g, "") || `hermes-cli-${Date.now()}`;
-    const existingIndex = draft.models.findIndex((m) => m.id === id || (m.provider === active.provider && m.model === active.model));
-    const model: RouterModel = {
-      id,
-      label: `Hermes CLI default · ${active.model}`,
-      provider: active.provider,
-      model: active.model,
-      tier: "frontier",
-      enabled: true,
-      credential_env: active.credential_env || providerCredentialEnv(active.provider),
-      cost_weight: 8,
-      best_for: ["planning", "strategy", "complex_reasoning", "verification"],
-      notes: `Imported from Hermes CLI config at ${draft.hermes_settings?.config_path}. Authorisation is checked from Hermes .env/API keys or auth.json OAuth credentials.`,
-    };
-    setDraft({ ...draft, models: existingIndex >= 0 ? draft.models.map((m, i) => i === existingIndex ? { ...m, ...model } : m) : [...draft.models, model] });
-    setStatus("Added the current Hermes CLI default model to the Mission Control allow-list. Save to authorise it for agent assignment.");
-  };
-
-  const hermesActive = draft.hermes_settings?.active;
-  const usageModels = costs?.model_usage_models?.length ? costs.model_usage_models : costs?.model_usage ? [costs.model_usage] : [];
-
   return <div className="page router-page">
     <section className="hero router-hero">
       <div>
         <span className="stub-tag">SETTINGS · MODELS</span>
-        <div className="hero-title-with-help"><h1>Models & rate limits</h1><InfoTooltip label="About Models & rate limits">Register models, verify server-side authorisation, control agent routing, and view provider rate-limit windows in one Settings surface.</InfoTooltip></div>
-        <p>Each model card combines the authorised routing fields with provider rate-limit remaining bars. Secrets stay server-side; this page shows model availability, credential status, and quota evidence only.</p>
+        <div className="hero-title-with-help"><h1>Models & rate limits</h1><InfoTooltip label="About Models & rate limits">This page mirrors the Hermes Admin Console runtime accounts. It separates Codex quota buckets by authorised account while showing the actual provider/model pair assigned to each account.</InfoTooltip></div>
+        <p>Melkizac/default and Andrej/dev-ops are separated by Codex credential/quota bucket, not by model ID. Both currently run <b>openai-codex/gpt-5.5</b>; new DevOps Builder sessions route through <b>codex-Melverick</b>.</p>
       </div>
-      <button className="btn dark" onClick={() => void save()} disabled={saving}>{saving ? "Saving…" : "Save allow-list"}</button>
+      <button className="btn dark" onClick={() => void save()} disabled={saving}>{saving ? "Saving…" : "Save Admin Console allow-list"}</button>
     </section>
 
     <section className="metrics-grid router-metrics">
-      <div className="metric"><span>Registered</span><b>{draft.summary?.total ?? draft.models.length}</b><small>models in allow-list</small></div>
-      <div className="metric"><span>Assignable</span><b>{authorizedModels.length}</b><small>authorised + enabled</small></div>
-      <div className="metric"><span>Blocked</span><b>{blockedModels.length}</b><small>disabled or missing credential</small></div>
-      <div className="metric"><span>Policy</span><b>{draft.enabled ? "ON" : "OFF"}</b><small>{draft.updated_at ? `saved ${draft.updated_at}` : "auto-selection gate"}</small></div>
+      <div className="metric"><span>Codex accounts</span><b>{adminConsoleCards.length}</b><small>authorised quota buckets from Admin Console</small></div>
+      <div className="metric"><span>Unique model IDs</span><b>{uniqueAdminModels.size}</b><small>{Array.from(uniqueAdminModels).join(", ") || "none assigned"}</small></div>
+      <div className="metric"><span>Agents routed</span><b>{runtime.summary.assigned || 0}</b><small>new sessions use assigned account/model</small></div>
+      <div className="metric"><span>Hidden from page</span><b>{Math.max(0, (draft.models?.length || 0) - uniqueAdminModels.size)}</b><small>models not listed in Admin Console</small></div>
     </section>
 
     {status && <div className="org-warning">{status}</div>}
@@ -251,33 +276,35 @@ export function ModelRouter() {
     <section className="router-panel hermes-cli-panel">
       <div className="section-head">
         <div>
-          <h2>Hermes CLI model settings</h2>
-          <p>The allow-list reads the active Hermes CLI model from config.yaml and checks authorisation from Hermes .env API keys or auth.json OAuth credentials. Secrets are never shown here.</p>
+          <h2>Hermes Admin Console source of truth</h2>
+          <p>Only runtime accounts listed by the Hermes Admin Console are shown below. Model rows that exist only in the legacy router registry are intentionally hidden from this Settings page.</p>
         </div>
-        <button className="btn dark" onClick={addHermesCliModel}>Add current Hermes CLI model</button>
+        <button className="btn ghost" onClick={() => void load()}>Refresh Admin Console state</button>
       </div>
       <div className="router-cli-grid">
-        <div><span>Current provider</span><b>{hermesActive?.provider || "not set"}</b></div>
-        <div><span>Current model</span><b>{hermesActive?.model || "not set"}</b></div>
-        <div><span>Credential source</span><b>{hermesActive?.auth_provider_configured ? "Hermes auth" : hermesActive?.credential_env || "not set"}</b></div>
-        <div><span>Config</span><b className="mono">{draft.hermes_settings?.config_path || "~/.hermes/config.yaml"}</b></div>
+        <div><span>Melkizac/default</span><b>Codex-Nexius</b></div>
+        <div><span>Andrej/dev-ops</span><b>codex-Melverick</b></div>
+        <div><span>Provider</span><b>openai-codex</b></div>
+        <div><span>Main model</span><b>gpt-5.5</b></div>
       </div>
-      {(draft.hermes_settings?.auth_providers?.length ?? 0) > 0 && <p className="muted">Hermes auth providers detected: {draft.hermes_settings?.auth_providers.join(", ")}</p>}
+      <p className="muted">Separation is by authorised Codex account / quota bucket. HMC runtime routing assigns Andrej / DevOps Builder to codex-Melverick for new sessions.</p>
     </section>
 
     <section className="router-panel">
-      <div className="section-head"><div><h2>Model access & rate limits</h2><p>These cards replace the separate model routing and rate-limit pages: edit routing metadata, authorisation status, and provider quota remaining together.</p></div><button className="btn ghost" onClick={addModel}>Add model manually</button></div>
-      <div className="router-model-grid">{draft.models.map((model, index) => <ModelEditor key={model.id || index} model={model} usage={findUsageForModel(model, usageModels)} onChange={(next) => setDraft({ ...draft, models: draft.models.map((m, i) => i === index ? next : m) })} onRemove={() => setDraft({ ...draft, models: draft.models.filter((_, i) => i !== index) })} />)}</div>
-      {draft.models.length === 0 && <div className="empty big">No models registered yet. Add the current Hermes CLI model or add one manually.</div>}
+      <div className="section-head"><div><h2>Authorised Codex accounts & rate limits</h2><p>These cards are generated from <code>/api/agent-runtimes</code>, not from legacy router-only models. Unlisted models are not rendered.</p></div></div>
+      <div className="router-model-grid">
+        {adminConsoleCards.map((card) => <AccountModelCard key={card.account.id} card={card} usage={findUsageForModel(card.model, usageModels)} />)}
+      </div>
+      {adminConsoleCards.length === 0 && <div className="empty big">No Hermes Admin Console runtime accounts found.</div>}
     </section>
 
     <section className="router-panel">
-      <div className="section-head"><div><h2>Auto-selection policy</h2><p>Mission Control can still classify task complexity and propose the best authorised model tier, but actual per-agent assignment is now made from each agent detail drawer.</p></div><label className="toggle-line"><input type="checkbox" checked={draft.enabled} onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} /> Auto-select models for chat routing</label></div>
+      <div className="section-head"><div><h2>Auto-selection policy</h2><p>Mission Control can still classify task complexity and route against the Admin Console allow-list. Account/quota selection comes from each agent runtime assignment.</p></div><label className="toggle-line"><input type="checkbox" checked={draft.enabled} onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} /> Auto-select models for chat routing</label></div>
       <textarea className="policy-textarea" value={String(draft.policy?.goal || "")} onChange={(e) => setDraft({ ...draft, policy: { ...draft.policy, goal: e.target.value } })} />
     </section>
 
     <section className="router-panel">
-      <div className="section-head"><div><h2>Test auto-selection</h2><p>Paste a human instruction and Mission Control will classify complexity, choose a planner model, and assign suitable authorised model tiers to sub-agent steps.</p></div><button className="btn dark" onClick={() => void testRoute()}>Route this task</button></div>
+      <div className="section-head"><div><h2>Test auto-selection</h2><p>Paste a human instruction and Mission Control will classify complexity using the saved Admin Console model allow-list.</p></div><button className="btn dark" onClick={() => void testRoute()}>Route this task</button></div>
       <textarea className="policy-textarea tall" value={instruction} onChange={(e) => setInstruction(e.target.value)} />
       {plan && <div className="route-plan">
         <div className="route-score"><b>{plan.complexity}</b><span>{plan.complexity_label}</span><small>Planner: {modelSummary(plan.planner_model)}</small></div>
