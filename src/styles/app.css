@@ -3416,6 +3416,60 @@ input, select, textarea { font-family: inherit; }
   margin-top: 12px;
 }
 
+.account-card-grid,
+.agent-runtime-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.account-runtime-card,
+.agent-runtime-card {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 16px;
+  background: #fff;
+}
+
+.runtime-account-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.runtime-account-meta span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  background: var(--panel);
+}
+
+.runtime-assignment-form {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.runtime-audit-log {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 12px 14px;
+  background: var(--panel);
+}
+
+.runtime-audit-log summary {
+  cursor: pointer;
+  font-weight: 800;
+  color: var(--ink2);
+}
+
+.runtime-audit-log .route-steps {
+  margin-top: 12px;
+}
+
 .route-plan {
   display: grid;
   grid-template-columns: 220px 1fr;
@@ -3466,7 +3520,8 @@ input, select, textarea { font-family: inherit; }
   .router-metrics,
   .router-cli-grid,
   .route-plan,
-  .router-grid-form {
+  .router-grid-form,
+  .runtime-assignment-form {
     grid-template-columns: 1fr;
   }
 }

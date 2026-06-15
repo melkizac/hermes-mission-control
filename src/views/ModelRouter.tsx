@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 type ModelTier = "frontier" | "balanced" | "standard" | "economy" | "low_cost" | string;
 
@@ -46,7 +46,43 @@ type RoutePlan = {
   registry_summary?: RouterConfig["summary"];
 };
 
+type AgentRuntimeAccount = {
+  id: string;
+  label: string;
+  email_hint?: string;
+  provider: string;
+  credential_env: string;
+  billing_owner?: string;
+  notes?: string;
+  configured?: boolean;
+  secret_status?: string;
+};
+
+type AgentRuntimeAssignment = {
+  agent_id: string;
+  account_id: string;
+  model_id: string;
+  reasoning: string;
+  apply_mode: string;
+  updated_at?: string;
+  updated_by?: string;
+  note?: string;
+};
+
+type AgentRuntimeSwitcher = {
+  ok: boolean;
+  updated_at?: string;
+  accounts: AgentRuntimeAccount[];
+  models: RouterModel[];
+  agents: Array<{ id: string; name: string; squad?: string; status?: string; processingRequests?: string[] }>;
+  assignments: Record<string, AgentRuntimeAssignment>;
+  audit: Array<{ id: string; agent_id: string; from_account?: string; to_account?: string; from_model?: string; to_model?: string; account_label?: string; model_label?: string; apply_mode?: string; changed_by?: string; timestamp?: string }>;
+  summary: { accounts: number; configured_accounts: number; agents: number; assigned: number };
+  error?: string;
+};
+
 const emptyConfig: RouterConfig = { enabled: true, updated_at: "", policy: {}, models: [], summary: { total: 0, enabled: 0, authorized: 0, frontier: 0 } };
+const emptyRuntimeSwitcher: AgentRuntimeSwitcher = { ok: true, accounts: [], models: [], agents: [], assignments: {}, audit: [], summary: { accounts: 0, configured_accounts: 0, agents: 0, assigned: 0 } };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${window.location.protocol}//${window.location.host}${path}`, {
@@ -69,6 +105,22 @@ function tierLabel(tier: string) {
 function modelSummary(model?: RouterModel | null) {
   if (!model) return "No enabled model";
   return `${model.provider}/${model.model} · ${tierLabel(model.tier)} · cost weight ${model.cost_weight || 1}`;
+}
+
+function byId<T extends { id: string }>(items: T[], id?: string) {
+  return items.find((item) => item.id === id);
+}
+
+function accountLabel(account?: AgentRuntimeAccount) {
+  if (!account) return "No account";
+  return `${account.label}${account.email_hint ? ` · ${account.email_hint}` : ""}`;
+}
+
+function assignmentWarnings(agent: AgentRuntimeSwitcher["agents"][number], account?: AgentRuntimeAccount) {
+  const warnings: string[] = [];
+  if (!account?.configured) warnings.push("credential missing");
+  if ((agent.processingRequests || []).length > 0) warnings.push("active run continues on previous runtime");
+  return warnings;
 }
 
 function providerCredentialEnv(provider: string) {
@@ -108,20 +160,26 @@ function ModelEditor({ model, onChange, onRemove }: { model: RouterModel; onChan
 
 export function ModelRouter() {
   const [draft, setDraft] = useState<RouterConfig>(emptyConfig);
+  const [runtimeSwitcher, setRuntimeSwitcher] = useState<AgentRuntimeSwitcher>(emptyRuntimeSwitcher);
+  const [runtimeSaving, setRuntimeSaving] = useState<string | null>(null);
   const [instruction, setInstruction] = useState("Plan and execute a client-facing automation feature, split the work into sub-agents, then verify the result and control cost.");
   const [plan, setPlan] = useState<RoutePlan | null>(null);
   const [status, setStatus] = useState<string>("Loading…");
   const [saving, setSaving] = useState(false);
 
+  const loadRuntimeSwitcher = async () => {
+    const data = await request<AgentRuntimeSwitcher>("/api/agent-runtimes");
+    setRuntimeSwitcher(data);
+    return data;
+  };
+
   const load = async () => {
     try {
-      const data = await request<RouterConfig>("/api/model-router");
+      const [data] = await Promise.all([request<RouterConfig>("/api/model-router"), loadRuntimeSwitcher()]);
       setDraft(JSON.parse(JSON.stringify(data))); setStatus("");
     } catch (e) { setStatus(e instanceof Error ? e.message : String(e)); }
   };
   useEffect(() => { void load(); }, []);
-
-  const authorisedModels = useMemo(() => draft.models.filter((m) => m.enabled && m.authorized).length, [draft.models]);
 
   const save = async () => {
     setSaving(true); setStatus("Saving model routing policy…");
@@ -138,6 +196,20 @@ export function ModelRouter() {
       const data = await request<RoutePlan>("/api/model-router/route", { method: "POST", body: JSON.stringify({ instruction }) });
       setPlan(data); setStatus("");
     } catch (e) { setStatus(e instanceof Error ? e.message : String(e)); }
+  };
+
+  const saveAgentRuntime = async (agentId: string, patch: Partial<AgentRuntimeAssignment>) => {
+    const current = runtimeSwitcher.assignments[agentId];
+    if (!current) return;
+    const next = { ...current, ...patch };
+    setRuntimeSaving(agentId);
+    setStatus(`Saving runtime for ${agentId}…`);
+    try {
+      const data = await request<AgentRuntimeSwitcher>(`/api/agent-runtimes/${encodeURIComponent(agentId)}`, { method: "POST", body: JSON.stringify(next) });
+      setRuntimeSwitcher(data);
+      setStatus("Runtime switch saved. Existing active runs continue unchanged; new sessions use the selected account/model.");
+    } catch (e) { setStatus(e instanceof Error ? e.message : String(e)); }
+    finally { setRuntimeSaving(null); }
   };
 
   const addModel = () => {
@@ -170,6 +242,8 @@ export function ModelRouter() {
   };
 
   const hermesActive = draft.hermes_settings?.active;
+  const runtimeModels = runtimeSwitcher.models.length ? runtimeSwitcher.models : draft.models;
+  const configuredAccounts = runtimeSwitcher.accounts.filter((account) => account.configured).length;
 
   return <div className="page router-page">
     <section className="hero router-hero">
@@ -179,12 +253,61 @@ export function ModelRouter() {
 
     <section className="metrics-grid router-metrics">
       <div className="metric"><span>Registered</span><b>{draft.summary?.total ?? draft.models.length}</b><small>models in registry</small></div>
-      <div className="metric"><span>Authorised</span><b>{authorisedModels}</b><small>credential env vars found</small></div>
-      <div className="metric"><span>Frontier</span><b>{draft.models.filter((m) => m.tier === "frontier").length}</b><small>reserved for complex work</small></div>
+      <div className="metric"><span>AI Accounts</span><b>{configuredAccounts}/{runtimeSwitcher.accounts.length || 2}</b><small>company + personal credential status</small></div>
+      <div className="metric"><span>Agents routed</span><b>{runtimeSwitcher.summary.assigned || 0}</b><small>per-agent account/model choices</small></div>
       <div className="metric"><span>Policy</span><b>{draft.enabled ? "ON" : "OFF"}</b><small>{draft.updated_at ? `saved ${draft.updated_at}` : "auto-selection gate"}</small></div>
     </section>
 
     {status && <div className="org-warning">{status}</div>}
+
+    <section className="router-panel agent-runtime-switcher-panel">
+      <div className="section-head">
+        <div>
+          <h2>Agent runtime switcher</h2>
+          <p>Choose whether each agent should use the Nexius Labs company account or Melverick personal account, then pair it with an authorised model. Secrets stay server-side; active runs keep their original runtime.</p>
+        </div>
+        <button className="btn ghost" onClick={() => void loadRuntimeSwitcher()}>Refresh runtime status</button>
+      </div>
+
+      <div className="account-card-grid">
+        {runtimeSwitcher.accounts.map((account) => <article className="account-runtime-card" key={account.id}>
+          <div className="router-model-head">
+            <div><b>{account.label}</b><small>{account.email_hint} · {account.billing_owner || "billing owner unset"}</small></div>
+            <span className={`auth-pill ${account.configured ? "ok" : "missing"}`}>{account.configured ? "configured" : "missing key"}</span>
+          </div>
+          <div className="runtime-account-meta"><span>{account.provider}</span><span>{account.credential_env}</span></div>
+          {account.notes && <p className="muted">{account.notes}</p>}
+        </article>)}
+      </div>
+
+      <div className="agent-runtime-grid">
+        {runtimeSwitcher.agents.map((agent) => {
+          const assignment = runtimeSwitcher.assignments[agent.id];
+          const account = byId(runtimeSwitcher.accounts, assignment?.account_id);
+          const model = byId(runtimeModels, assignment?.model_id);
+          const warnings = assignmentWarnings(agent, account);
+          return <article className="agent-runtime-card" key={agent.id}>
+            <div className="router-model-head">
+              <div><b>{agent.name}</b><small>{agent.squad || agent.id} · current: {accountLabel(account)} / {model?.model || "no model"}</small></div>
+              <span className={`auth-pill ${warnings.length ? "missing" : "ok"}`}>{warnings[0] || "ready"}</span>
+            </div>
+            <div className="router-grid-form runtime-assignment-form">
+              <label>AI Account<select value={assignment?.account_id || ""} onChange={(e) => void saveAgentRuntime(agent.id, { account_id: e.target.value })} disabled={runtimeSaving === agent.id}>{runtimeSwitcher.accounts.map((item) => <option key={item.id} value={item.id}>{item.label} · {item.email_hint}</option>)}</select></label>
+              <label>Model<select value={assignment?.model_id || ""} onChange={(e) => void saveAgentRuntime(agent.id, { model_id: e.target.value })} disabled={runtimeSaving === agent.id}>{runtimeModels.map((item) => <option key={item.id} value={item.id}>{item.label || item.model} · {item.model}</option>)}</select></label>
+              <label>Reasoning<select value={assignment?.reasoning || "balanced"} onChange={(e) => void saveAgentRuntime(agent.id, { reasoning: e.target.value })} disabled={runtimeSaving === agent.id}><option value="fast">fast</option><option value="balanced">balanced</option><option value="high">high</option><option value="deep">deep</option></select></label>
+              <label>Apply<select value={assignment?.apply_mode || "next_session"} onChange={(e) => void saveAgentRuntime(agent.id, { apply_mode: e.target.value })} disabled={runtimeSaving === agent.id}><option value="next_session">new sessions only</option><option value="after_reset">after reset</option><option value="force_restart">force restart required</option></select></label>
+            </div>
+            <p className="muted">{runtimeSaving === agent.id ? "Saving…" : assignment?.updated_at ? `Updated ${assignment.updated_at} by ${assignment.updated_by || "operator"}` : "Default route. Save a change to create an audit entry."}</p>
+          </article>;
+        })}
+        {runtimeSwitcher.agents.length === 0 && <div className="empty big">No agents available for runtime switching.</div>}
+      </div>
+
+      {runtimeSwitcher.audit.length > 0 && <details className="runtime-audit-log">
+        <summary>Recent runtime switch audit log</summary>
+        <div className="route-steps">{runtimeSwitcher.audit.slice(-8).reverse().map((event) => <div className="route-step" key={event.id}><span>{event.timestamp}</span><b>{event.agent_id}: {event.account_label} / {event.model_label}</b><small>{event.changed_by} · {event.apply_mode}</small></div>)}</div>
+      </details>}
+    </section>
 
     <section className="router-panel hermes-cli-panel">
       <div className="section-head">

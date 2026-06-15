@@ -15,7 +15,6 @@ export interface UiPermissions {
 
 export const adminOnlyViews = new Set<ViewKey>([
   "runtimes",
-  "models",
   "costs",
   "agent-platform-admin",
   "users-workspaces",
@@ -47,6 +46,7 @@ export const workspaceViews = new Set<ViewKey>([
   "automations",
   "browser-ops",
   "audit",
+  "models",
   "research-runs",
 ]);
 
@@ -91,6 +91,7 @@ export function viewLabelForRole(role: UserRole, view: ViewKey, fallback: string
     approvals: "Needs Attention",
     automations: "Routines",
     "browser-ops": "Browser Activity",
+    models: "Model Router",
     "research-runs": "Research Runs",
     plugins: "Plugins",
     "second-brain": "Workspace Knowledge",
