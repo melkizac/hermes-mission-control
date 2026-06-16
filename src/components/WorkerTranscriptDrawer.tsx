@@ -80,16 +80,16 @@ export function WorkerTranscriptDrawer({ agent, onClose }: { agent: Agent; onClo
   const activeCount = data?.summary?.active ?? agent.processingRequests?.length ?? 0;
 
   return (
-    <aside className="ctx agent-detail-drawer worker-transcript-drawer" aria-label={`Worker log and transcript for ${agent.name}`}>
+    <aside className="ctx agent-detail-drawer worker-transcript-drawer" aria-label={`Agent log and transcript for ${agent.name}`}>
       <div className="ctx-head agent-drawer-head worker-log-head">
         <div>
-          <div className="sec-l tight">Worker log / transcript</div>
+          <div className="sec-l tight">Agent Log / transcript</div>
           <div className="ctx-title">{agent.name}</div>
           <div className="ctx-sub">
-            {activeCount ? `${activeCount} active request${activeCount === 1 ? "" : "s"}` : "No active worker request"} · refreshed every 5s
+            {activeCount ? `${activeCount} active request${activeCount === 1 ? "" : "s"}` : "No active agent request"} · refreshed every 5s
           </div>
         </div>
-        <button className="agent-drawer-close" onClick={onClose} title="Close worker log" aria-label="Close worker log">
+        <button className="agent-drawer-close" onClick={onClose} title="Close agent log" aria-label="Close agent log">
           ×
         </button>
       </div>

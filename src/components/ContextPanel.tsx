@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "../services/store";
 import { Icon } from "./Icon";
-import type { Agent, ConfigFile } from "../types";
+import type { Agent, AgentRuntimeAccount, AgentRuntimeAssignment, AgentRuntimeSwitcher, CapabilityMatrixCapability, CapabilityMatrixRow, ConfigFile, RouterModel } from "../types";
 import { FileEditorDrawer } from "./FileEditorDrawer";
+import { AgentDetailDrawerShell, type AgentDrawerTab } from "./AgentDetailDrawerShell";
 
 type Tab = "overview" | "profile" | "identity" | "tools" | "skills" | "output" | "tasks";
 
@@ -33,7 +34,14 @@ export function ContextPanel({
 }) {
   const [tab, setTab] = useState<Tab>("overview");
   const [editing, setEditing] = useState<ConfigFile | null>(null);
-  const { addSkill, removeSkill, deleteAgent, permissions } = useStore();
+  const [capabilityRow, setCapabilityRow] = useState<CapabilityMatrixRow | null>(null);
+  const [capabilityLoading, setCapabilityLoading] = useState(false);
+  const [capabilityMessage, setCapabilityMessage] = useState<string | null>(null);
+  const [capabilityError, setCapabilityError] = useState<string | null>(null);
+  const { addSkill, removeSkill, deleteAgent, permissions, getCapabilityMatrix, assignCapability, unassignCapability, getAgentRuntimes, saveAgentRuntime } = useStore();
+  const [runtimeSwitcher, setRuntimeSwitcher] = useState<AgentRuntimeSwitcher | null>(null);
+  const [runtimeStatus, setRuntimeStatus] = useState<string>("");
+  const [runtimeSaving, setRuntimeSaving] = useState(false);
   const canEditAgent = permissions.canEditGlobalAgents;
   const canEditAgentIdentity = permissions.canEditAgentIdentity;
   const canEditFile = (file: ConfigFile) => canEditAgent || Boolean(file.editable) || (canEditAgentIdentity && file.kind === "soul");
@@ -43,6 +51,99 @@ export function ContextPanel({
     const name = window.prompt("Skill to install (from Hub or your repo):");
     if (name) void addSkill({ id: Math.random().toString(36).slice(2), name, source: "hub" });
   };
+
+  const loadCapabilityMatrix = async () => {
+    setCapabilityLoading(true);
+    setCapabilityError(null);
+    try {
+      const result = await getCapabilityMatrix({ agent: agent.id });
+      setCapabilityRow(result.matrix?.[0] ?? null);
+    } catch (err) {
+      setCapabilityError(err instanceof Error ? err.message : "Unable to load capability matrix");
+    } finally {
+      setCapabilityLoading(false);
+    }
+  };
+
+  const loadAgentRuntime = async () => {
+    setRuntimeStatus("Loading authorised model assignments…");
+    try {
+      const data = await getAgentRuntimes();
+      setRuntimeSwitcher(data);
+      setRuntimeStatus("");
+    } catch (err) {
+      setRuntimeStatus(err instanceof Error ? err.message : "Unable to load authorised model assignments");
+    }
+  };
+
+  useEffect(() => {
+    if (!collapsed) void loadAgentRuntime();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent.id, collapsed]);
+
+  const saveRuntimeAccountAssignment = async (accountId: string) => {
+    if (!runtimeSwitcher) return;
+    const current = runtimeSwitcher.assignments?.[agent.id];
+    if (!current) {
+      setRuntimeStatus("This agent is not present in the runtime assignment registry yet.");
+      return;
+    }
+    const selectedAccount = runtimeSwitcher.accounts.find((account) => account.id === accountId);
+    if (!selectedAccount) {
+      setRuntimeStatus("Choose an admin console runtime account.");
+      return;
+    }
+    const authorizedModel = runtimeSwitcher.models.find((model) => model.enabled && model.authorized && model.id === current.model_id)
+      ?? runtimeSwitcher.models.find((model) => model.enabled && model.authorized && model.provider === selectedAccount.provider)
+      ?? runtimeSwitcher.models.find((model) => model.enabled && model.authorized);
+    if (!authorizedModel) {
+      setRuntimeStatus("No authorised Hermes Admin Console model is available for this runtime account.");
+      return;
+    }
+    const next: AgentRuntimeAssignment = { ...current, account_id: accountId, model_id: authorizedModel.id, apply_mode: current.apply_mode || "next_session", reasoning: current.reasoning || "balanced" };
+    setRuntimeSaving(true);
+    setRuntimeStatus(`Saving ${selectedAccount.label || selectedAccount.id} for ${agent.name}…`);
+    try {
+      const data = await saveAgentRuntime(agent.id, next);
+      setRuntimeSwitcher(data);
+      setRuntimeStatus(`Assigned ${selectedAccount.label || selectedAccount.id}. New sessions use this admin console runtime account; active runs keep their existing runtime.`);
+    } catch (err) {
+      setRuntimeStatus(err instanceof Error ? err.message : "Runtime account assignment failed");
+    } finally {
+      setRuntimeSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (tab === "profile" || tab === "tools") void loadCapabilityMatrix();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent.id, tab]);
+
+  const onCapabilityAction = async (capability: CapabilityMatrixCapability) => {
+    if (!capability.id || !canEditAgent || capability.source !== "registry") return;
+    setCapabilityMessage(null);
+    setCapabilityError(null);
+    try {
+      if (capability.assigned) {
+        await unassignCapability(capability.id, { agentId: agent.id, agent: { id: agent.id, name: agent.name }, reason: "Unassigned from Agent/Profile capability surface" });
+        setCapabilityMessage(`Unassigned ${capability.displayName || capability.name || capability.id}`);
+      } else {
+        await assignCapability(capability.id, { agentId: agent.id, agent: { id: agent.id, name: agent.name }, reason: "Assigned from Agent/Profile capability surface" });
+        setCapabilityMessage(`Assigned ${capability.displayName || capability.name || capability.id}`);
+      }
+      await loadCapabilityMatrix();
+    } catch (err) {
+      setCapabilityError(err instanceof Error ? err.message : "Capability assignment failed");
+    }
+  };
+
+  const workspaceCapabilities = capabilityRow?.capabilities ?? [];
+  const runtimeAssignment = runtimeSwitcher?.assignments?.[agent.id];
+  const runtimeModels = runtimeSwitcher?.models ?? [];
+  const runtimeAccounts = runtimeSwitcher?.accounts ?? [];
+  const authorizedModels = runtimeModels.filter((model) => model.enabled && model.authorized);
+  const assignedModel = runtimeModels.find((model) => model.id === runtimeAssignment?.model_id);
+  const assignedAccount = runtimeAccounts.find((account) => account.id === runtimeAssignment?.account_id);
 
   if (collapsed) {
     return (
@@ -65,51 +166,40 @@ export function ContextPanel({
     acc[key] = [...(acc[key] ?? []), skill];
     return acc;
   }, {});
+  const panelTabs: AgentDrawerTab[] = (["overview", "profile", "identity", "tools", "skills", "output", "tasks"] as Tab[]).map((t) => ({
+    id: t,
+    label: t === "identity" ? "Identity" : t[0].toUpperCase() + t.slice(1),
+    count: t === "identity" ? agent.files.length : t === "tools" ? (agent.tools?.length ?? 0) : t === "skills" ? agent.skills.length : t === "output" ? agent.artifacts.length : t === "tasks" ? agent.tasks.length : undefined,
+  }));
 
   return (
-    <aside className={"ctx" + (drawer ? " agent-detail-drawer" : "")} aria-label={`Selected agent details for ${agent.name}`}>
-      <div className="ctx-head agent-drawer-head">
-        <div>
-          <div className="sec-l tight">Selected agent</div>
-          <div className="ctx-title">{agent.name}</div>
-          <div className="ctx-sub">
-            {agentGroupLabel(agent.squad)} · {agent.id}
-          </div>
-        </div>
-        {drawer ? (
-          <button className="agent-drawer-close" onClick={onClose} title="Close selected agent details" aria-label="Close selected agent details">
-            ×
-          </button>
-        ) : (
-          <button className="ctx-toggle" onClick={onToggle} title="Collapse selected agent details">
-            ⟩
-          </button>
-        )}
-      </div>
-
-      <div className="tabs tabs-wrap">
-        {(["overview", "profile", "identity", "tools", "skills", "output", "tasks"] as Tab[]).map((t) => (
-          <button key={t} className={"tab" + (tab === t ? " on" : "")} onClick={() => setTab(t)}>
-            {t === "identity" ? "Identity" : t[0].toUpperCase() + t.slice(1)}
-          </button>
-        ))}
-      </div>
-
-      <div className="ctxbody scroll">
+    <AgentDetailDrawerShell
+      className={"ctx" + (drawer ? " agent-detail-drawer" : "")}
+      title={agent.name}
+      avatar={<span className="agent-detail-avatar" style={{ background: agent.color }}>{agent.initials}</span>}
+      eyebrow="Selected agent"
+      subtitle={`${agentGroupLabel(agent.squad)} · ${agent.id}`}
+      tabs={panelTabs}
+      activeTab={tab}
+      onTabChange={(next) => setTab(next as Tab)}
+      onClose={drawer ? onClose : undefined}
+      ariaLabel={`Selected agent details for ${agent.name}`}
+      bodyClassName="ctxbody scroll"
+    >
         {tab === "overview" && (
           <>
-            <div className="agent-brief">
-              <span className="av" style={{ background: agent.color }}>
-                {agent.initials}
-              </span>
-              <div>
-                <b>{agent.name}</b>
-                <p>{agent.activity}</p>
-              </div>
-            </div>
-
             <div className="sec-l">Runtime</div>
-            <Info k="Model" v={<span className="mono">{agent.model}</span>} />
+            <AgentRuntimeAccountControl
+              agent={agent}
+              assignment={runtimeAssignment}
+              assignedAccount={assignedAccount}
+              assignedModel={assignedModel}
+              accounts={runtimeAccounts}
+              authorizedModels={authorizedModels}
+              saving={runtimeSaving}
+              status={runtimeStatus}
+              onChange={(accountId) => void saveRuntimeAccountAssignment(accountId)}
+            />
             <Info k="Profile" v={<span className="mono">{agent.profilePath}</span>} />
             <Info k="Status" v={<span className={agent.status === "active" || agent.status === "working" ? "hi" : ""}>{agent.statusLabel || cap(agent.status)}</span>} />
             <Info k="Availability" v={agent.availability || "—"} />
@@ -186,8 +276,8 @@ export function ContextPanel({
             <p className="mini-note">Hermes profile = isolated runtime identity/configuration. Secret values are never shown here.</p>
             <Info k="Profile" v={<span className="mono">{agent.profile_details?.profile_id || agent.id}</span>} />
             <Info k="Identity" v={agent.profile_details?.identity?.name || agent.name} />
-            <Info k="Provider" v={agent.profile_details?.model_routing?.provider || "runtime default"} />
-            <Info k="Model" v={<span className="mono">{agent.profile_details?.model_routing?.model || agent.model}</span>} />
+            <Info k="Provider" v={assignedModel?.provider || agent.profile_details?.model_routing?.provider || "runtime default"} />
+            <Info k="Assigned model" v={<span className="mono">{assignedModel?.model || agent.profile_details?.model_routing?.model || agent.model}</span>} />
             <Info k="Toolsets" v={String(agent.profile_details?.toolsets?.length ?? agent.tools?.length ?? 0)} />
             <Info k="Skills" v={String(agent.skills.length)} />
             <Info k="Memory" v={`${agent.profile_details?.memory?.entries ?? 0} entries`} />
@@ -196,6 +286,9 @@ export function ContextPanel({
             <Info k="Routines" v={String(agent.profile_details?.routines?.count ?? agent.tasks.length)} />
             <Info k="Gateway channels" v={`${(agent.profile_details?.gateway?.channels ?? []).filter((c) => c.enabled).length}/${agent.profile_details?.gateway?.channels?.length ?? 0} enabled`} />
             <Info k="Credential scope" v={(agent.profile_details?.environment?.env_files?.length ?? 0) ? `${agent.profile_details?.environment?.env_files?.length} env file(s), values hidden` : "No env file reported"} />
+
+            <div className="sec-l">Workspace capability matrix</div>
+            <CapabilityMatrixSummary row={capabilityRow} loading={capabilityLoading} error={capabilityError} message={capabilityMessage} />
 
             <div className="sec-l">Gateway / channels</div>
             <div className="skills detail-skills">
@@ -266,6 +359,13 @@ export function ContextPanel({
               </div>
             ))}
             {(!agent.tools || agent.tools.length === 0) && <div className="empty">No tool capabilities reported for this profile.</div>}
+
+            <div className="sec-l">Assignable registry capabilities · {workspaceCapabilities.length}</div>
+            <CapabilityMatrixSummary row={capabilityRow} loading={capabilityLoading} error={capabilityError} message={capabilityMessage} />
+            {workspaceCapabilities.filter((capability) => capability.source === "registry").map((capability) => (
+              <CapabilityMatrixCard key={capability.id} capability={capability} canEdit={canEditAgent} onAction={() => void onCapabilityAction(capability)} />
+            ))}
+            {!capabilityLoading && workspaceCapabilities.filter((capability) => capability.source === "registry").length === 0 && <div className="empty">No assignable registry capabilities found for this profile.</div>}
           </>
         )}
 
@@ -347,10 +447,66 @@ export function ContextPanel({
             ))}
           </>
         )}
-      </div>
-
       {editing && <FileEditorDrawer file={editing} onClose={() => setEditing(null)} />}
-    </aside>
+    </AgentDetailDrawerShell>
+  );
+}
+
+function CapabilityMatrixSummary({ row, loading, error, message }: { row: CapabilityMatrixRow | null; loading: boolean; error: string | null; message: string | null }) {
+  if (loading && !row) return <div className="empty">Loading capability matrix…</div>;
+  return (
+    <div className="tool-card">
+      <div className="tool-card-head">
+        <div>
+          <div className="fn">Capability assignment governance</div>
+          <div className="fd">Agent/Profile surface · no Admin redirect required</div>
+        </div>
+        {row && <span className="badge b-info">{row.summary.assigned}/{row.summary.total} assigned</span>}
+      </div>
+      {row ? (
+        <div className="tool-cats">
+          <span className="tool-chip">Assigned {row.summary.assigned}</span>
+          <span className="tool-chip">Inherited {row.summary.inherited ?? 0}</span>
+          <span className="tool-chip">Available {row.summary.available}</span>
+          <span className="tool-chip">Blocked {row.summary.blocked}</span>
+          <span className="tool-chip">Registry {row.summary.registry}</span>
+        </div>
+      ) : (
+        !loading && <p className="tool-desc">No capability matrix row is available for this profile yet.</p>
+      )}
+      {message && <p className="mini-note hi">{message}</p>}
+      {error && <p className="mini-note err">{error}</p>}
+    </div>
+  );
+}
+
+function CapabilityMatrixCard({ capability, canEdit, onAction }: { capability: CapabilityMatrixCapability; canEdit: boolean; onAction: () => void }) {
+  const blocked = Boolean(capability.actionableBlocker || (capability.approvalRequired && capability.approvalStatus !== "approved"));
+  const label = capability.displayName || capability.name || capability.id;
+  const scopeLabel = capability.assignmentScope === "inherited" || capability.inherited ? "inherited" : capability.assigned ? "assigned" : "available";
+  return (
+    <div className="tool-card">
+      <div className="tool-card-head">
+        <div>
+          <div className="fn">{label}</div>
+          <div className="fd">{capability.type || "capability"} · {capability.sourceLabel || capability.source || "runtime"} · {capability.status || "registered"} · {capability.healthState || "unknown"}</div>
+        </div>
+        <span className={"badge " + (blocked ? "b-wait" : scopeLabel === "assigned" ? "b-work" : scopeLabel === "inherited" ? "b-info" : "b-idle")}>{blocked ? "governed" : scopeLabel}</span>
+      </div>
+      {capability.description && <p className="tool-desc">{capability.description}</p>}
+      <div className="tool-cats">
+        {(capability.riskLevels ?? []).map((risk) => <span className="tool-chip" key={risk}>{risk}</span>)}
+        {capability.approvalRequired && <span className="tool-chip">approval {capability.approvalStatus || "required"}</span>}
+        {capability.assignmentUnit && <span className="tool-chip">unit {capability.assignmentUnit}</span>}
+        {scopeLabel === "inherited" && <span className="tool-chip">profile/runtime inherited</span>}
+      </div>
+      {blocked && <p className="mini-note">{String((capability.actionableBlocker as { message?: unknown } | null)?.message || capability.policyGate || "Governance approval is required before assignment changes.")}</p>}
+      {canEdit && capability.source === "registry" ? (
+        <button className="btn full" disabled={blocked} onClick={onAction}>{capability.assigned ? "Unassign from this profile" : "Assign to this profile"}</button>
+      ) : (
+        <div className="mini-note">{capability.source === "registry" ? "Read-only workspace selection." : "Runtime capability reported from profile config."}</div>
+      )}
+    </div>
   );
 }
 
@@ -372,6 +528,53 @@ function FileRow({ file, onOpen, disabled }: { file: ConfigFile; onOpen: () => v
           <Icon name="download" size={14} />
         </span>
       </div>
+    </div>
+  );
+}
+
+function runtimeAccountOptionLabel(account: AgentRuntimeAccount) {
+  const parts = [account.label || account.id, account.provider];
+  if (account.billing_owner) parts.push(account.billing_owner);
+  return parts.join(" · ");
+}
+
+function AgentRuntimeAccountControl({
+  agent,
+  assignment,
+  assignedAccount,
+  assignedModel,
+  accounts,
+  authorizedModels,
+  saving,
+  status,
+  onChange,
+}: {
+  agent: Agent;
+  assignment?: AgentRuntimeAssignment;
+  assignedAccount?: AgentRuntimeAccount;
+  assignedModel?: RouterModel;
+  accounts: AgentRuntimeAccount[];
+  authorizedModels: RouterModel[];
+  saving: boolean;
+  status: string;
+  onChange: (accountId: string) => void;
+}) {
+  const selectedValue = assignment?.account_id && accounts.some((account) => account.id === assignment.account_id) ? assignment.account_id : "";
+  const modelLabel = assignedModel ? `${assignedModel.provider}/${assignedModel.model}` : authorizedModels[0] ? `${authorizedModels[0].provider}/${authorizedModels[0].model}` : "Hermes Admin Console model";
+  return (
+    <div className="agent-model-assignment">
+      <label className="agent-model-selector">
+        <span>Select runtime account for {agent.name}</span>
+        <select value={selectedValue} disabled={saving || accounts.length === 0 || authorizedModels.length === 0} onChange={(event) => onChange(event.target.value)}>
+          <option value="">Choose admin console runtime account</option>
+          {accounts.map((account) => <option key={account.id} value={account.id}>{runtimeAccountOptionLabel(account)}</option>)}
+        </select>
+      </label>
+      <p className="mini-note">
+        {assignedAccount ? `Current account: ${assignedAccount.label || assignedAccount.id}.` : "Current account: runtime default."}
+        {" "}Model source: {modelLabel}. Only Hermes Admin Console runtime accounts are shown here; legacy router-only models are hidden.
+      </p>
+      {status && <div className="mini-note runtime-status-note">{status}</div>}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { Agent, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, CreateResearchRunRequest, CreateResearchRunResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse, WorkspaceRunDetailResponse, WorkspaceRunHistoryResponse } from "../types";
+import type { Agent, AgentRuntimeAssignment, AgentRuntimeSwitcher, AgentHandoffMutationResponse, AgentHandoffResponse, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardTaskMutationResponse, CapabilityAssignmentMutationResponse, CapabilityMatrixResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxItem, InboxMutationResponse, InboxResponse, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, CreateResearchRunRequest, CreateResearchRunResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillsHubResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse, WorkspaceRunDetailResponse, WorkspaceRunHistoryResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
 import { seedAgents, seedApprovals } from "../data/mockData";
 
@@ -7,6 +7,163 @@ const delay = (ms = 180) => new Promise((r) => setTimeout(r, ms));
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 const colors = ["#0e8f84", "#3b6fe0", "#e8941b", "#7b8494", "#dc4040", "#8b5cf6"];
+
+function mockResearchSourceTask(id = "mock-r2d-sources") {
+  const now = "2026-06-08T16:20:00+08:00";
+  return {
+    id,
+    title: "Research-to-deliverable source cockpit fixture",
+    body: "Mock project-aware drawer payload with file, URL, video, and audio source states.",
+    assignee: "Melkizac",
+    status: "queued",
+    raw_status: "queued",
+    priority: 70,
+    priority_label: "high",
+    created_by: "mock",
+    created_at: now,
+    updated_at: now,
+    started_at: null,
+    completed_at: null,
+    workspace_kind: "scratch",
+    workspace_path: null,
+    branch_name: null,
+    tenant: "project:mock-research-to-deliverable",
+    result: JSON.stringify({ summary: { current_stage_label: "Sources processing", progress_percent: 42, next_action: "Review source health and reprocess any partial extraction." } }),
+    result_details: {
+      status: "queued",
+      objective: "Generate editable training materials from mixed source types.",
+      workflow_type: "research_to_deliverable",
+      summary: { current_stage_label: "Sources processing", progress_percent: 42, next_action: "Review source health and reprocess any partial extraction." },
+      sources: [
+        { id: "src-file-brief", type: "file", title: "SME AI Workforce briefing.pdf", uri: "/uploads/mock/sme-ai-workforce.pdf", processing: { status: "ready", pages: 18 }, citation: { health: "good coverage" }, extractedTextPreview: "The briefing defines AI coworkers, governance controls, and SME adoption patterns.", extractedTextUrl: "/api/mock/sources/src-file-brief/text" },
+        { id: "src-url-gov", type: "url", title: "AI governance reference", url: "https://example.com/ai-governance", status: "processing", citationHealth: "pending" },
+        { id: "src-video-class", type: "video", title: "Training class recording", uri: "https://video.example/mock-class.mp4", processingStatus: "partial", citation: { health: "partial transcript" }, extracted_text_preview: "Transcript available for the first 24 minutes; speaker labels need cleanup." },
+        { id: "src-audio-qna", type: "audio", title: "Customer Q&A audio", uri: "/uploads/mock/customer-qna.m4a", processing: { status: "failed", duration: "31m" }, citation_health: "missing", preview: "Transcription failed: unsupported codec." },
+      ],
+      outputs: [],
+      stages: [
+        { id: "intent", label: "Intent understood", status: "done", owner: "Melkizac" },
+        { id: "sources", label: "Sources collected", status: "running", owner: "Mission Control" },
+        { id: "notes", label: "Research notes", status: "pending", owner: "Content Ops" },
+      ],
+      settings: { citation_required: true, approval_policy: "internal drafts auto-proceed; external sharing approval-gated" },
+      blockers: [], verification: {}, artifacts: [], evidence: [], approval_gates: [], next_actions: ["Reprocess failed audio source", "Confirm URL extraction completes"],
+    },
+    mission_result: null,
+    session_id: null,
+    current_run_id: null,
+    workflow_template_id: "research_to_deliverable",
+    current_step_key: "sources",
+    skills: ["agent-mission-control-ui"],
+    model_override: null,
+    consecutive_failures: 0,
+    last_failure_error: "",
+    comments: [],
+    events: [],
+    runs: [],
+    children: [],
+    parents: [],
+  } as any;
+}
+
+function mockHmcReleaseTask(id = "mock-hmc-release-evidence") {
+  const now = "2026-06-11T17:20:00+08:00";
+  const evidence = [
+    {
+      schema: "hmc.workflow_evidence.v1",
+      project_id: "hmc-governed-software-factory",
+      tenant: "hmc-governed-software-factory",
+      task_id: id,
+      phase: "hmc-build",
+      status: "passed",
+      summary: "Release-lane drawer model implemented with focused build verification.",
+      created_at: now,
+      created_by: "dev-ops",
+      branch: "project/hmc-governed-software-factory",
+      commit: "mock-diff",
+      workspace_path: "/opt/hermes-mission-control/source",
+      artifacts: [{ kind: "diff", path: "src/views/TaskBoard.tsx", title: "Task drawer release lane" }],
+      commands: [{ command: "npm run build", status: "passed", summary: "Mock Vite build passed; chunk-size warning only." }],
+      checks: [
+        { type: "build", status: "passed", summary: "TypeScript and Vite production bundle succeeded." },
+        { type: "browser", status: "passed", summary: "Task drawer renders Release lane tab and evidence fields." }
+      ],
+      approval: { required: true, status: "pending", reason: "Code-changing task awaits review before merge/deploy." },
+      docs_impact: "No public docs changed in mock fixture.",
+      rollback: "Revert the source diff; no production deploy in mock fixture."
+    },
+    {
+      schema: "hmc.workflow_evidence.v1",
+      project_id: "hmc-governed-software-factory",
+      tenant: "hmc-governed-software-factory",
+      task_id: id,
+      phase: "hmc-qa",
+      status: "passed",
+      summary: "Focused UI smoke confirms the evidence tab model is visible.",
+      created_at: "2026-06-11T17:25:00+08:00",
+      created_by: "testing-division",
+      commands: [{ command: "node scripts/hmc_task_drawer_probe.cjs", status: "passed", summary: "Release lane DOM nodes found; console clean." }],
+      checks: [{ type: "browser", status: "passed", summary: "Release lane, fields, raw evidence hierarchy visible in drawer." }],
+      health_check: "GET /api/tasks returned 200 in staging smoke.",
+      browser_proof: "Release lane tab rendered in Task Board drawer.",
+      rollback: "Frontend-only rollback is to restore previous dist backup."
+    }
+  ];
+  return {
+    id,
+    title: "HMC release lane evidence drawer fixture",
+    body: "Sample HMC software-factory card with structured workflow evidence for Build and QA phases.",
+    assignee: "dev-ops",
+    status: "review",
+    raw_status: "review",
+    priority: 80,
+    priority_label: "critical",
+    created_by: "mock",
+    created_at: now,
+    updated_at: now,
+    started_at: null,
+    completed_at: null,
+    workspace_kind: "dir",
+    workspace_path: "/opt/hermes-mission-control/source",
+    branch_name: "project/hmc-governed-software-factory",
+    tenant: "hmc-governed-software-factory",
+    result: "review-required: release lane fixture awaits review",
+    result_details: {
+      status: "review",
+      objective: "Expose release lane and evidence field completeness in the Task Board drawer.",
+      workflow_type: "hmc_software_factory",
+      guard_policy: {
+        mode: "advisory",
+        scope: "mock project-task",
+        allowed_edit_paths: ["/opt/hermes-mission-control/source/src", "/opt/hermes-mission-control/source/docs", "/opt/hermes-mission-control/app.py"],
+        destructive_command_warning_level: "high",
+        checkpoint_mode: "git diff + npm run build before review",
+        rollback_artifact_path: "docs/HMC_SOFTWARE_FACTORY_WORKFLOW.md#rollback--safety",
+        safe_start_required: true,
+        advisory_enforcement: true,
+        evidence_required: ["allowed edit paths", "checkpoint/build proof", "rollback note"],
+      },
+      summary: { progress_percent: 62, next_action: "Review the build evidence, then move to QA/Ship when approved." },
+      workflow_evidence: evidence,
+      approval_gates: [{ id: "mock-review", title: "Code review", risk: "approval-required", status: "pending", reason: "Code-changing task should be reviewed before deploy." }],
+      blockers: [], verification: { build: "passed", drawer: "fixture-rendered" }, artifacts: [], evidence: [], next_actions: ["Review implementation", "Run production browser smoke before deploy"],
+    },
+    mission_result: null,
+    session_id: null,
+    current_run_id: null,
+    workflow_template_id: "hmc_software_factory",
+    current_step_key: "hmc-review",
+    skills: ["agent-mission-control-ui", "webapp-operations"],
+    model_override: null,
+    consecutive_failures: 0,
+    last_failure_error: "",
+    comments: [{ id: 1, author: "dev-ops", created_at: now, body: `workflow-evidence:\n\n\`\`\`json\n${JSON.stringify(evidence[0], null, 2)}\n\`\`\`` }],
+    events: [],
+    runs: [],
+    children: [],
+    parents: [],
+  } as any;
+}
 
 /**
  * MockHermesClient keeps an in-memory copy of the seed data and mutates it.
@@ -80,6 +237,32 @@ export class MockHermesClient implements HermesClient {
         { id: "mock-economy", label: "Mock Economy", provider: "mock", model: "economy-worker", tier: "economy", enabled: true, authorized: true, credential_env: "MOCK_API_KEY", cost_weight: 1 },
       ],
     };
+  }
+
+  async getAgentRuntimes(): Promise<AgentRuntimeSwitcher> {
+    await delay(40);
+    const router = await this.getModelRouter();
+    const assignments: AgentRuntimeSwitcher["assignments"] = {};
+    for (const agent of this.agents) {
+      assignments[agent.id] = { agent_id: agent.id, account_id: "mock-account", model_id: router.models[0]?.id || "mock-frontier", reasoning: "balanced", apply_mode: "next_session", updated_at: "mock", updated_by: "mock" };
+    }
+    return {
+      ok: true,
+      updated_at: "mock",
+      accounts: [{ id: "mock-account", label: "Mock authorised account", provider: "mock", credential_env: "MOCK_API_KEY", configured: true, secret_status: "configured" }],
+      models: router.models,
+      agents: this.agents.map((agent) => ({ id: agent.id, name: agent.name, squad: agent.squad, status: agent.status, processingRequests: agent.processingRequests })),
+      assignments,
+      audit: [],
+      summary: { accounts: 1, configured_accounts: 1, agents: this.agents.length, assigned: Object.keys(assignments).length },
+    };
+  }
+
+  async saveAgentRuntime(agentId: string, input: AgentRuntimeAssignment): Promise<AgentRuntimeSwitcher> {
+    await delay(40);
+    const data = await this.getAgentRuntimes();
+    data.assignments[agentId] = { ...input, agent_id: agentId, updated_at: "now", updated_by: "mock" };
+    return data;
   }
 
   async listWorkflows(): Promise<WorkflowLibraryResponse> {
@@ -549,6 +732,47 @@ export class MockHermesClient implements HermesClient {
     return { skills, summary: { total: skills.length, editable: 0, plugin: 0, user: skills.length, assigned: skills.length }, categories: ["mock"], sources: ["mock"] };
   }
 
+  async getCapabilityMatrix(filters?: { agent?: string; agentId?: string }): Promise<CapabilityMatrixResponse> {
+    await delay(80);
+    const requestedAgent = filters?.agent || filters?.agentId;
+    const agents = this.agents.filter((agent) => !requestedAgent || agent.id === requestedAgent);
+    const matrix = agents.map((agent) => {
+      const runtimeCapabilities = [
+        ...agent.skills.map((skill) => ({ id: `skill:${skill.id}`, type: "skill", displayName: skill.name, source: skill.source || "profile-skill", sourceLabel: "Profile skill", status: "enabled", enabled: true, assigned: true, inherited: true, assignmentScope: "inherited", assignmentUnit: "procedure", riskLevels: ["read-only"], approvalRequired: false, approvalStatus: "not-required", healthState: "passing" })),
+        ...(agent.tools ?? []).map((tool) => ({ id: `tool:${tool.id}`, type: tool.kind || "cli-tool", displayName: tool.name, description: tool.description, source: "profile-config", sourceLabel: "Profile tools", status: tool.enabled === false ? "disabled" : "enabled", enabled: tool.enabled !== false, assigned: true, inherited: true, assignmentScope: "inherited", assignmentUnit: tool.assignmentUnit || "tool", toolCount: tool.toolCount, sampleTools: tool.sampleTools, riskLevels: ["local-write"], approvalRequired: false, approvalStatus: "not-required", healthState: "passing" })),
+      ];
+      const registryCapabilities = [
+        { id: "mock-browser-automation", type: "mcp-server", displayName: "Browser automation", description: "Governed browser operations with approval gates for submit/post/send actions.", source: "registry", sourceLabel: "Registry", status: "available", enabled: true, assigned: false, inherited: false, assignmentScope: "available", assignmentUnit: "mcp-server", riskLevels: ["browser", "external-action"], approvalRequired: true, approvalStatus: "pending", actionableBlocker: { message: "Approval policy must be approved before assignment." }, healthState: "unknown" },
+        { id: "mock-github-cli", type: "cli-tool", displayName: "GitHub CLI wrapper", description: "Workspace-safe GitHub operations wrapper.", source: "registry", sourceLabel: "Registry", status: "assigned", enabled: true, assigned: true, inherited: false, assignmentScope: "assigned", assignmentUnit: "cli-wrapper", riskLevels: ["repo-write"], approvalRequired: false, approvalStatus: "not-required", healthState: "passing" },
+      ];
+      const capabilities = [...runtimeCapabilities, ...registryCapabilities];
+      const assigned = capabilities.filter((capability) => capability.assigned);
+      const inherited = capabilities.filter((capability) => capability.inherited || capability.assignmentScope === "inherited");
+      const blocked = capabilities.filter((capability) => Boolean((capability as { actionableBlocker?: unknown }).actionableBlocker) || (capability.approvalRequired && capability.approvalStatus !== "approved"));
+      const available = capabilities.filter((capability) => !capability.assigned);
+      return {
+        agent: { id: agent.id, name: agent.name, squad: agent.squad, status: agent.status, profileId: agent.profile_details?.profile_id || agent.id, profilePath: agent.profilePath },
+        capabilities,
+        assigned,
+        available,
+        blocked,
+        summary: { total: capabilities.length, assigned: assigned.length, inherited: inherited.length, available: available.length, blocked: blocked.length, skills: agent.skills.length, tools: agent.tools?.length ?? 0, registry: registryCapabilities.length },
+      };
+    });
+    return { ok: true, matrix, agents: matrix.map((row) => row.agent), summary: { agents: matrix.length, capabilities: matrix.reduce((sum, row) => sum + row.summary.total, 0), assigned: matrix.reduce((sum, row) => sum + row.summary.assigned, 0), inherited: matrix.reduce((sum, row) => sum + (row.summary.inherited ?? 0), 0), blocked: matrix.reduce((sum, row) => sum + row.summary.blocked, 0), registry: matrix.reduce((sum, row) => sum + row.summary.registry, 0), skills: matrix.reduce((sum, row) => sum + row.summary.skills, 0), tools: matrix.reduce((sum, row) => sum + row.summary.tools, 0) } };
+  }
+
+  async assignCapability(capabilityId: string): Promise<CapabilityAssignmentMutationResponse> {
+    await delay(80);
+    if (capabilityId === "mock-browser-automation") return { ok: false, status: "blocked", error: "Approval policy must be approved before assignment." };
+    return { ok: true, action: "assign" };
+  }
+
+  async unassignCapability(): Promise<CapabilityAssignmentMutationResponse> {
+    await delay(80);
+    return { ok: true, action: "unassign" };
+  }
+
   async getSkillFile(id: string) {
     await delay(90);
     return {
@@ -653,10 +877,25 @@ export class MockHermesClient implements HermesClient {
     return { ok: true, windows: { ...status.windows, configured: Boolean(input.url), url: input.url || "", approvedFolders: input.approvedFolders || status.windows.approvedFolders } };
   }
 
-  async getCosts(): Promise<CostsResponse> {
+  async getCosts(filters?: { days?: number; model?: string }): Promise<CostsResponse> {
     await delay(90);
     const period = { sessions: 0, cost: 0, tokens: 0, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, reasoning_tokens: 0, tool_calls: 0, api_calls: 0 };
-    return { window_days: 30, summary: { last_24h: period, last_7d: period, last_30d: period, selected: period, all_time: period }, by_model: [], by_source: [], daily: [], expensive_sessions: [] };
+    const selectedModel = filters?.model || "gpt-5.5";
+    return {
+      window_days: filters?.days ?? 30,
+      summary: { last_24h: period, last_7d: period, last_30d: period, selected: period, all_time: period },
+      by_model: [],
+      by_source: [],
+      daily: [],
+      expensive_sessions: [],
+      model_usage: {
+        selected_model: selectedModel,
+        models: ["gpt-5.5", "claude-sonnet-4", "gpt-4.1-mini"],
+        source: "Demo model duration telemetry",
+        daily: { label: "5h", used_seconds: 0, limit_seconds: 18000, used_hours: 0, limit_hours: 5, remaining_seconds: 18000, remaining_hours: 5, percent_used: 0, reset_at: "", reset_label: "9:19 AM" },
+        weekly: { label: "Weekly", used_seconds: 0, limit_seconds: 126000, used_hours: 0, limit_hours: 35, remaining_seconds: 126000, remaining_hours: 35, percent_used: 0, reset_at: "", reset_label: "Jun 11" },
+      },
+    };
   }
 
   async listProjects(): Promise<ProjectsResponse> {
@@ -792,12 +1031,36 @@ export class MockHermesClient implements HermesClient {
 
   async listBoard(): Promise<BoardResponse> {
     await delay(90);
-    return { tasks: [], lanes: { todo: [], queued: [], scheduled: [], running: [], blocked: [], done: [], error: [] }, summary: { total: 0, todo: 0, queued: 0, scheduled: 0, running: 0, blocked: 0, done: 0, error: 0, assignees: [], projects: [] }, statuses: ["todo", "queued", "scheduled", "running", "blocked", "done", "error"], projects: [] };
+    const task = mockResearchSourceTask();
+    const hmcTask = mockHmcReleaseTask();
+    [task, hmcTask].forEach((item) => {
+      item.board_id = "default";
+      item.board_slug = "default";
+      item.board_label = "Default board";
+      item.board_is_default = true;
+    });
+    return { tasks: [task, hmcTask], lanes: { triage: [], todo: [task], scheduled: [], ready: [], running: [], blocked: [], error: [], review: [hmcTask], done: [] }, summary: { total: 2, triage: 0, todo: 1, scheduled: 0, ready: 0, running: 0, blocked: 0, error: 0, review: 1, done: 0, assignees: ["Melkizac", "dev-ops"], projects: ["project:mock-research-to-deliverable", "hmc-governed-software-factory"], boards: ["default"] }, statuses: ["triage", "todo", "scheduled", "ready", "running", "blocked", "error", "review", "done"], projects: ["project:mock-research-to-deliverable", "hmc-governed-software-factory"], boards: [{ id: "default", slug: "default", label: "Default board", is_default: true }], warnings: [] };
   }
 
   async getTaskResult(id: string): Promise<TaskResultResponse> {
     await delay(90);
-    return { ok: true, mission_result: null, task: undefined, error: `Mock task ${id} has no result yet` };
+    const task = id.includes("hmc") ? mockHmcReleaseTask(id) : mockResearchSourceTask(id);
+    return { ok: true, mission_result: null, task };
+  }
+
+  async listAgentHandoffs(): Promise<AgentHandoffResponse> {
+    await delay(40);
+    return { ok: true, handoffs: [], summary: { total: 0, open: 0, completed: 0, blocked: 0, high_risk: 0 }, statuses: ["requested", "accepted", "in_progress", "blocked", "completed", "failed", "cancelled"] };
+  }
+
+  async createAgentHandoff(): Promise<AgentHandoffMutationResponse> {
+    await delay(40);
+    return { ok: false, error: "Mock handoff ledger is read-only" };
+  }
+
+  async updateAgentHandoff(): Promise<AgentHandoffMutationResponse> {
+    await delay(40);
+    return { ok: false, error: "Mock handoff ledger is read-only" };
   }
 
   async getOperatorLinkPreview(): Promise<OperatorLinkPreviewResponse> {

@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AutomationRoutine, AutomationsResponse, BrowserConnectorConfig, BrowserConnectorsResponse, FunnelTarget, FunnelTargetsResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { formatSingaporeTime } from "../utils/time";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
 import { Icon } from "../components/Icon";
 import { useStore } from "../services/store";
+import { useRealtimeRefresh } from "../hooks/useRealtimeRefresh";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 const client = new HttpHermesClient();
 
@@ -38,30 +40,20 @@ export function Automations() {
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedTarget, setSelectedTarget] = useState<FunnelTarget | null>(null);
   const [tab, setTab] = useState<AutomationTab>("overview");
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = async () => {
-    try {
-      setLoading(true);
-      const [next, targets, connectors] = await Promise.all([client.listAutomations({ q, state }), client.listFunnelTargets({ q }), client.listBrowserConnectors()]);
-      setData(next);
-      setTargetData(targets);
-      setConnectorData(connectors);
-      setError(next.error ?? targets.error ?? connectors.error ?? null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load routines");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 180);
-    return () => window.clearTimeout(timer);
+  const load = useCallback(async () => {
+    const [next, targets, connectors] = await Promise.all([client.listAutomations({ q, state }), client.listFunnelTargets({ q }), client.listBrowserConnectors()]);
+    setData(next);
+    setTargetData(targets);
+    setConnectorData(connectors);
+    setError(next.error ?? targets.error ?? connectors.error ?? null);
   }, [q, state]);
+
+  const refreshState = useRealtimeRefresh(load, [q, state], { pollMs: 15_000, staleAfterMs: 45_000 });
+  const loading = refreshState.initialLoading;
 
   useEffect(() => {
     const close = (event: KeyboardEvent) => {
@@ -125,7 +117,7 @@ export function Automations() {
         : await client.automationAction(automation.id, action);
       if (!result.ok) throw new Error(result.error || result.stderr || "Routine action failed");
       setNotice(action === "enable_funnel_routine" ? `Enable approved routine sent for ${automation.name}. NO_SUBMIT safeguards remain active.` : `${action} sent for ${automation.name}. ${result.stdout || "Cron state updated."}`.trim());
-      await load();
+      await refreshState.refresh("manual");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Routine action failed");
     } finally {
@@ -141,7 +133,7 @@ export function Automations() {
       const result = await client.createFunnelTarget({ label: targetLabel, url: targetUrl, schedule: targetSchedule, approved: true, approvedBy: "Mission Control operator", expected: "public lead/order form submit boundary" });
       if (!result.ok) throw new Error(result.error || "Unable to add target");
       setNotice(`Add target complete: ${result.target?.label ?? targetLabel}. NO_SUBMIT safeguards are active.`);
-      await load();
+      await refreshState.refresh("manual");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to add target");
     } finally {
@@ -164,7 +156,7 @@ export function Automations() {
       if (!result.ok) throw new Error(result.error || "Unable to save connector gate");
       setConnectorSecret("");
       setNotice(`Production connector configuration gate saved for ${result.connector?.label ?? connectorLabel}. No real connector is enabled yet; secrets are stored as [REDACTED].`);
-      await load();
+      await refreshState.refresh("manual");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save connector gate");
     } finally {
@@ -181,7 +173,7 @@ export function Automations() {
       if (!result.ok) throw new Error(result.error || "Connector action failed");
       const label = action === "approve" ? "Approve connector config" : action === "dry_run_probe" ? "Dry-run connectivity test" : action === "archive_probe" ? "Archive old probe evidence" : "Enable connector";
       setNotice(`${label} recorded for ${connector.label}. No real connector is enabled yet.`);
-      await load();
+      await refreshState.refresh("manual");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Connector action failed");
     } finally {
@@ -201,7 +193,7 @@ export function Automations() {
       });
       if (!result.ok) throw new Error(result.error || "Desktop-browser dry-run probe failed");
       setNotice(`Run desktop-browser dry-run probe complete for ${connector.label}. NO_SUBMIT probe stopped before submit; Browser Activity: ${result.browserActivityUrl ?? 'created'}.`);
-      await load();
+      await refreshState.refresh("manual");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Desktop-browser dry-run probe failed");
     } finally {
@@ -218,7 +210,7 @@ export function Automations() {
       if (!result.ok) throw new Error(result.error || "Target action failed");
       const labels = { enable: "Enable target routine", pause: "Pause target routine", run_now: "Run target now" };
       setNotice(`${labels[action]} sent for ${target.label}. NO_SUBMIT remains mandatory.`);
-      await load();
+      await refreshState.refresh("manual");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Target action failed");
     } finally {
@@ -231,13 +223,16 @@ export function Automations() {
       <header className="automations-hero">
         <div>
           <span className="stub-tag">ROUTINE CONTROL</span>
-          <h1>Routines</h1>
-          <p>
-            Recurring and scheduled Hermes work. Click a routine to inspect schedule, prompt, outputs, and run evidence in a right-side drawer.
-          </p>
+          <div className="hero-title-with-help">
+            <h1>Routines</h1>
+            <InfoTooltip label="About routines">
+              Recurring and scheduled Hermes work. Click a routine to inspect schedule, prompt, outputs, and run evidence in a right-side drawer.
+            </InfoTooltip>
+          </div>
         </div>
         <div className="task-hero-actions">
-          <button className="task-icon-action dark" aria-label="Refresh routines" title="Refresh routines" onClick={() => void load()}>
+          <span className={`realtime-status ${refreshState.stale ? "stale" : refreshState.refreshing ? "refreshing" : "live"}`}>{refreshState.statusLabel}</span>
+          <button className="task-icon-action dark" aria-label="Refresh routines" title="Refresh routines" disabled={refreshState.refreshing} onClick={() => void refreshState.refresh("manual")}>
             <Icon name="refresh" size={18} />
           </button>
         </div>
@@ -274,7 +269,11 @@ export function Automations() {
             <option value="personal">Personal governed</option>
           </select>
         </label>
-        <div className="automation-filter-note">Actions call Hermes cron directly. “Run now” may execute real workflows and deliveries.</div>
+        <div className="automation-filter-help">
+          <InfoTooltip label="Routine action safety">
+            Actions call Hermes cron directly. “Run now” may execute real workflows and deliveries.
+          </InfoTooltip>
+        </div>
       </section>
 
       {showAdminRoutineManagement && (
@@ -403,7 +402,7 @@ export function Automations() {
       )}
 
       {notice && <div className="automation-notice">{notice}</div>}
-      {error && <div className="automation-error">{error}</div>}
+      {(error || refreshState.error) && <div className="task-error">{error || refreshState.error}</div>}
 
       {viewMode === "cards" ? (
         <section className="automation-grid automation-grid-full">

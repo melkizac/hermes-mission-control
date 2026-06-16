@@ -41,6 +41,7 @@ type AdminCard = { key: ViewKey | "docs"; title: string; eyebrow: string; body: 
 const adminCards: AdminCard[] = [
   { key: "runtimes", eyebrow: "Runtimes", title: "Runtime Connectors", body: "Connect OpenClaw, NanoClaw, NemoClaw, Codex, Claude Code, and custom agent frameworks." },
   { key: "settings", eyebrow: "Gateway", title: "Desktop / Gateway", body: "Configure VPS desktop gateway, Windows local gateway, approved folders, and execution target." },
+  { key: "models", eyebrow: "Models", title: "Models & Rate Limits", body: "Manage authorised AI models, routing metadata, and provider quota remaining in one Settings surface." },
   { key: "skills", eyebrow: "Skills", title: "Skills Library", body: "Review installed skills and capability packs without crowding the operator sidebar." },
   { key: "research-runs", eyebrow: "Research", title: "Research Runs", body: "Structured investigations with sources, findings, confidence, recommendations, and evidence." },
   { key: "costs", eyebrow: "Costs", title: "Usage & Costs", body: "Token spend, model usage, and cost trends for governance and budget checks." },

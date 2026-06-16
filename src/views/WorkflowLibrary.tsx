@@ -3,6 +3,7 @@ import type { PackagedWorkflow, WorkflowLibraryResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { ArtifactCard, EvidenceTimeline, RiskBadges } from "../components/MissionFoundation";
 import { Icon } from "../components/Icon";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 const client = new HttpHermesClient();
 
@@ -91,10 +92,12 @@ export function WorkflowLibrary() {
       <header className="workflow-hero">
         <div>
           <span className="stub-tag">PACKAGED SME WORKFLOWS</span>
-          <h1>Workflow library</h1>
-          <p>
-            Launch repeatable SME operating loops with linked skills, built-in evidence requirements, artifacts, and approval gates.
-          </p>
+          <div className="hero-title-with-help">
+            <h1>Workflow library</h1>
+            <InfoTooltip label="About workflows">
+              Launch repeatable SME operating loops with linked skills, built-in evidence requirements, artifacts, and approval gates.
+            </InfoTooltip>
+          </div>
         </div>
         <button className="task-icon-action dark" aria-label="Refresh workflow library" title="Refresh workflow library" onClick={() => void load()}>
           <Icon name="refresh" size={18} />
@@ -120,7 +123,7 @@ export function WorkflowLibrary() {
             {(data?.categories ?? []).map((item) => <option key={item} value={item}>{item}</option>)}
           </select>
         </label>
-        <div className="workflow-filter-note">Evidence-ready workflows launch as Task Board items, not hidden chats.</div>
+        <div className="filter-help"><InfoTooltip label="About workflow launch">Evidence-ready workflows launch as Task Board items, not hidden chats.</InfoTooltip></div>
       </section>
 
       {error && <div className="skills-error">{error}</div>}
@@ -148,16 +151,6 @@ export function WorkflowLibrary() {
               <button className="btn dark workflow-launch" disabled={launching === workflow.id} onClick={() => void launchWorkflow(workflow)}>
                 {launching === workflow.id ? "Launching…" : "Launch workflow"}
               </button>
-              {workflow.id === "website-funnel-check" && (
-                <label className="workflow-funnel-target">
-                  <span>targetUrl for no-submit funnel check</span>
-                  <input value={funnelTargetUrl} onChange={(event) => setFunnelTargetUrl(event.target.value)} placeholder="https://example.com/contact" />
-                  <span>schedule cron for recurring check</span>
-                  <input value={funnelSchedule} onChange={(event) => setFunnelSchedule(event.target.value)} placeholder="0 9 * * 1" />
-                  <small>NO_SUBMIT is enforced; Mission Control blocks before external form submit.</small>
-                  <button className="ghost tiny" type="button" disabled={launching === `${workflow.id}:schedule`} onClick={() => void scheduleFunnelWorkflow(workflow)}>{launching === `${workflow.id}:schedule` ? "Scheduling…" : "Schedule recurring check"}</button>
-                </label>
-              )}
             </article>
           ))}
           {workflows.length === 0 && <div className="empty big">No packaged workflows matched this filter.</div>}
@@ -174,12 +167,25 @@ export function WorkflowLibrary() {
                 <h2>{selected.name}</h2>
                 <p>{selected.idealFor}</p>
               </div>
-              <button className="btn ghost" type="button" aria-label="Close workflow details" onClick={() => setSelected(null)}>Close</button>
+              <button className="mc-drawer-close" type="button" aria-label="Close workflow details" title="Close workflow details" onClick={() => setSelected(null)}>×</button>
             </div>
             <div className="workflow-detail-section">
               <b>Linked skills</b>
               <div className="workflow-chips strong">{selected.skills.map((skill) => <span key={skill}>{skill}</span>)}</div>
             </div>
+            {selected.id === "website-funnel-check" && (
+              <div className="workflow-detail-section workflow-funnel-settings">
+                <b>No-submit funnel schedule</b>
+                <label className="workflow-funnel-target">
+                  <span>targetUrl for no-submit funnel check</span>
+                  <input value={funnelTargetUrl} onChange={(event) => setFunnelTargetUrl(event.target.value)} placeholder="https://example.com/contact" />
+                  <span>schedule cron for recurring check</span>
+                  <input value={funnelSchedule} onChange={(event) => setFunnelSchedule(event.target.value)} placeholder="0 9 * * 1" />
+                  <small>NO_SUBMIT is enforced; Mission Control blocks before external form submit.</small>
+                  <button className="ghost tiny" type="button" disabled={launching === `${selected.id}:schedule`} onClick={() => void scheduleFunnelWorkflow(selected)}>{launching === `${selected.id}:schedule` ? "Scheduling…" : "Schedule recurring check"}</button>
+                </label>
+              </div>
+            )}
             <div className="workflow-detail-section">
               <b>Steps</b>
               <ol className="workflow-steps">

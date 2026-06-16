@@ -1,9 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { formatSingaporeShort } from "../utils/time";
 import { Icon } from "../components/Icon";
+import { AgentDetailDrawerShell, type AgentDrawerAction, type AgentDrawerTab } from "../components/AgentDetailDrawerShell";
+import { useStore } from "../services/store";
+import type { AgentHandoff, CapabilityMatrixCapability, CapabilityMatrixRow, RunTreePayload, RunTreeRunNode, RunTreeTaskNode } from "../types";
+import { useRealtimeRefresh, type RefreshMode } from "../hooks/useRealtimeRefresh";
+import { cachedJsonRequest, invalidateQueryCache } from "../services/queryCache";
 
-type Tab = "org" | "agents" | "goals" | "queues" | "flows" | "runs" | "outputs" | "permissions" | "health";
-type DrawerTab = "overview" | "goals" | "queue" | "approvals" | "runs" | "outputs" | "activity" | "skills" | "permissions" | "profile" | "config";
+type Tab = "org" | "agents" | "goals" | "queues" | "handoffs" | "flows" | "runs" | "delegation" | "outputs" | "permissions" | "health";
+type DrawerTab = "overview" | "goals" | "queue" | "handoffs" | "approvals" | "runs" | "run-tree" | "outputs" | "activity" | "tools" | "memory" | "skills" | "permissions" | "profile" | "config";
 type AgentStatus = "active" | "idle" | "blocked" | "failed" | "attention";
 
 type Automation = { id: string; name: string; enabled: boolean; status: string; schedule: string; next_run_relative?: string; next_run_at?: string; last_run_at?: string; last_status?: string; prompt_preview?: string; recent_runs?: Run[]; recent_outputs?: Output[] };
@@ -22,7 +27,7 @@ type ProfileRuntimeDetails = {
   identity?: { name?: string; source?: string };
   model_routing?: { provider?: string; model?: string };
   toolsets?: string[];
-  memory?: { entries: number; files: Array<{ name: string; entries: number; updated_at?: string }>; redacted_or_sensitive_mentions?: number };
+  memory?: { entries: number; files: Array<{ name: string; entries: number; updated_at?: string }>; items?: Array<{ id: string; source?: string; file?: string; line_start?: number; title?: string; text: string; updated_at?: string; redacted?: boolean }>; redacted_or_sensitive_mentions?: number };
   sessions?: { count: number; recent: Array<Partial<Run> & { source?: string; model?: string; total_tokens?: number; estimated_cost_usd?: number }> };
   plugins?: { enabled: number; total: number; items: Array<{ id: string; name: string; category?: string; status?: string; source?: string }>; error?: string };
   gateway?: { channels: Array<{ id: string; enabled: boolean; source?: string }>; webhooks_configured?: number };
@@ -52,7 +57,10 @@ type OrgAgent = {
   automations: Automation[];
   tasks: Task[];
   inbox: Review[];
+  handoffs?: AgentHandoff[];
+  handoff_summary?: { sent: number; received: number; open: number; blocked: number };
   runs: Run[];
+  run_trees?: RunTreePayload[];
   outputs: Output[];
   activity: Activity[];
   queue: { queued: number; running: number; blocked: number; done: number; failed: number };
@@ -62,12 +70,78 @@ type OrgAgent = {
   active_goal?: Goal | null;
   goals?: Goal[];
   profile_details?: ProfileRuntimeDetails;
+  detailLoaded?: boolean;
+  detailEndpoint?: string;
+  automation_count?: number;
+  task_count?: number;
+  inbox_count?: number;
+  run_count?: number;
+  output_count?: number;
 };
 
 type OrgFlow = { id: string; name: string; trigger?: string; gate?: string; status: string; steps: Array<{ label: string; agent?: string; approval?: string; status?: string }> };
 type AgentOrgResponse = { agents: OrgAgent[]; relationships: Array<{ from: string; to: string }>; flows: OrgFlow[]; summary: Record<string, number>; health: { errors: string[]; generated_at: string }; registry_path: string };
 
 const emptyOrg: AgentOrgResponse = { agents: [], relationships: [], flows: [], summary: {}, health: { errors: [], generated_at: "" }, registry_path: "" };
+
+const CANONICAL_TEAM_MAP = [
+  {
+    profile: "default",
+    name: "Melkizac / Mission Control Orchestrator",
+    owns: "Triage, routing, governance, approvals, evidence checks, stuck-work unblocking, and final operator reporting.",
+    handoff: "Hands off domain execution to specialists when a role exists; verifies completion before reporting done.",
+    visible: "Chief operator plus cross-domain goals, tasks, handoffs, approvals, outputs, and evidence.",
+  },
+  {
+    profile: "dev-ops",
+    name: "Andrej / DevOps Builder",
+    owns: "HMC UI/API work, code changes, tests, deployments, runtime debugging, GitHub, web properties, and automation buildout.",
+    handoff: "Use for build/fix/test/deploy work and technical verification; approval required for destructive production, DB, DNS, or secret changes.",
+    visible: "DevOps-owned tasks with repo/path, desired behavior, command/browser evidence, and deployment state.",
+  },
+  {
+    profile: "content-ops",
+    name: "Content Ops / Enrico",
+    owns: "Content strategy, campaign angles, blogs/articles, LinkedIn drafts, visuals, reports, and approval-ready publishing assets.",
+    handoff: "Use for marketing/content assets; hand live LinkedIn execution to LinkedIn Growth and engineering changes to DevOps.",
+    visible: "Content tasks or campaign goals with draft artifacts, target channel, approval status, and downstream handoff.",
+  },
+  {
+    profile: "linkedin-growth",
+    name: "LinkedIn Growth",
+    owns: "LinkedIn ICP engagement, feed/profile analysis, comments/posts/DM drafts, scheduling support, and DM follow-up audits.",
+    handoff: "Use for LinkedIn execution; every external comment, post, DM, or request needs verified target + submit path and approval.",
+    visible: "LinkedIn tasks/routines with target URL/profile, proposed action, approval gate, outcome, and screenshot/log evidence.",
+  },
+  {
+    profile: "nexius-leads",
+    name: "Nexius Lead Agent",
+    owns: "Nexius Labs/Academy lead capture monitoring, qualification, source attribution, course signup monitoring, and lead-gen reporting.",
+    handoff: "Use for lead checks, SkillsFuture/class lead qualification, and course funnel monitoring; outbound follow-up remains approval-gated.",
+    visible: "Lead campaign goals/tasks with source, lead delta, qualification status, blockers, approvals, and report artifacts.",
+  },
+  {
+    profile: "second-brain",
+    name: "Second Brain",
+    owns: "Provenance-backed KB ingestion, wiki synthesis, source preservation, index/log hygiene, and context retrieval.",
+    handoff: "Use for source ingestion, canonical notes, project memory, research context retrieval, and wiki cleanup.",
+    visible: "KB tasks with source paths/URLs, created or updated wiki pages, log/index changes, and provenance notes.",
+  },
+  {
+    profile: "project-task",
+    name: "Project & Task Coordinator",
+    owns: "HMC/Kanban state, goal/action decomposition, evidence gates, blocked-work review, and worker routing.",
+    handoff: "Use when work needs persistent tracking, multiple steps, visible status, or cross-agent supervision.",
+    visible: "Tasks, goals, runs, handoffs, approvals, outputs, and evidence linked to the responsible agent.",
+  },
+  {
+    profile: "email-attention",
+    name: "Email Attention Ops",
+    owns: "Read-only email attention monitoring, high-signal inbox triage, snooze reminders, follow-up task creation, and reply drafts.",
+    handoff: "Use for recurring inbox monitoring, important-email surfacing, and follow-up reminders; external replies or mailbox mutations remain approval-gated.",
+    visible: "Email attention routines/tasks with source mailbox context, due time, drafted response when applicable, approval gate, and follow-up status.",
+  },
+];
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${window.location.protocol}//${window.location.host}${path}`, {
@@ -78,6 +152,39 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : res.statusText);
   return data as T;
+}
+
+const AGENT_ORG_SUMMARY_CACHE_KEY = "agent-org:summary";
+const DETAIL_STALE_AFTER_MS = 60_000;
+
+function agentOrgDetailCacheKey(agentId: string) {
+  return `agent-org:detail:${agentId}`;
+}
+
+function invalidateAgentOrgCache(agentId?: string) {
+  invalidateQueryCache(AGENT_ORG_SUMMARY_CACHE_KEY);
+  if (agentId) invalidateQueryCache(agentOrgDetailCacheKey(agentId));
+}
+
+function mergeSummaryWithCachedDetail(summary: OrgAgent, detail?: OrgAgent): OrgAgent {
+  if (!detail?.detailLoaded) return summary;
+  return {
+    ...summary,
+    automations: detail.automations,
+    tasks: detail.tasks,
+    skills_detail: detail.skills_detail,
+    inbox: detail.inbox,
+    handoffs: detail.handoffs,
+    runs: detail.runs,
+    run_trees: detail.run_trees,
+    outputs: detail.outputs,
+    activity: detail.activity,
+    goals: detail.goals,
+    active_goal: detail.active_goal,
+    profile_details: detail.profile_details,
+    detailLoaded: true,
+    detailEndpoint: summary.detailEndpoint || detail.detailEndpoint,
+  };
 }
 
 function fmtMoney(value: number) {
@@ -102,15 +209,51 @@ function nodeReportName(agent: OrgAgent, agents: OrgAgent[]) {
   return agents.find((a) => a.id === parent)?.name || parent;
 }
 
+function agentIssueCount(agent: OrgAgent) {
+  const queue = agent.queue || { blocked: 0, failed: 0, queued: 0, running: 0, done: 0 };
+  const reviewCount = agent.inbox_count ?? agent.inbox.length;
+  const blockedHandoffs = agent.handoff_summary?.blocked || 0;
+  const count = (queue.blocked || 0) + (queue.failed || 0) + reviewCount + blockedHandoffs;
+  return count || (["failed", "blocked", "attention"].includes(agent.status) ? 1 : 0);
+}
+
+function agentStatusPresentation(agent: OrgAgent) {
+  const issues = agentIssueCount(agent);
+  if (issues > 0) {
+    return {
+      tone: "issue",
+      icon: "🔔",
+      count: issues,
+      title: `${issues} issue${issues === 1 ? "" : "s"} ${issues === 1 ? "needs" : "need"} attention: failed, blocked, review, or error work`,
+    };
+  }
+  if (agent.status === "active") {
+    return { tone: "ok", icon: "✓", title: "Active and healthy" };
+  }
+  return { tone: "idle", icon: "☾", title: "Idle / no active work" };
+}
+
+function AgentStatusBadge({ agent, compact = false }: { agent: OrgAgent; compact?: boolean }) {
+  const status = agentStatusPresentation(agent);
+  return (
+    <i className={`org-node-status ${status.tone} ${compact ? "compact" : ""}`} title={status.title} aria-label={status.title}>
+      <b>{status.icon}</b>
+      {status.count ? <em>{status.count}</em> : null}
+    </i>
+  );
+}
+
 function NodeCard({ agent, selected, onClick }: { agent: OrgAgent; selected: boolean; onClick: () => void }) {
   const openWork = (agent.queue?.queued || 0) + (agent.queue?.running || 0) + (agent.queue?.blocked || 0) + (agent.queue?.failed || 0);
+  const automationCount = agent.automation_count ?? agent.automations.length;
+  const inboxCount = agent.inbox_count ?? agent.inbox.length;
   return (
     <button className={`org-node ${agent.status} ${selected ? "selected" : ""}`} onClick={onClick}>
-      <div className="org-node-head"><span>{initials(agent.name)}</span><i>{agent.status}</i></div>
+      <div className="org-node-head"><span>{initials(agent.name)}</span><AgentStatusBadge agent={agent} /></div>
       <h3>{agent.name}</h3>
       <p>{agent.role}</p>
-      <div className="chip-row compact"><span>{agent.type || "logical_agent"}</span><span>{agent.runtime || "hermes"}</span><span>{agent.mode}</span></div>
-      <div className="org-node-stats"><b>{agent.automations.length}</b><small>routines</small><b>{openWork}</b><small>queue</small><b>{agent.inbox.length}</b><small>gates</small></div>
+      <div className="chip-row compact"><span>{agent.type || "workflow_agent"}</span><span>{agent.runtime || "hermes"}</span><span>runs as {agent.profile || "default"}</span></div>
+      <div className="org-node-stats"><b>{automationCount}</b><small>routines</small><b>{openWork}</b><small>queue</small><b>{inboxCount}</b><small>gates</small></div>
       <div className="org-node-foot"><span>{agent.mode}</span><span>{agent.lastActivity ? formatSingaporeShort(agent.lastActivity) : "No recent run"}</span></div>
     </button>
   );
@@ -216,59 +359,280 @@ function ActivityRow({ item, approval, approvingId, onApprove }: { item: Activit
   );
 }
 
+function handoffEvidenceCount(handoff: AgentHandoff) {
+  return Array.isArray(handoff.evidence) ? handoff.evidence.length : 0;
+}
+
+function HandoffTimeline({ handoffs, compact = false }: { handoffs?: AgentHandoff[]; compact?: boolean }) {
+  const visible = (handoffs || []).slice(0, compact ? 6 : 20);
+  return <section className="handoff-timeline-panel">
+    <div className="task-result-heading"><span className="stub-tag">Agent handoffs</span><h3>Explicit collaboration timeline</h3></div>
+    <p className="muted">Persistent handoff records show which agent asked another agent to own a next step, the requested output, risk/status, and attached evidence.</p>
+    <div className="handoff-timeline">
+      {visible.map((handoff) => <article className={`handoff-card ${handoff.status} ${handoff.risk}`} key={handoff.id}>
+        <span className="activity-dot" />
+        <div>
+          <div className="handoff-card-head"><b>{handoff.from_agent} → {handoff.to_agent}</b><span className={`tag ${handoff.status}`}>{handoff.status}</span></div>
+          <h4>{handoff.objective}</h4>
+          <p>{handoff.requested_output}</p>
+          {handoff.context && !compact && <small>{handoff.context}</small>}
+          <div className="chip-row compact"><span>{handoff.risk} risk</span>{handoff.task_id && <span>task {handoff.task_id}</span>}<span>{formatSingaporeShort(handoff.updated_at || handoff.created_at)}</span><span>{handoffEvidenceCount(handoff)} evidence</span></div>
+        </div>
+      </article>)}
+      {!visible.length && <div className="empty">No handoffs recorded yet. When ownership transfers between agents, the request and evidence will appear here.</div>}
+    </div>
+  </section>;
+}
+
+function AgentRunTreePanel({ trees }: { trees?: RunTreePayload[] }) {
+  const visible = trees || [];
+  return <section><h3>Subagent run tree</h3><p className="muted">Delegated subtasks, self-check loops, model/toolset routing, outputs, and verification blockers for this agent.</p>{visible.map((tree, index) => <AgentRunTree key={tree.root?.id || index} tree={tree} />)}{!visible.length && <p className="muted">No delegated run trees mapped to this agent yet.</p>}</section>;
+}
+
+function AgentRunTree({ tree }: { tree: RunTreePayload }) {
+  const summary = tree.summary;
+  return <article className={`agent-run-tree-card ${summary?.completion_blocked ? "blocked" : ""}`}>
+    <div className="run-tree-summary"><span>{summary?.total_tasks || 0} tasks</span><span>{summary?.total_runs || 0} runs</span><span>{summary?.status || "pending"}</span>{summary?.completion_blocked && <b>Completion blocked</b>}</div>
+    {(summary?.blocking_reasons || []).length > 0 && <p className="muted">Failed verification: {(summary?.blocking_reasons || []).join(" · ")}</p>}
+    {tree.root && <AgentRunTreeTask node={tree.root} depth={0} />}
+  </article>;
+}
+
+function AgentRunTreeTask({ node, depth }: { node: RunTreeTaskNode; depth: number }) {
+  return <div className={`run-tree-node ${node.verification?.blocked ? "blocked" : node.verification?.status || ""}`} style={{ marginLeft: depth ? 16 : 0 }}>
+    <div className="run-tree-node-head"><div><b>{node.title || node.task_id}</b><small>{node.task_id} · {node.agent || "unassigned"} · {node.status}</small></div><span className={`tag ${node.verification?.blocked ? "warn" : "muted"}`}>{node.verification?.status || "pending"}</span></div>
+    <div className="chip-row compact"><span>model {node.model || "default"}</span>{(node.toolsets || []).slice(0, 3).map((tool) => <span key={tool}>{tool}</span>)}</div>
+    {(node.runs || []).slice(0, 4).map((run) => <AgentRunTreeRun key={run.id} run={run} />)}
+    {(node.children || []).map((child) => <AgentRunTreeTask key={child.id} node={child} depth={depth + 1} />)}
+  </div>;
+}
+
+function AgentRunTreeRun({ run }: { run: RunTreeRunNode }) {
+  return <div className={`run-tree-run ${run.verification?.blocked ? "blocked" : ""}`}><span className="activity-dot" /><div><b>{run.agent || "worker"} run {run.run_id}</b><small>{run.status}{run.outcome ? ` · ${run.outcome}` : ""}</small>{run.output && <p>{run.output}</p>}</div><em>{run.verification?.status || "pending"}</em></div>;
+}
+
 function agentRunLabel(agent: OrgAgent) {
   if (!agent.automations.length) return "No runtime";
   return agent.automations.length === 1 ? "Run agent" : "Choose run";
 }
 
-function ProfileRuntimePanel({ agent }: { agent: OrgAgent }) {
+function drawerTabsFor(agent: OrgAgent): DrawerTab[] {
+  const tabs: DrawerTab[] = ["overview", "profile", "tools", "skills"];
+  if ((agent.goals || []).length || agent.active_goal) tabs.push("goals");
+  if ((agent.task_count ?? agent.tasks.length) > 0) tabs.push("queue");
+  if ((agent.handoff_summary?.open || agent.handoffs?.length || 0) > 0) tabs.push("handoffs");
+  if ((agent.inbox_count ?? agent.inbox.length) > 0) tabs.push("approvals");
+  if ((agent.run_count ?? agent.runs.length) > 0) tabs.push("runs");
+  if ((agent.run_trees || []).length > 0) tabs.push("run-tree");
+  if ((agent.output_count ?? agent.outputs.length) > 0) tabs.push("outputs");
+  if ((agent.activity || []).length > 0) tabs.push("activity");
+  tabs.push("memory", "permissions");
+  return tabs;
+}
+
+function drawerTabLabel(tab: DrawerTab, agent: OrgAgent) {
+  const labels: Record<DrawerTab, string> = {
+    overview: "Overview", goals: "Goals", queue: "Queue", handoffs: "Handoffs", approvals: "Approvals", runs: "Runs", "run-tree": "Run tree", outputs: "Outputs", activity: "Activity", tools: "Tools", memory: "Memory", skills: "Skills", permissions: "Permissions", profile: "Runtime", config: "Config",
+  };
+  const count = drawerTabCount(tab, agent);
+  return count ? `${labels[tab]} ${count}` : labels[tab];
+}
+
+function drawerTabCount(tab: DrawerTab, agent: OrgAgent) {
+  return tab === "goals" ? (agent.goals?.length || 0)
+    : tab === "queue" ? (agent.task_count ?? agent.tasks.length)
+    : tab === "handoffs" ? (agent.handoff_summary?.open || agent.handoffs?.length || 0)
+    : tab === "approvals" ? (agent.inbox_count ?? agent.inbox.length)
+    : tab === "runs" ? (agent.run_count ?? agent.runs.length)
+    : tab === "outputs" ? (agent.output_count ?? agent.outputs.length)
+    : tab === "activity" ? (agent.activity?.length || 0)
+    : tab === "tools" ? agent.tools.length
+    : tab === "skills" ? (agent.skills_detail.length || agent.skills.length)
+    : tab === "memory" ? (agent.profile_details?.memory?.entries || 0)
+    : 0;
+}
+
+function drawerTabBaseLabel(tab: DrawerTab) {
+  const labels: Record<DrawerTab, string> = {
+    overview: "Overview", goals: "Goals", queue: "Queue", handoffs: "Handoffs", approvals: "Approvals", runs: "Runs", "run-tree": "Run tree", outputs: "Outputs", activity: "Activity", tools: "Tools", memory: "Memory", skills: "Skills", permissions: "Permissions", profile: "Runtime", config: "Config",
+  };
+  return labels[tab];
+}
+
+function capabilityBlocked(capability: CapabilityMatrixCapability) {
+  return Boolean(capability.actionableBlocker || (capability.approvalRequired && capability.approvalStatus !== "approved"));
+}
+
+function capabilityScopeLabel(capability: CapabilityMatrixCapability) {
+  if (capability.assignmentScope === "inherited" || capability.inherited) return "inherited";
+  if (capability.assigned) return "assigned";
+  return "available";
+}
+
+function capabilityBlockerText(capability: CapabilityMatrixCapability) {
+  return String((capability.actionableBlocker as { message?: unknown } | null)?.message || capability.policyGate || "Governance approval is required before assignment changes.");
+}
+
+function CapabilityAssignmentCard({ capability, canEdit, busy, onAction }: { capability: CapabilityMatrixCapability; canEdit: boolean; busy?: boolean; onAction: (capability: CapabilityMatrixCapability) => void }) {
+  const blocked = capabilityBlocked(capability);
+  const scope = capabilityScopeLabel(capability);
+  const label = capability.displayName || capability.name || capability.id;
+  return <article className={`capability-assignment-card ${scope} ${blocked ? "blocked" : ""}`}>
+    <div className="capability-card-head"><div><b>{label}</b><small>{capability.type || "capability"} · {capability.sourceLabel || capability.source || "runtime"} · {capability.healthState || "unknown"}</small></div><span className={`tag ${blocked ? "blocked" : scope}`}>{blocked ? "governed" : scope}</span></div>
+    {capability.description && <p>{capability.description}</p>}
+    <div className="chip-row compact">
+      {(capability.riskLevels || []).slice(0, 4).map((risk) => <span key={risk}>{risk}</span>)}
+      {capability.assignmentUnit && <span>unit {capability.assignmentUnit}</span>}
+      {capability.approvalRequired && <span>approval {capability.approvalStatus || "required"}</span>}
+      {scope === "inherited" && <span>profile/runtime inherited</span>}
+    </div>
+    {blocked && <p className="muted">{capabilityBlockerText(capability)}</p>}
+    {capability.source === "registry" ? (
+      canEdit ? <button className="btn dark small" disabled={blocked || busy} onClick={() => onAction(capability)}>{busy ? "Saving…" : capability.assigned ? "Unassign" : "Assign"}</button> : <p className="muted">Admin-only safe edit: visible here, editable from an admin session only.</p>
+    ) : <p className="muted">Inherited from profile runtime config. Change the underlying profile/tool/plugin source instead of registry assignment.</p>}
+  </article>;
+}
+
+function CapabilityAssignmentPanel({ row, loading, error, message, canEdit, busyId, onAction }: { row: CapabilityMatrixRow | null; loading: boolean; error: string | null; message: string | null; canEdit: boolean; busyId?: string | null; onAction: (capability: CapabilityMatrixCapability) => void }) {
+  const capabilities = row?.capabilities || [];
+  const explicitAssigned = capabilities.filter((capability) => capability.source === "registry" && capability.assigned);
+  const inherited = capabilities.filter((capability) => capabilityScopeLabel(capability) === "inherited");
+  const available = capabilities.filter((capability) => capability.source === "registry" && !capability.assigned);
+  return <section className="capability-assignment-panel">
+    <div className="capability-panel-head"><div><h3>Capability assignments</h3><p className="muted">Assigned registry capabilities are explicit. Inherited capabilities come from the Hermes profile runtime, skills, tools, and plugins. Secrets remain hidden.</p></div>{row && <span className="tag assigned">{row.summary.assigned}/{row.summary.total} effective</span>}</div>
+    {loading && !row && <p className="muted">Loading capability matrix…</p>}
+    {error && <div className="org-warning">{error}</div>}
+    {message && <div className="drawer-action-notice success"><b>{message}</b></div>}
+    {row && <div className="org-footprint capability-summary"><span>Assigned {explicitAssigned.length}</span><span>Inherited {row.summary.inherited ?? inherited.length}</span><span>Available {available.length}</span><span>Blocked {row.summary.blocked}</span><span>Registry {row.summary.registry}</span></div>}
+    <div className="capability-section"><h4>Assigned registry capabilities</h4><div className="capability-card-grid">{explicitAssigned.map((capability) => <CapabilityAssignmentCard key={capability.id} capability={capability} canEdit={canEdit} busy={busyId === capability.id} onAction={onAction} />)}{!explicitAssigned.length && <p className="muted">No explicit registry capabilities assigned to this agent yet.</p>}</div></div>
+    <div className="capability-section"><h4>Inherited profile/runtime capabilities</h4><div className="capability-card-grid">{inherited.slice(0, 12).map((capability) => <CapabilityAssignmentCard key={capability.id} capability={capability} canEdit={false} onAction={onAction} />)}{!inherited.length && <p className="muted">No inherited runtime capabilities reported.</p>}</div>{inherited.length > 12 && <p className="muted">+ {inherited.length - 12} more inherited capabilities in the profile runtime.</p>}</div>
+    <div className="capability-section"><h4>Assignable registry capabilities</h4><div className="capability-card-grid">{available.map((capability) => <CapabilityAssignmentCard key={capability.id} capability={capability} canEdit={canEdit} busy={busyId === capability.id} onAction={onAction} />)}{!available.length && <p className="muted">No additional registry capabilities are available for this profile.</p>}</div></div>
+  </section>;
+}
+
+function AgentToolsPanel({ agent }: { agent: OrgAgent }) {
+  const routines = agent.profile_details?.routines?.items || [];
+  const routineToolsets = Array.from(new Set(routines.flatMap((routine) => routine.toolsets || []))).sort();
+  const channels = agent.profile_details?.gateway?.channels || [];
+  return <section>
+    <h3>Assigned tools</h3>
+    <p className="muted">Tools listed here come from the Agent Org backend registry. Routine toolsets show what the scheduled backend runs actually load.</p>
+    <div className="capability-card-grid">{agent.tools.map((tool) => <article className="capability-assignment-card assigned" key={tool}><div className="capability-card-head"><div><b>{tool}</b><small>assigned registry tool</small></div><span className="tag assigned">assigned</span></div></article>)}{!agent.tools.length && <p className="muted">No assigned tools in the registry.</p>}</div>
+    <h3>Routine backend toolsets</h3>
+    <div className="chip-row">{routineToolsets.map((toolset) => <span key={toolset}>{toolset}</span>)}{!routineToolsets.length && <span>No routine toolsets mapped yet</span>}</div>
+    <div className="runtime-workflows">{routines.map((routine) => <div className="runtime-workflow" key={routine.id || routine.name}><div><b>{routine.name || routine.id}</b><small>{routine.schedule || "manual"} · {routine.profile || agent.profile || "default"}</small><div className="chip-row compact">{(routine.toolsets || []).map((toolset) => <span key={`${routine.id}-${toolset}`}>{toolset}</span>)}</div></div><span className={`tag ${String(routine.last_status || routine.status || "").toLowerCase().includes("error") ? "failed" : "active"}`}>{routine.last_status || routine.status || "—"}</span></div>)}</div>
+    <h3>Gateway channels</h3>
+    <div className="chip-row">{channels.map((channel) => <span key={channel.id}>{channel.id} · {channel.enabled ? "enabled" : "disabled"}</span>)}{!channels.length && <span>No configured channels reported</span>}</div>
+  </section>;
+}
+
+function AgentOrgInfo({ k, v }: { k: string; v: ReactNode }) {
+  return <div className="info"><span className="k">{k}</span><span className="v">{v}</span></div>;
+}
+
+function AgentSkillsPanel({ agent }: { agent: OrgAgent }) {
+  const mappedSkills: SkillDetail[] = agent.skills_detail.length ? agent.skills_detail : agent.skills.map((name) => ({ name, category: "profile skill" }));
+  const skillsByCategory = mappedSkills.reduce<Record<string, typeof mappedSkills>>((acc, skill) => {
+    const key = skill.category || "profile skill";
+    acc[key] = [...(acc[key] ?? []), skill];
+    return acc;
+  }, {});
+  return <section>
+    <div className="sec-l">Skills assigned to this agent · {mappedSkills.length}</div>
+    <p className="muted">Explicit registry skills and directly-used backend skills are shown with the same card treatment as the selected-agent drawer.</p>
+    {Object.entries(skillsByCategory).map(([category, skills]) => (
+      <div className="skill-group" key={category}>
+        <div className="skill-group-head">{category}<span>{skills.length}</span></div>
+        <div className="skills detail-skills">
+          {skills.map((skill) => (
+            <span className="skill" key={skill.name} title={skill.description || skill.source || category}>
+              {skill.name}
+              {(skill.source || category) && <em>{skill.source || category}</em>}
+            </span>
+          ))}
+        </div>
+      </div>
+    ))}
+    {!mappedSkills.length && <p className="muted">No explicit skills mapped.</p>}
+  </section>;
+}
+
+function AgentMemoryPanel({ agent }: { agent: OrgAgent }) {
+  const memory = agent.profile_details?.memory;
+  const items = memory?.items || [];
+  return <section>
+    <h3>Memory held by this agent</h3>
+    <p className="muted">These entries are read from the Hermes backend profile memory files for <b>{agent.profile || "default"}</b>. Secret-like values are redacted before display.</p>
+    <div className="org-footprint"><span>{memory?.entries || 0} entries</span><span>{memory?.files?.length || 0} files</span><span>{memory?.redacted_or_sensitive_mentions || 0} redacted/sensitive entries</span></div>
+    {(memory?.files || []).map((file) => <MiniRow key={file.name} title={file.name} meta={`${file.entries} entries · ${file.updated_at || "—"}`} />)}
+    <div className="activity-list memory-entry-list">{items.map((item) => <div className={`activity-row ${item.redacted ? "attention" : "info"}`} key={item.id}><span className="activity-dot" /><div className="activity-body"><div className="activity-title-line"><b>{item.title || "Memory entry"}</b>{item.redacted && <span className="approval-needed-pill">redacted</span>}</div><small>{item.source || "memory"} · {item.file || "MEMORY.md"}{item.line_start ? `:${item.line_start}` : ""} · {item.updated_at || "—"}</small><p>{item.text}</p></div></div>)}</div>
+    {!items.length && <p className="muted">No readable memory entries reported for this profile.</p>}
+  </section>;
+}
+
+function ProfileRuntimePanel({ agent, capabilityRow, capabilityLoading, capabilityError, capabilityMessage, canEditCapabilities, capabilityBusyId, onCapabilityAction }: { agent: OrgAgent; capabilityRow: CapabilityMatrixRow | null; capabilityLoading: boolean; capabilityError: string | null; capabilityMessage: string | null; canEditCapabilities: boolean; capabilityBusyId?: string | null; onCapabilityAction: (capability: CapabilityMatrixCapability) => void }) {
   const profile = agent.profile_details;
   if (!profile) return <section><h3>Profile runtime</h3><p className="muted">No profile runtime details reported yet.</p></section>;
   const channels = profile.gateway?.channels || [];
   const envFiles = profile.environment?.env_files || [];
+  const routines = profile.routines?.items || [];
+  const unhealthyRoutines = routines.filter((routine) => String(routine.last_status || routine.status || "").toLowerCase().includes("error") || String(routine.status || "").toLowerCase().includes("fail"));
   return <section>
-    <h3>Profile runtime</h3>
-    <p className="muted">A Hermes profile is the isolated runtime identity/configuration behind this agent. Secret values are never shown here.</p>
+    <h3>Backend runtime</h3>
+    <p className="muted">Live Hermes profile data for this coworker. Secrets and raw credential values stay hidden.</p>
     <div className="org-detail-grid">
-      <div><span>Profile</span><b>{profile.profile_id}</b></div>
+      <div><span>Runs as profile</span><b>{profile.profile_id}</b></div>
       <div><span>Identity</span><b>{profile.identity?.name || agent.name}</b></div>
-      <div><span>Provider</span><b>{profile.model_routing?.provider || "runtime default"}</b></div>
-      <div><span>Model</span><b>{profile.model_routing?.model || "runtime default"}</b></div>
-      <div><span>Toolsets</span><b>{profile.toolsets?.length || agent.tools.length}</b></div>
-      <div><span>Skills</span><b>{agent.skills_detail.length || agent.skills.length}</b></div>
+      <div><span>Model route</span><b>{profile.model_routing?.model || profile.model_routing?.provider || "runtime default"}</b></div>
+      <div><span>Tools / skills</span><b>{agent.tools.length} assigned tools · {agent.skills_detail.length || agent.skills.length} skills</b></div>
       <div><span>Memory</span><b>{profile.memory?.entries || 0} entries</b></div>
-      <div><span>Sessions</span><b>{profile.sessions?.count ?? agent.runs.length}</b></div>
-      <div><span>Plugins</span><b>{profile.plugins?.enabled || 0}/{profile.plugins?.total || 0} enabled</b></div>
-      <div><span>Routines</span><b>{profile.routines?.count ?? agent.automations.length}</b></div>
-      <div><span>Gateway channels</span><b>{channels.filter((c) => c.enabled).length}/{channels.length} enabled</b></div>
-      <div><span>Credential scope</span><b>{envFiles.length ? `${envFiles.length} env file(s)` : "No env file reported"}</b></div>
+      <div><span>Routines</span><b>{profile.routines?.count ?? agent.automations.length} mapped</b></div>
+      <div><span>Channels</span><b>{channels.filter((c) => c.enabled).length}/{channels.length} enabled</b></div>
+      <div><span>Credential readiness</span><b>{envFiles.length ? `${envFiles.length} env file(s), values hidden` : "No env file reported"}</b></div>
     </div>
 
-    <h3>Gateway / channels</h3>
-    <div className="chip-row">{channels.map((channel) => <span key={channel.id}>{channel.id} · {channel.enabled ? "enabled" : "disabled"}</span>)}{!channels.length && <span>No configured platform channels found</span>}<span>Webhooks {profile.gateway?.webhooks_configured || 0}</span></div>
+    {unhealthyRoutines.length > 0 && <div className="org-warning">Needs attention: {unhealthyRoutines.slice(0, 3).map((routine) => routine.name || routine.id).join(" · ")}</div>}
 
-    <h3>Plugins</h3>
-    <div className="chip-row">{(profile.plugins?.items || []).map((plugin) => <span key={plugin.id}>{plugin.name} · {plugin.status || "enabled"}</span>)}{!(profile.plugins?.items || []).length && <span>No enabled plugins reported</span>}</div>
+    <h3>Assigned tools</h3>
+    <div className="chip-row">{agent.tools.map((tool) => <span key={tool}>{tool}</span>)}{!agent.tools.length && <span>No registry tools assigned</span>}</div>
+    <p className="muted">These are the operator-facing capabilities assigned in the Agent Org registry. Routine-level toolsets are shown below so the drawer reflects the actual Hermes backend execution path.</p>
+
+    <h3>Mapped routines</h3>
+    <div className="runtime-workflows">{routines.map((routine) => <div className="runtime-workflow" key={routine.id || routine.name}><div><b>{routine.name || routine.id}</b><small>{routine.schedule || "manual"} · next {routine.next_run_relative || "—"} · last {routine.last_status || routine.status || "—"}</small><div className="chip-row compact">{(routine.toolsets || []).slice(0, 6).map((toolset) => <span key={`${routine.id}-${toolset}`}>{toolset}</span>)}</div></div><span className={`tag ${String(routine.last_status || routine.status || "").toLowerCase().includes("error") ? "failed" : "active"}`}>{routine.profile || profile.profile_id}</span></div>)}{!routines.length && <p className="muted">No routines mapped to this runtime profile yet.</p>}</div>
+
+    <CapabilityAssignmentPanel row={capabilityRow} loading={capabilityLoading} error={capabilityError} message={capabilityMessage} canEdit={canEditCapabilities} busyId={capabilityBusyId} onAction={onCapabilityAction} />
+
+    <h3>Runtime readiness</h3>
+    <div className="org-footprint"><span>{profile.plugins?.enabled || 0}/{profile.plugins?.total || 0} plugins enabled</span><span>{profile.gateway?.webhooks_configured || 0} webhooks</span><span>{profile.sessions?.count ?? 0} recent sessions</span><span>{(profile.config_files || []).map((file) => file.name).join(", ") || "No config files"}</span></div>
     {profile.plugins?.error && <p className="muted">Plugin inventory note: {profile.plugins.error}</p>}
-
-    <h3>Memory scope</h3>
+    <h3>Memory and environment</h3>
     {(profile.memory?.files || []).map((file) => <MiniRow key={file.name} title={file.name} meta={`${file.entries} entries · ${file.updated_at || "—"}`} />)}
-    {!(profile.memory?.files || []).length && <p className="muted">No profile memory files found.</p>}
-
-    <h3>Credential / environment readiness</h3>
     {envFiles.map((file) => <MiniRow key={file.name} title={file.name} meta={`${file.status} · ${file.variable_count} variables · ${file.sensitive_count} sensitive names hidden`} />)}
-    {!envFiles.length && <p className="muted">No profile env file reported. Secret names and values are hidden by design.</p>}
+    {!envFiles.length && !(profile.memory?.files || []).length && <p className="muted">No profile memory or env files reported.</p>}
     <p className="muted">{profile.environment?.policy}</p>
-
-    <h3>Config files</h3>
-    <div className="chip-row">{(profile.config_files || []).map((file) => <span key={file.name}>{file.name}</span>)}{!(profile.config_files || []).length && <span>No profile config files reported</span>}</div>
   </section>;
 }
 
 function DetailDrawer({ agent, agents, onClose, onAction, onCreateGoal, onApproveReview, onGoalAction, approvingId, actionFeedback }: { agent: OrgAgent; agents: OrgAgent[]; onClose: () => void; onAction: (agent: OrgAgent, action: string, payload?: Record<string, unknown>) => void; onCreateGoal: (agent: OrgAgent) => void; onApproveReview: (agent: OrgAgent, review: Review) => void; onGoalAction: (agent: OrgAgent, goal: Goal, action: GoalAction, status: string, execute?: boolean) => void; approvingId?: string | null; actionFeedback?: ActionFeedback }) {
   const [tab, setTab] = useState<DrawerTab>("overview");
-  const tabs: DrawerTab[] = ["overview", "goals", "queue", "approvals", "runs", "outputs", "activity", "skills", "permissions", "profile", "config"];
+  const [capabilityRow, setCapabilityRow] = useState<CapabilityMatrixRow | null>(null);
+  const [capabilityLoading, setCapabilityLoading] = useState(false);
+  const [capabilityMessage, setCapabilityMessage] = useState<string | null>(null);
+  const [capabilityError, setCapabilityError] = useState<string | null>(null);
+  const [capabilityBusyId, setCapabilityBusyId] = useState<string | null>(null);
+  const { permissions, getCapabilityMatrix, assignCapability, unassignCapability } = useStore();
+  const canEditCapabilities = permissions.canEditGlobalAgents;
+  const tabs: DrawerTab[] = drawerTabsFor(agent);
   const feedback = actionFeedback?.agentId === agent.id ? actionFeedback : null;
+  const shellTabs: AgentDrawerTab[] = tabs.map((item) => ({ id: item, label: drawerTabBaseLabel(item), count: drawerTabCount(item, agent), title: drawerTabLabel(item, agent) }));
+  const drawerActions: AgentDrawerAction[] = [
+    { id: "run", label: agentRunLabel(agent), icon: "▶", disabled: !agent.automations.length, onClick: () => onAction(agent, "run_agent") },
+    { id: "goal", label: "Create goal", icon: "✦", onClick: () => onCreateGoal(agent) },
+    { id: "task", label: "Assign task", icon: "▣", onClick: () => onAction(agent, "create_task") },
+    { id: "health", label: "Health check", icon: "⚙", dividerBefore: true, onClick: () => onAction(agent, "run_health_check") },
+    { id: "pause", label: "Pause flows", icon: "Ⅱ", disabled: !agent.automations.length, onClick: () => onAction(agent, "pause_automations") },
+    { id: "resume", label: "Resume flows", icon: "↻", disabled: !agent.automations.length, onClick: () => onAction(agent, "resume_automations") },
+  ];
   const approvalForActivity = (item: Activity) => {
     const jobId = item.job_id || (typeof item.metadata?.job_id === "string" ? item.metadata.job_id : "");
     const pending = (agent.inbox || []).filter((review) => review.status === "drafted" || review.status === "ready");
@@ -277,31 +641,71 @@ function DetailDrawer({ agent, agents, onClose, onAction, onCreateGoal, onApprov
     const isManualRun = item.action === "run_agent" || item.action === "run_automation";
     return isManualRun && pending.length === 1 ? pending[0] : null;
   };
+  const loadCapabilityMatrix = async () => {
+    setCapabilityLoading(true);
+    setCapabilityError(null);
+    try {
+      const result = await getCapabilityMatrix({ agent: agent.id });
+      setCapabilityRow(result.matrix?.[0] ?? null);
+    } catch (e) {
+      setCapabilityError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCapabilityLoading(false);
+    }
+  };
+  useEffect(() => {
+    if (tab === "profile" || tab === "permissions" || tab === "skills") void loadCapabilityMatrix();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent.id, tab]);
+  useEffect(() => {
+    if (!tabs.includes(tab)) setTab("overview");
+  }, [agent.id, tabs, tab]);
+  const handleCapabilityAction = async (capability: CapabilityMatrixCapability) => {
+    if (!canEditCapabilities || capability.source !== "registry") return;
+    setCapabilityMessage(null);
+    setCapabilityError(null);
+    setCapabilityBusyId(capability.id);
+    try {
+      if (capability.assigned) {
+        await unassignCapability(capability.id, { agentId: agent.id, agent: { id: agent.id, name: agent.name }, reason: "Unassigned from Agent Org profile drawer" });
+        setCapabilityMessage(`Unassigned ${capability.displayName || capability.name || capability.id}`);
+      } else {
+        await assignCapability(capability.id, { agentId: agent.id, agent: { id: agent.id, name: agent.name }, reason: "Assigned from Agent Org profile drawer" });
+        setCapabilityMessage(`Assigned ${capability.displayName || capability.name || capability.id}`);
+      }
+      await loadCapabilityMatrix();
+    } catch (e) {
+      setCapabilityError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCapabilityBusyId(null);
+    }
+  };
   return (
     <div className="drawer-backdrop" onClick={onClose}>
-      <aside className="org-drawer wide" onClick={(e) => e.stopPropagation()}>
-        <button className="drawer-x" onClick={onClose}>×</button>
-        <span className={`tag ${agent.status}`}>{agent.status}</span>
-        <h2>{agent.name}</h2>
-        <p>{agent.summary}</p>
+      <AgentDetailDrawerShell
+        className="org-drawer wide"
+        title={agent.name}
+        avatar={<span className={`agent-detail-avatar org-agent-avatar ${agent.status}`}>{initials(agent.name)}</span>}
+        eyebrow="Selected agent"
+        statusTag={<AgentStatusBadge agent={agent} compact />}
+        subtitle={`${agent.role} · ${agent.profile || "default"}`}
+        tabs={shellTabs}
+        activeTab={tab}
+        onTabChange={(next) => setTab(next as DrawerTab)}
+        actions={drawerActions}
+        onClose={onClose}
+        ariaLabel={`Agent Org details for ${agent.name}`}
+      >
         {feedback && <div className={`drawer-action-notice ${feedback.tone}`} role="status" aria-live="polite"><b>{feedback.title}</b>{feedback.detail && <small>{feedback.detail}</small>}</div>}
-        <div className="org-action-row">
-          <button className="btn dark" disabled={!agent.automations.length} onClick={() => onAction(agent, "run_agent")}>{agentRunLabel(agent)}</button>
-          <button className="btn dark" onClick={() => onCreateGoal(agent)}>Create goal</button>
-          <button className="btn dark" onClick={() => onAction(agent, "create_task")}>Assign task</button>
-          <button className="btn ghost" onClick={() => onAction(agent, "run_health_check")}>Health check</button>
-          <button className="btn ghost" disabled={!agent.automations.length} onClick={() => onAction(agent, "pause_automations")}>Pause flows</button>
-          <button className="btn ghost" disabled={!agent.automations.length} onClick={() => onAction(agent, "resume_automations")}>Resume flows</button>
-        </div>
-        <nav className="drawer-tabs">{tabs.map((item) => <button key={item} className={tab === item ? "on" : ""} onClick={() => setTab(item)}>{item}</button>)}</nav>
 
         {tab === "overview" && <>
-          <div className="org-detail-grid">
-            <div><span>Reports to</span><b>{nodeReportName(agent, agents)}</b></div>
-            <div><span>Mode</span><b>{agent.mode}</b></div>
-            <div><span>Runtime</span><b>{agent.runtime || "hermes"} · {agent.profile || "default"}</b></div>
-            <div><span>Cost 7d</span><b>{fmtMoney(agent.cost7d)} · {fmtNum(agent.tokens7d)} tokens</b></div>
-          </div>
+          <div className="sec-l">Runtime</div>
+          <AgentOrgInfo k="Reports to" v={nodeReportName(agent, agents)} />
+          <AgentOrgInfo k="Mode" v={agent.mode} />
+          <AgentOrgInfo k="Role type" v={agent.type || "workflow_agent"} />
+          <AgentOrgInfo k="Backend profile" v={<span className="mono">{agent.profile || "default"}</span>} />
+          <AgentOrgInfo k="Runtime" v={agent.runtime || "hermes"} />
+          <AgentOrgInfo k="Cost 7d" v={`${fmtMoney(agent.cost7d)} · ${fmtNum(agent.tokens7d)} tokens`} />
           {agent.active_goal && <section><h3>Active goal</h3><GoalCard goal={agent.active_goal} compact onRunAction={(goal, action) => onGoalAction(agent, goal, action, 'running', true)} onDoneAction={(goal, action) => onGoalAction(agent, goal, action, 'done')} /></section>}
           <section><h3>Run from Mission Control</h3><div className="runtime-workflows">{agent.automations.map((automation) => <div className="runtime-workflow" key={automation.id}><div><b>{automation.name}</b><small>{automation.schedule || "manual"} · last {automation.last_status || automation.status || "—"}</small></div><button className="btn dark" onClick={() => onAction(agent, "run_automation", { job_id: automation.id })}>Run</button></div>)}{!agent.automations.length && <p className="muted">This agent has no mapped routine yet. Assign a cron routine before it can be run from the UI.</p>}</div></section>
           <section><h3>Operational footprint</h3><div className="org-footprint"><span>{agent.goals?.length || 0} goals</span><span>{agent.automations.length} routines</span><span>{agent.tasks.length} tasks</span><span>{agent.skills_detail.length || agent.skills.length} skills</span><span>{agent.inbox.length} approvals</span><span>{agent.runs.length} recent runs</span><span>{agent.outputs.length} outputs</span><span>{agent.activity?.length || 0} activity events</span></div></section>
@@ -312,54 +716,96 @@ function DetailDrawer({ agent, agents, onClose, onAction, onCreateGoal, onApprov
 
         {tab === "queue" && <section><h3>Queue</h3><div className="queue-pills"><span>Queued {agent.queue.queued}</span><span>Running {agent.queue.running}</span><span>Blocked {agent.queue.blocked}</span><span>Done {agent.queue.done}</span><span>Failed {agent.queue.failed}</span></div>{agent.tasks.slice(0, 12).map((t) => <MiniRow key={t.id} title={t.title} meta={`${t.status} · ${t.priority_label || "normal"} · ${t.updated_at || "—"}`} body={t.body} />)}{!agent.tasks.length && <p className="muted">No queue items assigned yet. Use Assign task to create the first operational item.</p>}</section>}
 
+        {tab === "handoffs" && <HandoffTimeline handoffs={agent.handoffs} />}
+
         {tab === "approvals" && <section><h3>Approval Gates</h3>{agent.inbox.map((i) => <MiniRow key={i.id} title={i.title} meta={`${i.status} · ${i.risk} risk · ${i.destination || "no destination"}`} body={i.description || i.body} />)}{!agent.inbox.length && <p className="muted">No pending approval gates for this agent.</p>}</section>}
 
         {tab === "runs" && <section><h3>Recent runs</h3>{agent.runs.map((r) => <MiniRow key={r.id} title={r.title || r.automation_name || r.id} meta={`${r.status} · ${r.started_at || "—"} · ${r.tool_call_count || 0} tools · ${fmtNum(r.tokens || 0)} tokens`} />)}{!agent.runs.length && <p className="muted">No recent runtime traces mapped to this agent yet.</p>}</section>}
+
+        {tab === "run-tree" && <AgentRunTreePanel trees={agent.run_trees} />}
 
         {tab === "outputs" && <section><h3>Outputs and artifacts</h3>{agent.outputs.map((o, i) => <MiniRow key={o.id || o.path || `${o.name}-${i}`} title={o.name} meta={`${o.status || o.type || "output"} · ${o.updated_at || "—"}${o.destination ? ` · ${o.destination}` : ""}`} body={o.preview} />)}{!agent.outputs.length && <p className="muted">No outputs mapped yet.</p>}</section>}
 
         {tab === "activity" && <section><h3>Activity timeline</h3><p className="muted">Operator actions from Mission Control plus trigger results for this agent. If a manual run creates a pending approval, approve it from the right side of the activity message.</p><div className="activity-list">{(agent.activity || []).map((item) => <ActivityRow key={item.id} item={item} approval={approvalForActivity(item)} approvingId={approvingId} onApprove={(review) => onApproveReview(agent, review)} />)}</div>{!(agent.activity || []).length && <p className="muted">No Mission Control activity recorded for this agent yet. Trigger a run, health check, or assignment to create the first entry.</p>}</section>}
 
-        {tab === "skills" && <section><h3>Skills</h3><div className="chip-row">{(agent.skills_detail.length ? agent.skills_detail.map((s) => s.name) : agent.skills).map((s) => <span key={s}>{s}</span>)}</div>{!agent.skills.length && !agent.skills_detail.length && <p className="muted">No explicit skills mapped.</p>}</section>}
+        {tab === "tools" && <AgentToolsPanel agent={agent} />}
 
-        {tab === "permissions" && <section><h3>Tools / permissions</h3><div className="chip-row">{agent.tools.map((tool) => <span key={tool}>{tool}</span>)}</div>{agent.permissions.map((permission) => <p className="permission" key={permission}>• {permission}</p>)}</section>}
+        {tab === "memory" && <AgentMemoryPanel agent={agent} />}
 
-        {tab === "profile" && <ProfileRuntimePanel agent={agent} />}
+        {tab === "skills" && <AgentSkillsPanel agent={agent} />}
+
+        {tab === "permissions" && <section><h3>Tools / permissions</h3><div className="chip-row">{agent.tools.map((tool) => <span key={tool}>{tool}</span>)}</div>{agent.permissions.map((permission) => <p className="permission" key={permission}>• {permission}</p>)}<CapabilityAssignmentPanel row={capabilityRow} loading={capabilityLoading} error={capabilityError} message={capabilityMessage} canEdit={canEditCapabilities} busyId={capabilityBusyId} onAction={handleCapabilityAction} /></section>}
+
+        {tab === "profile" && <ProfileRuntimePanel agent={agent} capabilityRow={capabilityRow} capabilityLoading={capabilityLoading} capabilityError={capabilityError} capabilityMessage={capabilityMessage} canEditCapabilities={canEditCapabilities} capabilityBusyId={capabilityBusyId} onCapabilityAction={handleCapabilityAction} />}
 
         {tab === "config" && <section><h3>Registry config</h3><div className="org-detail-grid"><div><span>Agent ID</span><b>{agent.id}</b></div><div><span>Profile</span><b>{agent.profile || "default"}</b></div><div><span>Type</span><b>{agent.type || "logical_agent"}</b></div><div><span>Last activity</span><b>{agent.lastActivity ? formatSingaporeShort(agent.lastActivity) : "—"}</b></div></div><p className="muted">Edit the registry file on the server to change durable agent identity, skills, modes, and relationships.</p></section>}
-      </aside>
+      </AgentDetailDrawerShell>
     </div>
   );
 }
 
 export function AgentOrg() {
   const [data, setData] = useState<AgentOrgResponse>(emptyOrg);
-  const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("org");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [goalAgent, setGoalAgent] = useState<OrgAgent | null>(null);
+  const detailCache = useRef(new Map<string, OrgAgent>());
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      setData(await request<AgentOrgResponse>("/api/agent-org"));
-    } catch (e) {
-      setNotice(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  };
+  const load = useCallback(async (mode: RefreshMode = "manual") => {
+    const next = await cachedJsonRequest<AgentOrgResponse>(
+      AGENT_ORG_SUMMARY_CACHE_KEY,
+      () => request<AgentOrgResponse>("/api/agent-org"),
+      { staleAfterMs: 10_000, force: mode === "manual" },
+    );
+    setData({
+      ...next,
+      agents: next.agents.map((agent) => mergeSummaryWithCachedDetail(agent, detailCache.current.get(agent.id))),
+    });
+    setNotice(null);
+  }, []);
 
-  useEffect(() => { void load(); }, []);
+  const refreshState = useRealtimeRefresh(load, [], { pollMs: 10_000, staleAfterMs: 30_000 });
+  const loading = refreshState.initialLoading;
 
   const agents = data.agents;
   const selected = selectedId ? agents.find((n) => n.id === selectedId) : null;
+
+  useEffect(() => {
+    if (!selectedId || selected?.detailLoaded) return;
+    let alive = true;
+    void cachedJsonRequest<{ agent: OrgAgent }>(
+      agentOrgDetailCacheKey(selectedId),
+      () => request<{ agent: OrgAgent }>(`/api/agent-org/agents/${encodeURIComponent(selectedId)}`),
+      { staleAfterMs: DETAIL_STALE_AFTER_MS },
+    )
+      .then((detail) => {
+        if (!alive || !detail.agent) return;
+        const loadedAgent = { ...detail.agent, detailLoaded: true };
+        detailCache.current.set(selectedId, loadedAgent);
+        setData((cur) => ({
+          ...cur,
+          agents: cur.agents.map((agent) => (agent.id === selectedId ? mergeSummaryWithCachedDetail(agent, loadedAgent) : agent)),
+        }));
+      })
+      .catch(() => {
+        // Summary data stays visible; explicit refresh/action paths surface API errors.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [selectedId, selected?.detailLoaded]);
+
   const chief = agents.find((a) => a.id === "chief-operator") || agents[0];
   const childNodes = useMemo(() => agents.filter((n) => (n.reportsTo ?? n.reports_to) === (chief?.id || "chief-operator")), [agents, chief]);
-  const tabs: Tab[] = ["org", "agents", "goals", "queues", "flows", "runs", "outputs", "permissions", "health"];
+  const allHandoffs = useMemo(() => {
+    const byId = new Map<string, AgentHandoff>();
+    agents.forEach((agent) => (agent.handoffs || []).forEach((handoff) => byId.set(handoff.id, handoff)));
+    return Array.from(byId.values()).sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
+  }, [agents]);
+  const tabs: Tab[] = ["org", "agents", "goals", "queues", "handoffs", "flows", "runs", "delegation", "outputs", "permissions", "health"];
 
   const handleAction = async (agent: OrgAgent, action: string, payload?: Record<string, unknown>) => {
     let body: Record<string, unknown> = { action, ...(payload || {}) };
@@ -382,7 +828,9 @@ export function AgentOrg() {
         title: `${agent.name}: ${actionLabel} ${actionResult.ok === false ? "failed" : "started"}`,
         detail: detail ? String(detail).slice(0, 360) : undefined,
       });
-      await load();
+      invalidateAgentOrgCache(agent.id);
+      detailCache.current.delete(agent.id);
+      await refreshState.refresh("manual");
     } catch (e) {
       setActionFeedback({
         agentId: agent.id,
@@ -399,7 +847,9 @@ export function AgentOrg() {
       setActionFeedback({ agentId: agent.id, tone: "busy", title: `${action.title}: ${execute ? "executing" : status}…`, detail: `Goal: ${goal.title}` });
       const result = await request<Record<string, unknown>>(`/api/agent-org/agents/${encodeURIComponent(agent.id)}/goals/${encodeURIComponent(goal.id)}/actions/${encodeURIComponent(action.id)}`, { method: "POST", body: JSON.stringify({ status, execute, automation_id: action.automation_id }) });
       setActionFeedback({ agentId: agent.id, tone: result.ok === false ? "error" : "success", title: `${action.title}: ${result.ok === false ? "failed" : status}`, detail: String((result.run_result as Record<string, unknown> | undefined)?.stdout || (result.run_result as Record<string, unknown> | undefined)?.stderr || result.error || "Action status recorded.").slice(0, 360) });
-      await load();
+      invalidateAgentOrgCache(agent.id);
+      detailCache.current.delete(agent.id);
+      await refreshState.refresh("manual");
     } catch (e) {
       setActionFeedback({ agentId: agent.id, tone: "error", title: `${action.title}: action failed`, detail: e instanceof Error ? e.message : String(e) });
     }
@@ -413,7 +863,9 @@ export function AgentOrg() {
       const result = await request<Record<string, unknown>>(`/api/inbox/${encodeURIComponent(review.id)}/action`, { method: "POST", body: JSON.stringify({ action: "approve" }) });
       const ok = result.ok !== false;
       setActionFeedback({ agentId: agent.id, tone: ok ? "success" : "error", title: ok ? `Approved: ${review.title}` : `Approval failed: ${review.title}`, detail: ok ? "Approval recorded. The item will no longer appear as pending." : String(result.error || "Unable to approve item.") });
-      await load();
+      invalidateAgentOrgCache(agent.id);
+      detailCache.current.delete(agent.id);
+      await refreshState.refresh("manual");
     } catch (e) {
       setActionFeedback({ agentId: agent.id, tone: "error", title: `${agent.name}: approval failed`, detail: e instanceof Error ? e.message : String(e) });
     } finally {
@@ -430,7 +882,7 @@ export function AgentOrg() {
           <p>Operational control plane for Melverick's digital coworkers: registry-backed agents, queues, runs, outputs, permissions, handoffs, and safe actions.</p>
           {data.registry_path && <small className="muted">Registry: {data.registry_path} · Generated {data.health.generated_at}</small>}
         </div>
-        <div className="org-hero-actions"><button className="task-icon-action dark" aria-label="Refresh agent org" title="Refresh agent org" onClick={() => void load()}><Icon name="refresh" size={18} /></button></div>
+        <div className="org-hero-actions"><span className={`realtime-status ${refreshState.stale ? "stale" : refreshState.refreshing ? "refreshing" : "live"}`}>{refreshState.statusLabel}</span><button className="task-icon-action dark" aria-label="Refresh agent org" title="Refresh agent org" disabled={refreshState.refreshing} onClick={() => void refreshState.refresh("manual")}><Icon name="refresh" size={18} /></button></div>
       </header>
 
       <section className="org-metrics">
@@ -438,10 +890,11 @@ export function AgentOrg() {
         <Metric label="Running Now" value={data.summary.running_now ?? 0} sub="agent queues in progress" tone={(data.summary.running_now ?? 0) ? "good" : ""} />
         <Metric label="Queued Work" value={data.summary.queued_work ?? 0} sub="assigned tasks waiting" />
         <Metric label="Approval Gates" value={data.summary.approvals_needed ?? 0} sub="human gates pending" tone={(data.summary.approvals_needed ?? 0) ? "warn" : "good"} />
+        <Metric label="Open Handoffs" value={data.summary.open_handoffs ?? 0} sub={`${data.summary.blocked_handoffs ?? 0} blocked`} tone={(data.summary.blocked_handoffs ?? 0) ? "warn" : (data.summary.open_handoffs ?? 0) ? "good" : ""} />
         <Metric label="Active Goals" value={data.summary.active_goals ?? agents.reduce((n, a) => n + (a.goals?.length || 0), 0)} sub={`${data.summary.goal_progress_avg ?? 0}% avg progress`} tone={(data.summary.active_goals ?? 0) ? "good" : ""} />
       </section>
 
-      {(notice || data.health.errors.length > 0) && <div className="org-warning">{notice || `Partial data loaded: ${data.health.errors.join(" · ")}`}</div>}
+      {(notice || refreshState.error || data.health.errors.length > 0) && <div className="org-warning">{notice || refreshState.error || `Partial data loaded: ${data.health.errors.join(" · ")}`}</div>}
 
       <nav className="org-tabs">{tabs.map((item) => <button key={item} className={tab === item ? "on" : ""} onClick={() => setTab(item)}>{item}</button>)}</nav>
 
@@ -453,26 +906,45 @@ export function AgentOrg() {
         {chief && <NodeCard agent={chief} selected={selected?.id === chief.id} onClick={() => setSelectedId(chief.id)} />}
         <div className="org-branch" />
         <div className="org-node-grid">{childNodes.map((agent) => <NodeCard key={agent.id} agent={agent} selected={selected?.id === agent.id} onClick={() => setSelectedId(agent.id)} />)}</div>
+        <section className="ops-card" style={{ width: "100%" }}>
+          <div className="goal-section-head"><h3>Canonical AI Workforce Team Map</h3><small>Melkizac routes work by role; specialists execute in their domains; HMC/Kanban stays the evidence layer.</small></div>
+          <div className="activity-list">
+            {CANONICAL_TEAM_MAP.map((member) => <div className="activity-row info" key={member.profile}>
+              <span className="activity-dot" />
+              <div className="activity-body">
+                <div className="activity-title-line"><b>{member.name}</b><span className="tag active">{member.profile}</span></div>
+                <small>Owns: {member.owns}</small>
+                <p><b>Handoff:</b> {member.handoff}</p>
+                <p><b>Visible in HMC/Kanban:</b> {member.visible}</p>
+              </div>
+            </div>)}
+          </div>
+        </section>
+        <HandoffTimeline handoffs={allHandoffs} compact />
       </section>}
 
-      {!loading && tab === "agents" && <section className="org-table operational"><div className="org-table-head"><span>Agent</span><span>Status</span><span>Runtime</span><span>Queue</span><span>Runs</span><span>Outputs</span><span>Actions</span></div>{agents.map((agent) => <div className="org-table-row" role="button" tabIndex={0} key={agent.id} onClick={() => setSelectedId(agent.id)} onKeyDown={(e) => { if (e.key === "Enter") setSelectedId(agent.id); }}><b>{agent.name}<small>{agent.role}</small></b><span className={`tag ${agent.status}`}>{agent.status}</span><span>{agent.runtime || "hermes"}<small>{agent.profile || "default"}</small></span><span>{agent.queue.queued}/{agent.queue.running}/{agent.queue.blocked}</span><span>{agent.runs.length}</span><span>{agent.outputs.length}</span><span className="row-actions"><button className="btn dark small" disabled={!agent.automations.length} onClick={(e) => { e.stopPropagation(); setSelectedId(agent.id); if (agent.automations.length === 1) void handleAction(agent, "run_agent"); }}>{agentRunLabel(agent)}</button><button className="btn ghost small" onClick={(e) => { e.stopPropagation(); setSelectedId(agent.id); }}>Details</button></span></div>)}</section>}
+      {!loading && tab === "agents" && <section className="org-table operational"><div className="org-table-head"><span>Agent</span><span>Status</span><span>Runtime</span><span>Queue</span><span>Runs</span><span>Outputs</span><span>Actions</span></div>{agents.map((agent) => <div className="org-table-row" role="button" tabIndex={0} key={agent.id} onClick={() => setSelectedId(agent.id)} onKeyDown={(e) => { if (e.key === "Enter") setSelectedId(agent.id); }}><b>{agent.name}<small>{agent.role}</small></b><span><AgentStatusBadge agent={agent} compact /></span><span>{agent.runtime || "hermes"}<small>{agent.profile || "default"}</small></span><span>{agent.queue.queued}/{agent.queue.running}/{agent.queue.blocked}</span><span>{agent.runs.length}</span><span>{agent.outputs.length}</span><span className="row-actions"><button className="btn dark small" disabled={!agent.automations.length} onClick={(e) => { e.stopPropagation(); setSelectedId(agent.id); if (agent.automations.length === 1) void handleAction(agent, "run_agent"); }}>{agentRunLabel(agent)}</button><button className="btn ghost small" onClick={(e) => { e.stopPropagation(); setSelectedId(agent.id); }}>Details</button></span></div>)}</section>}
 
       {!loading && tab === "goals" && <section className="goals-board"><div className="goals-board-head"><div><h2>Current goals</h2><p className="muted">A goal is the outcome. The first thing shown is Required Actions: the real work agents or humans must perform. Progress is calculated from completed required actions. Tools/access/data and planning steps are supporting analysis.</p></div></div><div className="ops-grid">{agents.filter((agent) => (agent.goals || []).length).map((agent) => <article className="ops-card goal-agent-card" key={agent.id}><div className="goal-agent-head"><h3>{agent.name}</h3><button className="btn ghost small" onClick={() => setGoalAgent(agent)}>Add goal</button></div>{(agent.goals || []).map((goal) => <GoalCard key={goal.id} goal={goal} onRunAction={(g, a) => handleGoalAction(agent, g, a, 'running', true)} onDoneAction={(g, a) => handleGoalAction(agent, g, a, 'done')} />)}</article>)}{!agents.some((agent) => (agent.goals || []).length) && <div className="empty">No active goals yet. Create one to make agent work measurable and visible.</div>}</div></section>}
 
-      {!loading && tab === "queues" && <section className="ops-grid">{agents.map((agent) => <article className="ops-card" key={agent.id} onClick={() => setSelectedId(agent.id)}><div><span className={`tag ${agent.status}`}>{agent.status}</span><h3>{agent.name}</h3></div><div className="queue-pills"><span>Queued {agent.queue.queued}</span><span>Running {agent.queue.running}</span><span>Blocked {agent.queue.blocked}</span><span>Done {agent.queue.done}</span><span>Failed {agent.queue.failed}</span></div>{agent.tasks.slice(0, 3).map((t) => <MiniRow key={t.id} title={t.title} meta={`${t.status} · ${t.updated_at || "—"}`} />)}{!agent.tasks.length && <p className="muted">No assigned work yet.</p>}</article>)}</section>}
+      {!loading && tab === "queues" && <section className="ops-grid">{agents.map((agent) => <article className="ops-card" key={agent.id} onClick={() => setSelectedId(agent.id)}><div><AgentStatusBadge agent={agent} compact /><h3>{agent.name}</h3></div><div className="queue-pills"><span>Queued {agent.queue.queued}</span><span>Running {agent.queue.running}</span><span>Blocked {agent.queue.blocked}</span><span>Done {agent.queue.done}</span><span>Failed {agent.queue.failed}</span></div>{agent.tasks.slice(0, 3).map((t) => <MiniRow key={t.id} title={t.title} meta={`${t.status} · ${t.updated_at || "—"}`} />)}{!agent.tasks.length && <p className="muted">No assigned work yet.</p>}</article>)}</section>}
+
+      {!loading && tab === "handoffs" && <HandoffTimeline handoffs={allHandoffs} />}
 
       {!loading && tab === "flows" && <section className="flow-grid">{data.flows.map((flow) => <article className="flow-card" key={flow.id}><span className={`tag ${flow.status}`}>{flow.status}</span><h3>{flow.name}</h3><small className="muted">Trigger: {flow.trigger || "configured"}</small><div className="flow-steps">{flow.steps.map((step, i) => <div key={`${flow.id}-${i}`} className="flow-step"><b>{step.label}<small>{step.agent ? agents.find((a) => a.id === step.agent)?.name || step.agent : `Approval: ${step.approval}`}</small></b><span>{i < flow.steps.length - 1 ? "↓" : step.status}</span></div>)}</div><p>{flow.gate}</p></article>)}</section>}
 
       {!loading && tab === "runs" && <section className="ops-grid">{agents.map((agent) => <article className="ops-card" key={agent.id}><h3>{agent.name}</h3>{agent.runs.slice(0, 4).map((r) => <MiniRow key={r.id} title={r.title || r.automation_name || r.id} meta={`${r.status} · ${r.started_at || "—"} · ${fmtNum(r.tokens || 0)} tokens`} />)}{!agent.runs.length && <p className="muted">No runs mapped.</p>}</article>)}</section>}
 
+      {!loading && tab === "delegation" && <section className="ops-grid delegation-grid">{agents.map((agent) => <article className="ops-card" key={agent.id}><h3>{agent.name}</h3><AgentRunTreePanel trees={agent.run_trees} /></article>)}</section>}
+
       {!loading && tab === "outputs" && <section className="ops-grid">{agents.map((agent) => <article className="ops-card" key={agent.id}><h3>{agent.name}</h3>{agent.outputs.slice(0, 4).map((o, i) => <MiniRow key={o.id || o.path || i} title={o.name} meta={`${o.status || o.type || "output"} · ${o.updated_at || "—"}`} body={o.preview} />)}{!agent.outputs.length && <p className="muted">No outputs mapped.</p>}</article>)}</section>}
 
       {!loading && tab === "permissions" && <section className="permission-grid">{agents.map((agent) => <article key={agent.id}><h3>{agent.name}</h3><span className={`tag ${agent.mode}`}>{agent.mode}</span><div className="chip-row">{agent.tools.map((tool) => <span key={tool}>{tool}</span>)}</div>{agent.permissions.map((permission) => <p key={permission}>• {permission}</p>)}</article>)}</section>}
 
-      {!loading && tab === "health" && <section className="health-grid">{agents.map((agent) => <article key={agent.id} className={`health-card ${agent.status}`}><div><span className={`status-dot ${agent.status}`} /><b>{agent.name}</b></div><p>{agent.status === "failed" ? "Failure signal detected in tasks or automation status." : agent.status === "blocked" ? "Blocked/high-risk item needs review." : agent.status === "attention" ? "Review queue has pending output." : agent.status === "active" ? "Enabled workflows or running work detected." : "No urgent signal detected."}</p><small>Last activity: {agent.lastActivity ? formatSingaporeShort(agent.lastActivity) : "No recent activity"}</small><div className="org-action-row"><button className="btn ghost" onClick={() => void handleAction(agent, "run_health_check")}>Check</button><button className="btn ghost" onClick={() => setSelectedId(agent.id)}>Details</button></div></article>)}</section>}
+      {!loading && tab === "health" && <section className="health-grid">{agents.map((agent) => <article key={agent.id} className={`health-card ${agent.status}`}><div><AgentStatusBadge agent={agent} compact /><b>{agent.name}</b></div><p>{agentIssueCount(agent) > 0 ? `${agentIssueCount(agent)} issue${agentIssueCount(agent) === 1 ? "" : "s"} ${agentIssueCount(agent) === 1 ? "needs" : "need"} attention across failed, blocked, review, or error work.` : agent.status === "active" ? "Active and healthy." : "Idle / no active work."}</p><small>Last activity: {agent.lastActivity ? formatSingaporeShort(agent.lastActivity) : "No recent activity"}</small><div className="org-action-row"><button className="btn ghost" onClick={() => void handleAction(agent, "run_health_check")}>Check</button><button className="btn ghost" onClick={() => setSelectedId(agent.id)}>Details</button></div></article>)}</section>}
 
       {selected && <DetailDrawer agent={selected} agents={agents} onClose={() => setSelectedId(null)} onAction={handleAction} onCreateGoal={setGoalAgent} onApproveReview={handleApproveReview} onGoalAction={handleGoalAction} approvingId={approvingId} actionFeedback={actionFeedback} />}
-      {goalAgent && <GoalModal agent={goalAgent} onClose={() => setGoalAgent(null)} onCreated={() => { setGoalAgent(null); void load(); setTab("goals"); }} />}
+      {goalAgent && <GoalModal agent={goalAgent} onClose={() => setGoalAgent(null)} onCreated={() => { invalidateAgentOrgCache(goalAgent.id); detailCache.current.delete(goalAgent.id); setGoalAgent(null); void refreshState.refresh("manual"); setTab("goals"); }} />}
     </div>
   );
 }

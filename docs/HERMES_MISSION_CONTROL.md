@@ -37,6 +37,12 @@ Related design docs:
 - [`ADMIN_PLATFORM_MULTI_RUNTIME_DESIGN.md`](./ADMIN_PLATFORM_MULTI_RUNTIME_DESIGN.md) — Admin control-plane design for many isolated Hermes user/workspace runtimes, written for both technical and functional stakeholders.
 - [`plans/2026-06-06-admin-runtime-governance-phases-7-11.md`](./plans/2026-06-06-admin-runtime-governance-phases-7-11.md) — proposed later phases for Runtime Connectors, Approval Policy, Workflow Routine Admin, workspace run history, Browser Evidence, Research Runs, Costs / Usage, and Quota.
 - [`RUNTIME_CONNECTOR_V2.md`](./RUNTIME_CONNECTOR_V2.md) — external runtime connector registration, heartbeat, and event ingestion.
+- [`CAPABILITY_REGISTRY_OPERATOR_GUIDE.md`](./CAPABILITY_REGISTRY_OPERATOR_GUIDE.md) — operator SOP for adding OSS capabilities, approval gates, smoke evidence, agent assignment, and rollback/disable procedures.
+- [`OWNED_APP_CAPABILITY_SPEC.md`](./OWNED_APP_CAPABILITY_SPEC.md) — `source_type: owned_app` standard for governed first-party apps such as NetWorth Tracker, Mission Control, Nexius Academy site/funnel, SGQR/PayNow tools, and lead dashboards.
+- [`AI_WORKFORCE_TEAM_MAP.md`](./AI_WORKFORCE_TEAM_MAP.md) — canonical Melkizac/default and specialist-agent role map covering ownership, non-ownership, approval boundaries, handoff triggers, and HMC/Kanban visibility standards.
+- [`RESEARCH_TO_DELIVERABLE_WORKFLOW.md`](./RESEARCH_TO_DELIVERABLE_WORKFLOW.md) — Melkizac operator SOP for chat-detected learning, source Q&A, deck/report/proposal generation, source expansion, revisions, blockers, approvals, and artifact return.
+- [`RESEARCH_TO_DELIVERABLE_PROJECT_CONTRACT.md`](./RESEARCH_TO_DELIVERABLE_PROJECT_CONTRACT.md) — implementation contract for research-to-deliverable Projects, sources, outputs, evidence, approval policy, and task graph shape.
+- [`AGENT_OS_ROLLOUT_OPERATOR_GUIDE.md`](./AGENT_OS_ROLLOUT_OPERATOR_GUIDE.md) — Agent OS rollout status, operator guide, admin verification checklist, rollback plan, DB migration notes, and known limitations.
 
 ## 1. What Mission Control is
 
@@ -128,7 +134,7 @@ Goal → Workflow → Routine → Runs
 - **Connector**: Integration that gives Hermes access to an external system or account.
 - **Runtime**: Environment where work executes, such as the Hermes server, browser runtime, cron scheduler, or desktop gateway.
 - **Agent**: AI worker or logical role responsible for work.
-- **AI Workforce**: User-facing view of agents and responsibilities.
+- **Org Chart**: User-facing view of agents and responsibilities.
 - **Approval Gate**: Human approve/reject checkpoint before sensitive external, irreversible, costly, policy-sensitive, or authority-bound action.
 - **Blocker**: Missing access, context, permission, capability, or human decision preventing progress.
 - **Output / Artifact**: Deliverable Hermes produced, such as a draft, report, file, checklist, deck, or code change.
@@ -256,21 +262,28 @@ Do not document or print real passwords, API keys, gateway tokens, or cookie val
 
 Mission Control has two UI modes.
 
-**User mode** is the day-to-day operator workspace:
+**User mode** is the day-to-day operator workspace. The primary rail now keeps
+the cockpit compact and operator-facing:
 
-- Mission Control
-- Delegate Work
-- Workflow Library
-- My Projects
-- My Task Board
-- Needs Attention
-- My Agents
-- My Agent Org
-- Routines
-- Browser Activity
-- Workspace Knowledge
-- My Audit / Evidence
-- Profile
+- Chat
+- Workspace
+  - Dashboard
+  - Projects
+  - Task Board
+- Operations
+  - Routines
+  - Workflows
+- Workforce
+  - Agents
+  - Org Chart
+  - Skills / Memory / Tools / Plugins resource selector
+  - Approvals
+- Bottom Settings menu
+  - Profile
+  - Settings
+  - Usage remaining
+  - Docs
+  - Log out
 
 **Admin mode** is setup/governance:
 
@@ -332,7 +345,7 @@ Hermes data sources used by Mission Control:
 Second Brain source:
 
 ```text
-/root/.openclaw/workspace/kb/
+/root/.hermes/workspace/kb/
   raw/                           Source inputs
   wiki/                          Compiled markdown wiki
   schema/WORKFLOW.md             KB workflow/schema rules

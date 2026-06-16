@@ -226,16 +226,16 @@ const pageConfigs: Record<string, AdminSetupConfig> = {
         heading: "Operational controls",
         body: "This is the admin setup hub for workspace membership, roles, ownership, and access review. It keeps account administration separate from the user workspace cockpit.",
         cards: [
-          { title: "Review signed-in identity", body: "Check current account, role, and workspace from the authenticated /api/me contract.", target: "settings", action: "Open Admin Overview" },
+          { title: "Review signed-in identity", body: "Check current account, role, and workspace from the authenticated /api/me contract.", target: "settings", action: "Open Admin Console" },
           { title: "Audit workspace activity", body: "Use the global audit trail to confirm which workspaces and channels are active before changing access.", target: "audit", action: "Open Global Audit Log" },
           { title: "Check usage by workspace", body: "Review spend/session patterns before setting workspace limits or escalation rules.", target: "costs", action: "Open Costs / Usage" },
         ],
       },
       {
-        heading: "Implementation boundary",
-        body: "Step 3 replaces the scaffold with an operator-ready admin page. Destructive user provisioning, deletion, or live role changes remain intentionally out of scope until a dedicated membership API is added.",
+        heading: "Access management boundary",
+        body: "High-risk membership changes stay controlled and auditable. Destructive user provisioning, deletion, or live role changes require a dedicated membership workflow with explicit audit evidence.",
         cards: [
-          { title: "Required backend slice", body: "Add a membership endpoint that lists users, workspace IDs, roles, last login, and invited/pending status without exposing secrets.", action: "Planned API: /api/admin/users" },
+          { title: "Membership data contract", body: "User, workspace, role, last-login, and invited/pending status data should be visible without exposing secrets.", action: "Governed membership workflow" },
         ],
       },
     ],
@@ -282,8 +282,8 @@ const pageConfigs: Record<string, AdminSetupConfig> = {
           { title: "Agent templates", body: "Publish reusable agent blueprints such as LinkedIn Growth, Lead Qualification, Research Analyst, Meeting Follow-up, DevOps Builder, or Finance Monitor. Users clone and customise them.", target: "shared-agent-templates", action: "Open Templates" },
           { title: "Tool and integration policy", body: "Control access to browser automation, email send, LinkedIn actions, file writes, shell/GitHub/database operations, and channel posting.", target: "tools", action: "Review Tools" },
           { title: "Model access and routing", body: "Set allowed providers/models, default tiers, premium model use, context budgets, and cost-aware routing rules.", target: "models", action: "Open Model Policy" },
-          { title: "Approval policy", body: "Define global human-in-the-loop gates for outbound, destructive, costly, account-sensitive, or authority-bound actions. Users may be stricter, not weaker.", target: "approval-policy", action: "Open Approval Policy" },
-          { title: "Quota and capacity", body: "Set max agents, active routines, concurrent runs, browser sessions, token/spend limits, and alert thresholds per user/profile.", target: "quota", action: "Open Quota" },
+          { title: "Approval rules", body: "Define global human-in-the-loop gates for outbound, destructive, costly, account-sensitive, or authority-bound actions. Users may be stricter, not weaker.", target: "approval-policy", action: "Open Approval Rules" },
+          { title: "Cost and quota policy", body: "Review spend, token usage, noisy routines, capacity signals, and quota enforcement evidence per user/profile.", target: "costs", action: "Open Costs / Usage" },
           { title: "Runtime isolation", body: "Own the User → Hermes Profile boundary, containers/runtimes, secrets scope, filesystem boundaries, and connector readiness.", target: "users-workspaces", action: "Open User Access" },
         ],
       },
@@ -360,7 +360,7 @@ const pageConfigs: Record<string, AdminSetupConfig> = {
         cards: [
           { title: "Runtime Connectors", body: "Create tokens, see connected runtimes, monitor heartbeats, and inspect connector events.", target: "runtimes", action: "Open Runtime Connectors" },
           { title: "Tools inventory", body: "Review available toolsets and platform tools before enabling desktop automation workflows.", target: "tools", action: "Open Tools" },
-          { title: "Desktop/API settings", body: "Open the current admin overview where gateway and desktop settings remain accessible.", target: "settings", action: "Open Admin Overview" },
+          { title: "Desktop/API settings", body: "Open the current admin console where gateway and desktop settings remain accessible.", target: "settings", action: "Open Admin Console" },
         ],
       },
     ],
@@ -368,19 +368,28 @@ const pageConfigs: Record<string, AdminSetupConfig> = {
   },
   "approval-policy": {
     eyebrow: "GOVERNANCE ADMIN",
-    title: "Approval Policy",
+    title: "Approval Rules",
     blurb:
       "Define which actions need human-in-the-loop review before agents publish, spend, delete, message externally, or cross workspace boundaries.",
     metrics: [
-      { label: "Policy mode", value: "HITL", detail: "Human-in-the-loop guardrails", tone: "good" },
+      { label: "Risk taxonomy", value: "7", detail: "read · write · network · secrets · publish · prod · destructive", tone: "good" },
       { label: "Review queue", value: "Needs Attention", detail: "Workspace-visible interventions" },
       { label: "Audit", value: "Global", detail: "Policy outcomes need evidence" },
-      { label: "Scope", value: "Draft", detail: "No global mutation controls yet", tone: "warn" },
+      { label: "Scope", value: "API-linked", detail: "Capability blockers expose next action", tone: "good" },
     ],
     sections: [
       {
+        heading: "Capability risk taxonomy",
+        body: "Capability Registry classifies each source as read-only, local-write, network, secret-access, external-publish, production-control, or destructive. Read-only can proceed; local-write/network/secret-access require Admin approval; external publishing, production control, DNS changes, live secret rotation, and destructive actions require Melverick approval.",
+        cards: [
+          { title: "Admin-approval risks", body: "local-write, network, and secret-access capabilities are blocked from install, enable, or assignment until an Admin approves the capability record.", target: "approvals", action: "Open Needs Attention" },
+          { title: "Melverick-approval risks", body: "external-publish, production-control, destructive, DNS, and live secret rotation actions stay blocked until Melverick approves; API blockers include the exact next approval action.", target: "audit", action: "Open Global Audit Log" },
+          { title: "Actionable blockers", body: "Blocked capability API responses include blockedCapability.blocker.message, requiredApprover, riskLevels, and nextAction so UI surfaces can show a precise operator fix instead of a generic failure.", target: "tools", action: "Review Tools" },
+        ],
+      },
+      {
         heading: "Default protected actions",
-        body: "Agents can draft and prepare work autonomously, but these categories should remain approval-gated or routed to Task Board until an admin policy API is live.",
+        body: "Agents can draft and prepare work autonomously, but these categories remain approval-gated or routed to Task Board until a policy decision is recorded.",
         cards: [
           { title: "Outbound messages and posts", body: "External Telegram, LinkedIn, email, website, or client-facing publication should require approve/edit/reject.", target: "approvals", action: "Open Needs Attention" },
           { title: "Destructive or costly operations", body: "Database changes, deletion, credential rotation, DNS/cloud mutations, and high-cost runs need policy gates.", target: "audit", action: "Open Global Audit Log" },
@@ -388,9 +397,9 @@ const pageConfigs: Record<string, AdminSetupConfig> = {
         ],
       },
       {
-        heading: "Next backend slice",
-        body: "A future /api/admin/approval-policy endpoint should persist policy thresholds, per-workspace overrides, and proof of the latest policy change.",
-        cards: [{ title: "Policy contract", body: "Expose read-only current policy first, then add explicit versioned updates with audit entries.", action: "Planned API: /api/admin/approval-policy" }],
+        heading: "Policy management boundary",
+        body: "Approval rules should show the active policy, per-workspace overrides, and proof of the latest policy change before operators rely on them.",
+        cards: [{ title: "Policy contract", body: "Expose current policy clearly, then require explicit versioned updates with audit entries.", action: "Versioned approval policy" }],
       },
     ],
     evidence: ["Approval taxonomy is visible", "Needs Attention and Audit links are preserved", "No live policy mutation is exposed without backend audit"],
@@ -417,9 +426,9 @@ const pageConfigs: Record<string, AdminSetupConfig> = {
         ],
       },
       {
-        heading: "Next backend slice",
-        body: "A future /api/admin/quota endpoint should expose current limits, usage against limit, warning thresholds, and versioned updates.",
-        cards: [{ title: "Quota contract", body: "Begin read-only, then add audited changes and workspace-level overrides after policy review.", action: "Planned API: /api/admin/quota" }],
+        heading: "Quota management boundary",
+        body: "Quota controls should show current limits, usage against limit, warning thresholds, and versioned updates before operators change capacity policy.",
+        cards: [{ title: "Quota contract", body: "Start from read-only usage evidence, then add audited changes and workspace-level overrides after policy review.", action: "Versioned quota policy" }],
       },
     ],
     evidence: ["Quota page is an operational setup hub", "Usage evidence routes are one click away", "No unaudited quota mutation is possible"],
@@ -1501,17 +1510,17 @@ export function AdminSetupPage({ kind }: { kind: keyof typeof pageConfigs }) {
           ))}
         </section>
 
-        <aside className="admin-setup-side" aria-label="Implementation evidence">
+        <aside className="admin-setup-side" aria-label="Operational guardrails">
           <article className="router-panel">
             <div className="section-head compact">
               <div>
-                <h2>Step 3 evidence</h2>
-                <p>Real admin setup surface, linked to existing operational routes and explicit about what is not yet safe to mutate.</p>
+                <h2>Operational guardrails</h2>
+                <p>Controls and boundaries operators should verify before changing access, policy, runtime, or workflow behavior.</p>
               </div>
             </div>
             <div className="drawer-section-list">
               {config.evidence.map((item) => (
-                <div className="kv" key={item}><span>Verified intent</span><b>{item}</b></div>
+                <div className="kv" key={item}><span>Guardrail</span><b>{item}</b></div>
               ))}
             </div>
           </article>

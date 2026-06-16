@@ -1,19 +1,83 @@
 import { useEffect, useMemo, useState } from "react";
 import type { InboxAction, InboxItem, InboxResponse, InboxStatus } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
+import { queryCacheEventName } from "../services/queryCache";
 import { parseMissionControlDeepLink } from "../services/deepLinks";
 import { formatSingaporeTime } from "../utils/time";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
 import { Icon } from "../components/Icon";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 const client = new HttpHermesClient();
 const tabs: Array<{ key: InboxStatus | "all"; label: string; helper: string }> = [
-  { key: "drafted", label: "Needs decision", helper: "External or irreversible actions awaiting operator decision" },
-  { key: "ready", label: "Ready to approve", helper: "Reviewed proposals ready for final approval" },
-  { key: "sent", label: "Approved", helper: "Approved / released history" },
-  { key: "rejected", label: "Rejected", helper: "Declined or reclassified proposals" },
-  { key: "all", label: "All", helper: "Full approval decision history" },
+  { key: "drafted", label: "Needs decision", helper: "Items where your approval changes what an agent is allowed to do" },
+  { key: "ready", label: "Ready to approve", helper: "Reviewed items awaiting your final yes/no decision" },
+  { key: "sent", label: "Approved", helper: "Past items you approved, including what was released or allowed" },
+  { key: "rejected", label: "Rejected", helper: "Past items you declined or sent back" },
+  { key: "all", label: "All", helper: "Every approval decision with source, destination, and effect" },
 ];
+
+function metadataString(item: InboxItem, key: string): string | null {
+  const value = item.metadata?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function readableToken(value?: string | null): string {
+  return (value || "").replace(/[_-]+/g, " ").trim();
+}
+
+function approvalTarget(item: InboxItem): string {
+  const derivedFrom = metadataString(item, "derived_from");
+  const action = readableToken(metadataString(item, "action"));
+  const resourceType = readableToken(metadataString(item, "resource_type"));
+  const resourceId = metadataString(item, "resource_id") || item.source_id || item.source_path || item.destination;
+  const connectorId = metadataString(item, "connector_id");
+  const jobName = metadataString(item, "job_name");
+
+  if (derivedFrom === "approval_policy") {
+    const actionText = action || readableToken(item.kind) || "run a gated action";
+    const resourceText = [resourceType, resourceId].filter(Boolean).join(" ") || item.destination;
+    const connectorText = connectorId ? ` through connector ${connectorId}` : "";
+    return `Allow ${item.agent_name || item.agent_id} to ${actionText} on ${resourceText}${connectorText}.`;
+  }
+
+  if (derivedFrom === "cron_output" || item.kind === "automation_output") {
+    return `Accept routine output from ${jobName || item.agent_name || item.source_id || "this automation"} for ${item.destination || "its configured destination"}.`;
+  }
+
+  if (item.kind === "workspace_item") {
+    return `Approve workspace item “${item.title}” from ${item.agent_name || item.source || "Mission Control"}.`;
+  }
+
+  return `Approve “${item.title}” for ${item.destination || "the listed destination"}.`;
+}
+
+function approvalEffect(item: InboxItem): string {
+  const derivedFrom = metadataString(item, "derived_from");
+  if (derivedFrom === "approval_policy") {
+    return "Approve records your permission for this paused policy-gated action; Reject keeps it blocked.";
+  }
+  if (derivedFrom === "cron_output" || item.kind === "automation_output") {
+    return "Approve marks this generated routine output as accepted for use/release; Reject keeps it out of the approved history.";
+  }
+  return "Approve records your operator decision for this item; Reject marks it declined.";
+}
+
+function statusLabel(status: InboxStatus): string {
+  if (status === "drafted") return "Needs decision";
+  if (status === "ready") return "Reviewed";
+  if (status === "sent") return "Approved";
+  if (status === "rejected") return "Rejected";
+  return status;
+}
+
+function riskLabel(risk: string): string {
+  if (risk === "critical") return "Critical risk";
+  if (risk === "high") return "High risk";
+  if (risk === "medium") return "Medium risk";
+  if (risk === "low") return "Low risk";
+  return risk;
+}
 
 export function Approvals() {
   const [data, setData] = useState<InboxResponse | null>(null);
@@ -25,8 +89,10 @@ export function Approvals() {
   const [error, setError] = useState<string | null>(null);
   const deepLinkedApprovalId = useMemo(() => parseMissionControlDeepLink(window.location).approvalId ?? null, []);
 
-  const load = async () => {
+  const load = async (mode: "initial" | "manual" | "event" = "initial") => {
+    const previousRefreshMode = window.__hmcRefreshMode;
     try {
+      window.__hmcRefreshMode = mode;
       setLoading(true);
       const next = await client.listInbox({ q, status });
       setData(next);
@@ -37,6 +103,7 @@ export function Approvals() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load approval gates");
     } finally {
+      window.__hmcRefreshMode = previousRefreshMode;
       setLoading(false);
     }
   };
@@ -44,6 +111,12 @@ export function Approvals() {
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 180);
     return () => window.clearTimeout(timer);
+  }, [q, status]);
+
+  useEffect(() => {
+    const onQueryCacheUpdated = () => void load("event");
+    window.addEventListener(queryCacheEventName(), onQueryCacheUpdated);
+    return () => window.removeEventListener(queryCacheEventName(), onQueryCacheUpdated);
   }, [q, status]);
 
   useEffect(() => {
@@ -105,10 +178,12 @@ export function Approvals() {
       <header className="inbox-hero">
         <div>
           <span className="stub-tag">APPROVAL GATE</span>
-          <h1>Approval Gates</h1>
-          <p>Approve or reject external-facing and irreversible agent actions. Email alerts, blockers, and “needs attention” items belong on the Task Board instead.</p>
+          <div className="hero-title-with-help">
+            <h1>Approval Gates</h1>
+            <InfoTooltip label="About approval gates">Approve or reject external-facing and irreversible agent actions. Email alerts, blockers, and “needs attention” items belong on the Task Board instead.</InfoTooltip>
+          </div>
         </div>
-        <button className="task-icon-action dark" aria-label="Refresh approvals" title="Refresh approvals" onClick={() => void load()}>
+        <button className="task-icon-action dark" aria-label="Refresh approvals" title="Refresh approvals" onClick={() => void load("manual")}>
           <Icon name="refresh" size={18} />
         </button>
       </header>
@@ -133,7 +208,7 @@ export function Approvals() {
           <span>Search</span>
           <input value={q} onChange={(event) => setQ(event.target.value)} placeholder="title, body, source, destination…" />
         </label>
-        <div className="inbox-filter-note">Only items requiring an operator decision should appear here. Attention-only items are routed to the Task Board.</div>
+        <div className="filter-help"><InfoTooltip label="About approval filters">Only items requiring an operator decision should appear here. Attention-only items are routed to the Task Board.</InfoTooltip></div>
       </section>
 
       {error && <div className="inbox-error">{error}</div>}
@@ -147,11 +222,16 @@ export function Approvals() {
           <article className="inbox-card" key={item.id}>
             <button className="inbox-card-main" onClick={() => open(item)}>
               <div className="inbox-card-top">
-                <span className={`inbox-status ${item.status}`}>{item.status}</span>
-                <span className={`inbox-risk ${item.risk}`}>{item.risk}</span>
+                <span className={`inbox-status ${item.status}`}>{statusLabel(item.status)}</span>
+                {(item.risk === "high" || item.risk === "critical") && <span className={`inbox-risk ${item.risk}`}>{riskLabel(item.risk)}</span>}
               </div>
               <h2>{item.title}</h2>
+              <div className="inbox-approval-explain">
+                <strong>You are approving:</strong>
+                <span>{approvalTarget(item)}</span>
+              </div>
               <p>{item.description}</p>
+              <small className="inbox-approval-effect">{approvalEffect(item)}</small>
               <div className="inbox-meta">
                 <span>{item.destination}</span>
                 <span>{item.provenance}</span>
@@ -159,10 +239,13 @@ export function Approvals() {
               </div>
             </button>
             <footer>
-              <button className="ghost tiny" onClick={() => open(item)}>Open</button>
-              {item.status === "drafted" && <button className="ghost tiny" onClick={() => void runAction(item, "ready")}>Mark reviewed</button>}
-              {(item.status === "drafted" || item.status === "ready") && <button className="ghost tiny danger" onClick={() => void runAction(item, "reject")}>Reject</button>}
-              {(item.status === "drafted" || item.status === "ready") && <button className="btn dark tinybtn" onClick={() => void runAction(item, "approve")}>Approve</button>}
+              <span className="inbox-card-hint">Click card for details</span>
+              {(item.status === "drafted" || item.status === "ready") && (
+                <span className="inbox-decision-actions">
+                  <button className="approval-decision-button reject" onClick={() => void runAction(item, "reject")}>Reject</button>
+                  <button className="approval-decision-button approve" onClick={() => void runAction(item, "approve")}>Approve</button>
+                </span>
+              )}
             </footer>
           </article>
         ))}
@@ -173,7 +256,7 @@ export function Approvals() {
         <SlideOverDrawer
           title={selected.title}
           subtitle={selected.provenance}
-          eyebrow={selected.status}
+          eyebrow={statusLabel(selected.status)}
           statusClassName={`inbox-status ${selected.status}`}
           onClose={() => setSelected(null)}
           closeLabel="Close approval details"
@@ -193,6 +276,14 @@ export function Approvals() {
               <Info label="Reviewed" value={selected.reviewed_at ?? "—"} />
             </div>
 
+            <section className="inbox-section approval-decision-summary">
+              <h3>What exactly am I approving?</h3>
+              <p><strong>You are approving:</strong> {approvalTarget(selected)}</p>
+              <p><strong>If you click Approve:</strong> {approvalEffect(selected)}</p>
+              <p><strong>Destination:</strong> {selected.destination || "—"}</p>
+              <p><strong>Source:</strong> {selected.source_path ?? selected.source_id ?? selected.source}</p>
+            </section>
+
             <section className="inbox-section">
               <h3>Edit decision artifact before approval</h3>
               <label>Title<input value={draft.title ?? ""} onChange={(e) => setDraft({ ...draft, title: e.target.value })} /></label>
@@ -200,10 +291,16 @@ export function Approvals() {
               <label>Summary<textarea value={draft.description ?? ""} onChange={(e) => setDraft({ ...draft, description: e.target.value })} /></label>
               <label>Body<textarea className="body" value={draft.body ?? ""} onChange={(e) => setDraft({ ...draft, body: e.target.value })} /></label>
               <div className="inbox-drawer-actions">
-                <button className="ghost tiny" onClick={() => void save()}>Save edits</button>
-                <button className="ghost tiny" onClick={() => void runAction(selected, "ready")}>Mark reviewed</button>
-                <button className="ghost tiny danger" onClick={() => void runAction(selected, "reject")}>Reject</button>
-                <button className="btn dark" onClick={() => void runAction(selected, "approve")}>Approve</button>
+                <span className="inbox-secondary-actions">
+                  <button className="ghost tiny" onClick={() => void save()}>Save edits</button>
+                  {selected.status === "drafted" && <button className="ghost tiny" onClick={() => void runAction(selected, "ready")}>Mark reviewed</button>}
+                </span>
+                {(selected.status === "drafted" || selected.status === "ready") && (
+                  <span className="inbox-decision-actions drawer">
+                    <button className="approval-decision-button reject" onClick={() => void runAction(selected, "reject")}>Reject</button>
+                    <button className="approval-decision-button approve" onClick={() => void runAction(selected, "approve")}>Approve</button>
+                  </span>
+                )}
               </div>
             </section>
 

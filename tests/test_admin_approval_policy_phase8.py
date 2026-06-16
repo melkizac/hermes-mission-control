@@ -11,6 +11,14 @@ def setup_phase8_app(tmp_path, monkeypatch):
     return app, admin, operator
 
 
+def approval_policy_audit_actions(app, operator):
+    return [
+        e["action"]
+        for e in app.list_workspace_audit_events(identity=operator)["events"]
+        if e["action"].startswith("approval_policy.")
+    ]
+
+
 def test_phase8_allowed_action_executes_without_approval(tmp_path, monkeypatch):
     app, admin, operator = setup_phase8_app(tmp_path, monkeypatch)
     app.upsert_governed_connector(admin, {
@@ -35,8 +43,8 @@ def test_phase8_allowed_action_executes_without_approval(tmp_path, monkeypatch):
     assert result["approval_required"] is False
     assert result["execution"] == {"ok": True, "value": "read-complete"}
     assert calls == ["executed"]
-    audit = app.list_workspace_audit_events(identity=operator)["events"]
-    assert [e["action"] for e in audit] == ["approval_policy.action_executed"]
+    audit_actions = approval_policy_audit_actions(app, operator)
+    assert audit_actions == ["approval_policy.action_executed"]
 
 
 def test_phase8_approval_required_action_pauses_and_creates_approval_with_browser_evidence(tmp_path, monkeypatch):
@@ -69,7 +77,7 @@ def test_phase8_approval_required_action_pauses_and_creates_approval_with_browse
     inbox = app.list_inbox(identity=admin)
     assert inbox["summary"]["total"] == 1
     assert inbox["items"][0]["metadata"]["browser_evidence"] == browser_evidence
-    audit_actions = [e["action"] for e in app.list_workspace_audit_events(identity=operator)["events"]]
+    audit_actions = approval_policy_audit_actions(app, operator)
     assert audit_actions == ["approval_policy.request_created"]
 
 
@@ -97,7 +105,7 @@ def test_phase8_denied_action_stays_blocked_and_does_not_execute(tmp_path, monke
     assert result["ok"] is False
     assert calls == []
     assert app.list_inbox(identity=admin)["summary"]["total"] == 0
-    audit_actions = [e["action"] for e in app.list_workspace_audit_events(identity=operator)["events"]]
+    audit_actions = approval_policy_audit_actions(app, operator)
     assert audit_actions == ["approval_policy.action_denied"]
 
 

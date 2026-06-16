@@ -57,13 +57,108 @@ export interface Artifact {
   sizeBytes: number;
   preview?: string;
   createdAt: string;
+  url?: string;
+  downloadUrl?: string;
+  previewUrl?: string;
+  version?: string;
+  qaStatus?: string;
+  driveUrl?: string;
 }
 
 export type WorkItemKind = "task" | "goal" | "run" | "approval" | "intake" | "workflow";
 export type RiskLevel = "safe" | "approval-required" | "external-facing" | "destructive" | "account-sensitive";
 export type MissionArtifactKind = "file" | "link" | "screenshot" | "report" | "diff" | "message" | "dataset" | "note";
-export type EvidenceKind = "source" | "tool-call" | "session" | "screenshot" | "file" | "log" | "approval" | "human-note";
+export type EvidenceKind = "source" | "tool-call" | "session" | "screenshot" | "file" | "log" | "approval" | "human-note" | "api-response" | "qa-result" | "render-preview";
+export type EvidenceGateType = "command_output" | "build_test_log" | "api_response" | "screenshot" | "file_artifact" | "approval_note" | "session_link" | string;
+export type EvidenceGateStatus = "not-required" | "passed" | "blocked" | string;
 export type PhaseCheckpointStatus = "pending" | "in_progress" | "passed" | "blocked" | "failed";
+export type HmcWorkflowPhase = "hmc-plan" | "hmc-build" | "hmc-review" | "hmc-qa" | "hmc-ship" | "hmc-canary" | "hmc-retro";
+export type HmcWorkflowEvidenceStatus = "pending" | "running" | "passed" | "blocked" | "failed" | "skipped" | string;
+
+export interface HmcWorkflowEvidenceCommand {
+  command: string;
+  status: HmcWorkflowEvidenceStatus;
+  summary?: string;
+  log_path?: string | null;
+  logPath?: string | null;
+}
+
+export interface HmcWorkflowEvidenceCheck {
+  type: string;
+  status: HmcWorkflowEvidenceStatus;
+  summary: string;
+  url?: string | null;
+  path?: string | null;
+}
+
+export interface HmcWorkflowEvidenceApproval {
+  required: boolean;
+  status: "not-required" | "pending" | "approved" | "rejected" | "changes-requested" | HmcWorkflowEvidenceStatus;
+  reason?: string;
+  source?: string | null;
+}
+
+export interface HmcWorkflowEvidence {
+  schema: "hmc.workflow_evidence.v1" | string;
+  project_id?: string;
+  projectId?: string;
+  tenant?: string;
+  task_id?: string;
+  taskId?: string;
+  phase: HmcWorkflowPhase | string;
+  status: HmcWorkflowEvidenceStatus;
+  summary: string;
+  created_at?: string;
+  createdAt?: string;
+  created_by?: string;
+  createdBy?: string;
+  branch?: string | null;
+  commit?: string | null;
+  workspace_path?: string | null;
+  workspacePath?: string | null;
+  deploy_target?: string | null;
+  deployTarget?: string | null;
+  health_check?: string | null;
+  healthCheck?: string | null;
+  browser_proof?: string | null;
+  browserProof?: string | null;
+  docs_impact?: string | null;
+  docsImpact?: string | null;
+  rollback?: string | null;
+  rollback_note?: string | null;
+  rollbackNote?: string | null;
+  review?: string | Record<string, unknown> | null;
+  build?: string | Record<string, unknown> | null;
+  tests?: Array<string | Record<string, unknown>> | Record<string, unknown> | null;
+  artifacts?: Array<Record<string, unknown>>;
+  commands?: HmcWorkflowEvidenceCommand[];
+  checks?: HmcWorkflowEvidenceCheck[];
+  risks?: Array<string | Record<string, unknown>>;
+  approval?: HmcWorkflowEvidenceApproval;
+}
+
+
+export interface GuardPolicy {
+  mode?: "advisory" | "enforced" | "frozen" | string;
+  scope?: string;
+  allowed_edit_paths?: string[];
+  allowedEditPaths?: string[];
+  destructive_command_warning_level?: "low" | "medium" | "high" | "critical" | string;
+  destructiveCommandWarningLevel?: "low" | "medium" | "high" | "critical" | string;
+  checkpoint_mode?: string;
+  checkpointMode?: string;
+  rollback_artifact_path?: string;
+  rollbackArtifactPath?: string;
+  freeze?: boolean;
+  advisory_enforcement?: boolean;
+  advisoryEnforcement?: boolean;
+  safe_start_required?: boolean;
+  safeStartRequired?: boolean;
+  dirty_repo_policy?: string;
+  dirtyRepoPolicy?: string;
+  evidence_required?: string[];
+  evidenceRequired?: string[];
+}
 
 export interface WorkItemRef {
   id: string;
@@ -80,6 +175,7 @@ export interface WorkItemRef {
 export interface EvidenceRecord {
   id: string;
   kind: EvidenceKind;
+  type?: string;
   title: string;
   summary?: string;
   source: string;
@@ -87,8 +183,16 @@ export interface EvidenceRecord {
   path?: string | null;
   url?: string | null;
   createdAt: string;
+  created_at?: string;
   redacted?: boolean;
+  redactionStatus?: string;
   confidence?: "low" | "medium" | "high" | string;
+  reference?: string | null;
+  taskId?: string | null;
+  runId?: string | null;
+  artifactId?: string | null;
+  verificationStatus?: string | null;
+  checks?: string[];
 }
 
 export interface MissionArtifact {
@@ -99,9 +203,15 @@ export interface MissionArtifact {
   filename?: string;
   path?: string | null;
   url?: string | null;
+  downloadUrl?: string | null;
+  previewUrl?: string | null;
+  driveUrl?: string | null;
   mime?: string;
   sizeBytes?: number;
   preview?: string;
+  version?: string;
+  qaStatus?: "not-run" | "pending" | "passed" | "failed" | "blocked" | string;
+  format?: "pptx" | "docx" | "pdf" | "markdown" | "drive" | string;
   createdAt: string;
   createdBy?: string;
   evidenceIds?: string[];
@@ -119,6 +229,24 @@ export interface ApprovalGate {
   sourceRef?: WorkItemRef;
 }
 
+export interface EvidenceGateChecklistItem {
+  type: EvidenceGateType;
+  label: string;
+  satisfied: boolean;
+}
+
+export interface EvidenceGateState {
+  required: boolean;
+  requiredTypes: EvidenceGateType[];
+  satisfiedTypes: EvidenceGateType[];
+  missingTypes: EvidenceGateType[];
+  status: EvidenceGateStatus;
+  completionBlocked: boolean;
+  checklist: EvidenceGateChecklistItem[];
+  acceptedTypes: EvidenceGateType[];
+  summary: string;
+}
+
 export interface MissionResult {
   id: string;
   workItem: WorkItemRef;
@@ -127,6 +255,7 @@ export interface MissionResult {
   artifacts: MissionArtifact[];
   evidence: EvidenceRecord[];
   approvalGates: ApprovalGate[];
+  evidenceGate: EvidenceGateState;
   nextActions: string[];
   model?: string;
   costUsd?: number | null;
@@ -446,6 +575,42 @@ export interface RouterConfig {
   error?: string;
 }
 
+
+export interface AgentRuntimeAccount {
+  id: string;
+  label: string;
+  email_hint?: string;
+  provider: string;
+  credential_env: string;
+  billing_owner?: string;
+  notes?: string;
+  configured?: boolean;
+  secret_status?: string;
+}
+
+export interface AgentRuntimeAssignment {
+  agent_id: string;
+  account_id: string;
+  model_id: string;
+  reasoning: string;
+  apply_mode: string;
+  updated_at?: string;
+  updated_by?: string;
+  note?: string;
+}
+
+export interface AgentRuntimeSwitcher {
+  ok: boolean;
+  updated_at?: string;
+  accounts: AgentRuntimeAccount[];
+  models: RouterModel[];
+  agents: Array<{ id: string; name: string; squad?: string; status?: string; processingRequests?: string[] }>;
+  assignments: Record<string, AgentRuntimeAssignment>;
+  audit: Array<{ id: string; agent_id: string; from_account?: string; to_account?: string; from_model?: string; to_model?: string; account_label?: string; model_label?: string; apply_mode?: string; changed_by?: string; timestamp?: string }>;
+  summary: { accounts: number; configured_accounts: number; agents: number; assigned: number };
+  error?: string;
+}
+
 export interface Message {
   id: string;
   role: MessageRole;
@@ -507,12 +672,22 @@ export interface ProjectChatSession {
   messages: number;
   tools: number;
   tokens: number;
+  relationship_type?: string;
+  summary?: string;
+  linked_by?: string;
+  linked_at?: string;
+  link_source?: "canonical" | "heuristic" | string;
+  project_owner?: string;
+  project_status?: string;
+  kanban_tenant?: string;
+  kanban_board?: string;
+  project_score?: number;
 }
 
 export interface ProjectChatResponse {
-  projects: Array<{ id: string; name: string; sessions: number }>;
+  projects: Array<{ id: string; name: string; sessions: number; owner?: string; status?: string; kanban_tenant?: string; kanban_board?: string }>;
   sessions: ProjectChatSession[];
-  summary: { projects: number; sessions: number };
+  summary: { projects: number; sessions: number; canonical_links?: number; heuristic_links?: number };
   error?: string;
 }
 
@@ -538,6 +713,43 @@ export interface ProfileRuntimeDetails {
   environment?: { env_files: Array<{ name: string; status: string; variable_count: number; sensitive_count: number }>; policy: string };
   routines?: { count: number; items?: Array<Record<string, unknown>> };
   config_files?: Array<{ name: string; kind?: string; updated_at?: string }>;
+}
+
+export interface AgentHandoff {
+  id: string;
+  from_agent: string;
+  to_agent: string;
+  task_id?: string | null;
+  objective: string;
+  context?: string | null;
+  requested_output: string;
+  risk: "low" | "medium" | "high" | "critical" | string;
+  status: "requested" | "accepted" | "in_progress" | "blocked" | "completed" | "failed" | "cancelled" | string;
+  evidence?: Array<Record<string, unknown>>;
+  created_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentHandoffSummary {
+  sent: number;
+  received: number;
+  open: number;
+  blocked: number;
+}
+
+export interface AgentHandoffResponse {
+  ok: boolean;
+  handoffs: AgentHandoff[];
+  summary?: { total: number; open: number; completed: number; blocked: number; high_risk: number };
+  statuses?: string[];
+  error?: string;
+}
+
+export interface AgentHandoffMutationResponse {
+  ok: boolean;
+  handoff?: AgentHandoff;
+  error?: string;
 }
 
 export interface Agent {
@@ -566,9 +778,14 @@ export interface Agent {
   processingRequestDetails?: Array<{ id: string; agent_id?: string; started_at?: number }>;
   artifacts: Artifact[];
   tasks: Task[];
+  detailLoaded?: boolean;
+  detailEndpoint?: string;
+  transcriptEndpoint?: string;
   insightSummary?: string;
   insightStatus?: string;
   profile_details?: ProfileRuntimeDetails;
+  handoffs?: AgentHandoff[];
+  handoff_summary?: AgentHandoffSummary;
 }
 
 export interface Approval {
@@ -839,7 +1056,7 @@ export interface FunnelTargetMutationResponse {
   error?: string;
 }
 
-export type BoardStatus = "todo" | "queued" | "scheduled" | "running" | "blocked" | "done" | "error";
+export type BoardStatus = "triage" | "todo" | "scheduled" | "ready" | "running" | "blocked" | "error" | "review" | "done";
 
 export interface BoardComment {
   id: number | null;
@@ -868,23 +1085,100 @@ export interface BoardRun {
   error?: string;
 }
 
+export interface RunTreeVerification {
+  status: "pending" | "running" | "passed" | "failed" | "blocked" | string;
+  blocked: boolean;
+  blockers?: string[];
+  reason?: string;
+  required_for_completion?: boolean;
+}
+
+export interface RunTreeRunNode {
+  id: string;
+  run_id?: number | string | null;
+  task_id?: string;
+  parent_id?: string;
+  agent?: string | null;
+  model?: string | null;
+  toolsets?: string[];
+  step_key?: string | null;
+  status: string;
+  outcome?: string | null;
+  started_at?: string | null;
+  ended_at?: string | null;
+  output?: string;
+  verification?: RunTreeVerification;
+}
+
+export interface RunTreeTaskNode {
+  id: string;
+  task_id: string;
+  title: string;
+  subtask?: boolean;
+  agent?: string | null;
+  parent_task_ids?: string[];
+  child_task_ids?: string[];
+  model?: string | null;
+  toolsets?: string[];
+  step_key?: string | null;
+  status: string;
+  output?: string;
+  verification: RunTreeVerification;
+  runs: RunTreeRunNode[];
+  children: RunTreeTaskNode[];
+}
+
+export interface RunTreePayload {
+  root?: RunTreeTaskNode | null;
+  summary: {
+    total_tasks: number;
+    total_runs: number;
+    blocked_nodes: number;
+    status: string;
+    completion_blocked: boolean;
+    blocking_reasons?: string[];
+  };
+  verification?: RunTreeVerification;
+}
+
 export interface BoardTaskResultDetails {
   status?: string | null;
-  summary?: string;
+  summary?: string | Record<string, unknown>;
+  objective?: string;
+  workflow_type?: string;
+  workflowType?: string;
   artifact?: string | null;
   blockers?: string[];
   verification?: Record<string, string>;
   access_needed?: string;
+  sources?: Array<Record<string, unknown>>;
+  outputs?: Array<Record<string, unknown>>;
+  stages?: Array<Record<string, unknown>>;
+  settings?: Record<string, unknown>;
+  requirements?: Record<string, unknown>;
   artifacts?: MissionArtifact[];
   evidence?: EvidenceRecord[];
+  evidence_gate?: EvidenceGateState;
+  evidenceGate?: EvidenceGateState;
   approval_gates?: ApprovalGate[];
   next_actions?: string[];
+  needs_human?: boolean;
+  needsHuman?: boolean;
+  approval_policy?: Record<string, unknown>;
+  approvalPolicy?: Record<string, unknown>;
+  guard_policy?: GuardPolicy;
+  guardPolicy?: GuardPolicy;
+  workflow_evidence?: HmcWorkflowEvidence[] | HmcWorkflowEvidence;
+  workflowEvidence?: HmcWorkflowEvidence[] | HmcWorkflowEvidence;
+  hmc_workflow_evidence?: HmcWorkflowEvidence[] | HmcWorkflowEvidence;
 }
 
 export interface TaskResultResponse {
   ok: boolean;
   task?: BoardTask;
   mission_result?: MissionResult | null;
+  run_tree?: RunTreePayload | null;
+  agent_handoffs?: AgentHandoff[];
   error?: string;
 }
 
@@ -906,9 +1200,17 @@ export interface BoardTask {
   workspace_path?: string | null;
   branch_name?: string | null;
   tenant?: string | null;
+  board_id?: string;
+  board_slug?: string;
+  board_label?: string;
+  board_is_default?: boolean;
   result: string;
   result_details?: BoardTaskResultDetails | null;
+  guard_policy?: GuardPolicy | null;
+  guardPolicy?: GuardPolicy | null;
   mission_result?: MissionResult | null;
+  run_tree?: RunTreePayload | null;
+  agent_handoffs?: AgentHandoff[];
   session_id?: string | null;
   current_run_id?: number | null;
   workflow_template_id?: string | null;
@@ -924,23 +1226,42 @@ export interface BoardTask {
   parents: string[];
 }
 
+export interface KanbanBoardInfo {
+  id: string;
+  slug: string;
+  label: string;
+  is_default: boolean;
+}
+
+export interface KanbanBoardWarning {
+  board?: string;
+  status: string;
+  reason: string;
+}
+
 export interface BoardResponse {
   tasks: BoardTask[];
   lanes: Record<BoardStatus, BoardTask[]>;
   summary: {
     total: number;
+    triage: number;
     todo: number;
-    queued: number;
     scheduled: number;
+    ready: number;
     running: number;
     blocked: number;
-    done: number;
     error: number;
+    review: number;
+    done: number;
     assignees: string[];
     projects: string[];
+    boards?: string[];
   };
   statuses: BoardStatus[];
   projects: string[];
+  boards?: KanbanBoardInfo[];
+  board_errors?: KanbanBoardWarning[];
+  warnings?: KanbanBoardWarning[];
 }
 
 export interface BoardTaskMutationResponse {
@@ -1188,6 +1509,34 @@ export interface CostSessionRecord {
   billing_provider?: string | null;
 }
 
+export interface ModelUsageWindow {
+  label: string;
+  used_seconds: number;
+  limit_seconds: number;
+  used_hours: number;
+  limit_hours: number;
+  remaining_seconds: number;
+  remaining_hours: number;
+  percent_used: number;
+  remaining_percent?: number;
+  reset_at: string;
+  reset_label: string;
+}
+
+export interface ModelUsageLimitSummary {
+  daily: ModelUsageWindow;
+  weekly: ModelUsageWindow;
+  selected_model: string;
+  models: string[];
+  source: string;
+  available?: boolean;
+  error?: string;
+  selected?: boolean;
+  aliases?: string[];
+  metered_feature?: string;
+  additional_model_usages?: ModelUsageLimitSummary[];
+}
+
 export interface CostsResponse {
   window_days: number;
   summary: {
@@ -1210,6 +1559,8 @@ export interface CostsResponse {
   browser_usage?: BrowserUsageSummary;
   file_extraction_usage?: FileExtractionUsageSummary;
   quota_dimensions?: string[];
+  model_usage?: ModelUsageLimitSummary;
+  model_usage_models?: ModelUsageLimitSummary[];
   error?: string;
 }
 
@@ -1243,6 +1594,13 @@ export interface ProjectSessionItem {
   messages: number;
   tools: number;
   tokens: number;
+  project_id?: string;
+  project_name?: string;
+  relationship_type?: string;
+  summary?: string;
+  linked_by?: string;
+  linked_at?: string;
+  link_source?: string;
 }
 
 export interface ProjectActivityItem {
@@ -1304,6 +1662,8 @@ export interface ProjectRecord {
   activity: ProjectActivityItem[];
   tags: string[];
   workspace_count: number;
+  guard_policy?: GuardPolicy | null;
+  guardPolicy?: GuardPolicy | null;
   tasks?: ProjectOperatingLink[];
   automations?: ProjectOperatingLink[];
   goals?: ProjectOperatingLink[];
@@ -1838,6 +2198,273 @@ export interface ResearchRunsResponse {
   updatedAt: string;
 }
 
+export type CapabilityRegistryTab = "installed" | "available" | "intake" | "broken" | "assigned";
+
+export interface CapabilityAssignmentRef {
+  id: string;
+  name?: string;
+  title?: string;
+  enabled?: boolean;
+  status?: string;
+  reason?: string;
+}
+
+export interface CapabilityRegistryRecord {
+  id: string;
+  type: string;
+  name?: string;
+  displayName?: string;
+  description?: string;
+  category?: string;
+  tags?: string[];
+  status?: string;
+  sourceUri?: string | null;
+  sourceRef?: string | null;
+  sourceLabel?: string | null;
+  workspaceId?: string | null;
+  runtimeId?: string | null;
+  profileId?: string | null;
+  ownerKind?: string;
+  visibility?: string;
+  editable?: boolean;
+  enabled?: boolean;
+  installMethod?: {
+    kind?: string;
+    commandPreview?: string;
+    configPath?: string;
+    requiresRestart?: boolean;
+    requiredSecrets?: string[];
+    requiredPermissions?: string[];
+    wrapperType?: string;
+  };
+  license?: { name?: string; url?: string | null; allowed?: boolean | null; notes?: string };
+  maintenanceSignals?: Record<string, unknown>;
+  dependencyWeight?: { level?: string; signals?: Record<string, unknown> };
+  runtimeWeight?: { level?: string; signals?: Record<string, unknown> };
+  requiredSecrets?: string[];
+  suggestedWrapperType?: string;
+  smokeTestCommand?: string;
+  governance?: {
+    riskLevels?: string[];
+    primaryRisk?: string;
+    approvalRequired?: boolean;
+    approvalAuthority?: string;
+    approvalStatus?: string;
+    policyGate?: string;
+    policySummary?: string;
+    blockedActions?: string[];
+    actionableBlocker?: {
+      code?: string;
+      message?: string;
+      requiredApprover?: string;
+      action?: string;
+      riskLevels?: string[];
+    } | null;
+  };
+  policyEvidence?: {
+    riskLevels?: string[];
+    primaryRisk?: string;
+    approvalRequired?: boolean;
+    approvalAuthority?: string;
+    approvalStatus?: string;
+    policyGate?: string;
+    actionableBlocker?: Record<string, unknown> | null;
+  };
+  permissions?: string[];
+  health?: {
+    state?: string;
+    checkSummary?: string;
+    lastCheckedAt?: string;
+    nextCheckDueAt?: string;
+    evidenceIds?: string[];
+  };
+  evidence?: EvidenceRecord[];
+  assignment?: {
+    assignmentUnit?: string;
+    assignedAgents?: CapabilityAssignmentRef[];
+    assignedRoutines?: CapabilityAssignmentRef[];
+    assignedTasks?: CapabilityAssignmentRef[];
+    suggestedAgents?: CapabilityAssignmentRef[];
+    usageCount?: number;
+  };
+  rollback?: { supported?: boolean; disableSteps?: string[]; uninstallSteps?: string[]; restartRequired?: boolean };
+  audit?: Array<Record<string, unknown>>;
+  auditEvents?: Array<{
+    id: string;
+    action: string;
+    actorId?: string;
+    summary?: string;
+    createdAt?: string;
+    redacted?: boolean;
+    evidence?: Record<string, unknown>;
+  }>;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string | null;
+}
+
+export interface CapabilityIntakeRecord {
+  id: string;
+  title: string;
+  name?: string;
+  displayName?: string;
+  description?: string;
+  category?: string;
+  sourceType?: string;
+  sourceUri?: string | null;
+  sourceRef?: string | null;
+  sourceLabel?: string | null;
+  workspaceId?: string | null;
+  runtimeId?: string | null;
+  profileId?: string | null;
+  requestedBy?: string;
+  status?: string;
+  riskLevels?: string[];
+  installMethod?: CapabilityRegistryRecord["installMethod"];
+  license?: CapabilityRegistryRecord["license"];
+  maintenanceSignals?: CapabilityRegistryRecord["maintenanceSignals"];
+  dependencyWeight?: CapabilityRegistryRecord["dependencyWeight"];
+  runtimeWeight?: CapabilityRegistryRecord["runtimeWeight"];
+  requiredSecrets?: string[];
+  suggestedWrapperType?: string;
+  smokeTestCommand?: string;
+  permissions?: string[];
+  healthPlan?: Record<string, unknown>;
+  evidence?: EvidenceRecord[];
+  audit?: CapabilityRegistryRecord["audit"];
+  auditEvents?: CapabilityRegistryRecord["auditEvents"];
+  assignedAgents?: CapabilityAssignmentRef[];
+  rollbackNotes?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CapabilityRegistryResponse {
+  ok?: boolean;
+  capabilities: CapabilityRegistryRecord[];
+  summary: {
+    total: number;
+    enabled: number;
+    assigned: number;
+    awaitingApproval: number;
+    degraded: number;
+    requiringSecrets: number;
+  };
+  error?: string;
+}
+
+export interface CapabilityIntakeResponse {
+  ok?: boolean;
+  intake: CapabilityIntakeRecord[];
+  summary: {
+    total: number;
+    awaitingApproval: number;
+    requiringSecrets: number;
+  };
+  error?: string;
+}
+
+export interface CapabilityAssessmentResponse {
+  ok?: boolean;
+  assessment: CapabilityIntakeRecord;
+  error?: string;
+}
+
+export interface CapabilityIntakeMutationResponse {
+  ok?: boolean;
+  intake: CapabilityIntakeRecord;
+  error?: string;
+}
+
+export interface CapabilitySandboxResponse {
+  ok?: boolean;
+  status?: string;
+  intake?: CapabilityIntakeRecord;
+  sandbox?: Record<string, unknown>;
+  error?: string;
+}
+
+export interface CapabilityMatrixCapability {
+  id: string;
+  type?: string;
+  name?: string;
+  displayName?: string;
+  description?: string;
+  source?: string;
+  sourceLabel?: string;
+  status?: string;
+  enabled?: boolean;
+  assigned?: boolean;
+  inherited?: boolean;
+  assignmentScope?: "assigned" | "inherited" | "available" | string;
+  assignmentUnit?: string;
+  assignmentRef?: Record<string, unknown>;
+  riskLevels?: string[];
+  approvalRequired?: boolean;
+  approvalStatus?: string;
+  approvalAuthority?: string;
+  policyGate?: string;
+  actionableBlocker?: Record<string, unknown> | null;
+  healthState?: string;
+  healthSummary?: string;
+  toolCount?: number;
+  sampleTools?: string[];
+}
+
+export interface CapabilityMatrixRow {
+  agent: {
+    id: string;
+    name?: string;
+    squad?: string;
+    status?: string;
+    profileId?: string;
+    profilePath?: string;
+    selected?: boolean;
+  };
+  capabilities: CapabilityMatrixCapability[];
+  assigned: CapabilityMatrixCapability[];
+  available: CapabilityMatrixCapability[];
+  blocked: CapabilityMatrixCapability[];
+  summary: {
+    total: number;
+    assigned: number;
+    inherited?: number;
+    available: number;
+    blocked: number;
+    skills: number;
+    tools: number;
+    registry: number;
+  };
+}
+
+export interface CapabilityMatrixResponse {
+  ok?: boolean;
+  matrix: CapabilityMatrixRow[];
+  agents?: CapabilityMatrixRow["agent"][];
+  summary: {
+    agents: number;
+    capabilities: number;
+    assigned: number;
+    inherited?: number;
+    blocked: number;
+    registry: number;
+    skills: number;
+    tools: number;
+  };
+  error?: string;
+}
+
+export interface CapabilityAssignmentMutationResponse {
+  ok?: boolean;
+  action?: "assign" | "unassign";
+  capability?: CapabilityRegistryRecord;
+  blockedCapability?: Record<string, unknown>;
+  nextAction?: string;
+  status?: string;
+  error?: string;
+}
+
 export type ViewKey =
   | "mission"
   | "dashboard"
@@ -1851,15 +2478,19 @@ export type ViewKey =
   | "agent-platform-admin"
   | "runtimes"
   | "tools"
+  | "capabilities"
   | "plugins"
   | "projects"
+  | "files"
   | "second-brain"
   | "board"
   | "skills"
   | "memory"
+  | "reflections"
   | "approvals"
   | "automations"
   | "audit"
+  | "usage"
   | "costs"
   | "models"
   | "users-workspaces"

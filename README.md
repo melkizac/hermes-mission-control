@@ -40,7 +40,37 @@ The major-revamp documentation is here:
 docs/HERMES_MISSION_CONTROL.md
 ```
 
-It explains each Mission Control function, how to use it, representative API routes, and examples for common operator workflows.
+The Capability Registry operator SOP is here:
+
+```text
+docs/CAPABILITY_REGISTRY_OPERATOR_GUIDE.md
+```
+
+It explains how admins add OSS projects and package/service capabilities, how agents receive capabilities, how approval gates and smoke evidence work, and how to rollback or disable a capability.
+
+The Owned App Capability Standard is here:
+
+```text
+docs/OWNED_APP_CAPABILITY_SPEC.md
+```
+
+It defines `source_type: owned_app` for first-party/operated apps such as NetWorth Tracker, Mission Control, Nexius Academy site/funnel, SGQR/PayNow tools, and lead dashboards, including manifest schema, approvals, evidence, audit, health, rollback, and Mission Control display rules.
+
+The Melkizac research-to-deliverable operator SOP is here:
+
+```text
+docs/RESEARCH_TO_DELIVERABLE_WORKFLOW.md
+```
+
+It explains how Melkizac detects learning/source-Q&A/deck/report/proposal/revision/status intents from chat, creates Projects and Task Board graphs, processes sources, handles blockers/approvals, and returns editable artifacts with evidence.
+
+The Agent OS rollout, admin verification, and rollback guide is here:
+
+```text
+docs/AGENT_OS_ROLLOUT_OPERATOR_GUIDE.md
+```
+
+It records the verified rollout evidence, day-to-day operator flow, admin checks, DB/migration notes, rollback plan, and known limitations for the intelligent operating layer.
 
 ## Canonical work terminology
 

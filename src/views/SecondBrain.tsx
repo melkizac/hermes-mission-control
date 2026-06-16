@@ -3,6 +3,7 @@ import type { SecondBrainItem, SecondBrainResponse } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { formatSingaporeTime } from "../utils/time";
 import { Icon } from "../components/Icon";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 const client = new HttpHermesClient();
 type Tab = "overview" | "wiki" | "raw" | "schema" | "index" | "health";
@@ -100,8 +101,10 @@ export function SecondBrain() {
       <header className="brain-hero">
         <div>
           <span className="stub-tag">KARPATHY-STYLE LLM WIKI</span>
-          <h1>Second Brain</h1>
-          <p>{summary?.description || "Raw sources, maintained markdown wiki, schema rules, index, and log."}</p>
+          <div className="hero-title-with-help">
+            <h1>Second Brain</h1>
+            <InfoTooltip label="About Second Brain">{summary?.description || "Raw sources, maintained markdown wiki, schema rules, index, and log."}</InfoTooltip>
+          </div>
         </div>
         <div className="brain-path-card">
           <span>Vault root</span>
@@ -145,8 +148,7 @@ export function SecondBrain() {
           </article>
         )}
         <article className="brain-principle">
-          <b>LLM Wiki operating model</b>
-          <p>Raw sources stay immutable. The LLM maintains the compiled wiki, cross-references, index, log, and schema-guided workflows so knowledge compounds instead of being rediscovered like plain RAG.</p>
+          <div className="section-title-with-help"><b>LLM Wiki operating model</b><InfoTooltip label="About the wiki model">Raw sources stay immutable. The LLM maintains the compiled wiki, cross-references, index, log, and schema-guided workflows so knowledge compounds instead of being rediscovered like plain RAG.</InfoTooltip></div>
         </article>
         <article className="brain-principle">
           <b>Latest log entries</b>

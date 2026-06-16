@@ -2,17 +2,19 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
-import type { Agent, Approval, Attachment, ConfigFile, Message, MissionControlMe, ModelRoutingSelection, ReplyContext, RouterConfig, Skill, ViewKey } from "../types";
+import type { Agent, AgentRuntimeAssignment, AgentRuntimeSwitcher, Approval, Attachment, CapabilityAssignmentMutationResponse, CapabilityMatrixResponse, ConfigFile, Message, MissionControlMe, ModelRoutingSelection, ReplyContext, RouterConfig, Skill, ViewKey } from "../types";
 import type { UiPermissions } from "./uiPermissions";
 import { adminOnlyViews, canAccessView, permissionsForRole, safeDefaultViewForRole } from "./uiPermissions";
 import type { HermesClient } from "./hermesClient";
 import { HttpHermesClient } from "./httpHermesClient";
 import { initialDeepLinkTarget, parseMissionControlDeepLink, type MissionControlDeepLinkTarget } from "./deepLinks";
+import { cachedJsonRequest } from "./queryCache";
 
 type UiMode = "workspace" | "admin";
 const defaultViewForUiMode = (mode: UiMode): ViewKey => mode === "admin" ? "settings" : "mission";
@@ -44,16 +46,24 @@ interface StoreValue {
   setUiMode: (mode: UiMode) => void;
   select: (id: string) => void;
   uploadAttachment: (file: File) => Promise<Attachment>;
+  uploadAttachmentToAgent: (agentId: string, file: File) => Promise<Attachment>;
   send: (text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection }) => Promise<Message[]>;
   sendToAgent: (agentId: string, text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection }) => Promise<Message[]>;
   getModelRouter: () => Promise<RouterConfig>;
+  getAgentRuntimes: () => Promise<AgentRuntimeSwitcher>;
+  saveAgentRuntime: (agentId: string, input: AgentRuntimeAssignment) => Promise<AgentRuntimeSwitcher>;
   stopProcessing: (requestId?: string) => Promise<void>;
+  stopProcessingForAgent: (agentId: string, requestId?: string) => Promise<void>;
   refreshSelected: () => Promise<void>;
+  refreshAgent: (agentId: string) => Promise<void>;
   createAgent: (i: { name: string; squad: string; model: string }) => Promise<void>;
   deleteAgent: (id: string) => Promise<void>;
   saveFile: (file: ConfigFile) => Promise<void>;
   addSkill: (skill: Skill) => Promise<void>;
   removeSkill: (skillId: string) => Promise<void>;
+  getCapabilityMatrix: (filters?: { agent?: string; agentId?: string; q?: string; type?: string; status?: string; risk?: string; health?: string; assigned?: string }) => Promise<CapabilityMatrixResponse>;
+  assignCapability: (capabilityId: string, input: { agentId: string; agent?: Record<string, unknown>; reason?: string }) => Promise<CapabilityAssignmentMutationResponse>;
+  unassignCapability: (capabilityId: string, input: { agentId: string; agent?: Record<string, unknown>; reason?: string }) => Promise<CapabilityAssignmentMutationResponse>;
   resolveApproval: (id: string, decision: "approve" | "reject") => Promise<void>;
 }
 
@@ -95,16 +105,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     const nextMe = await client.getMe();
     setMe(nextMe);
-    const [agentsResult, approvalsResult] = await Promise.allSettled([client.listAgents(), client.listApprovals()]);
-    const a = agentsResult.status === "fulfilled" ? agentsResult.value : [];
-    const ap = approvalsResult.status === "fulfilled" ? approvalsResult.value : [];
-    setAgents(a);
-    setApprovals(ap);
-    setSelectedId((cur) => cur ?? a[0]?.id ?? null);
     const nextAccountRole = nextMe?.user?.role;
     const nextRole = nextAccountRole === "admin" && uiMode === "admin" ? "admin" : nextAccountRole === "admin" ? "user" : nextAccountRole;
     setRawView((next) => canAccessView(nextRole, next) ? next : safeDefaultViewForRole(nextRole));
     setLoading(false);
+    window.setTimeout(() => {
+      void client.listAgents()
+        .then((a) => {
+          setAgents((cur) => {
+            const detailedById = new Map(cur.filter((agent) => agent.detailLoaded).map((agent) => [agent.id, agent]));
+            return a.map((agent) => ({ ...agent, ...(detailedById.get(agent.id) ?? {}) }));
+          });
+          setSelectedId((cur) => cur ?? a[0]?.id ?? null);
+        })
+        .catch(() => undefined);
+    }, 250);
+    window.setTimeout(() => {
+      void client.listApprovals().then(setApprovals).catch(() => setApprovals([]));
+    }, 1000);
   }, [uiMode]);
 
   useLayoutEffect(() => {
@@ -117,6 +135,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const select = useCallback((id: string) => setSelectedId(id), []);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    const current = agents.find((agent) => agent.id === selectedId);
+    if (!current || current.detailLoaded) return;
+    let alive = true;
+    void client.getAgent(selectedId)
+      .then((detail) => {
+        if (!alive || !detail) return;
+        setAgents((cur) => cur.map((agent) => (agent.id === selectedId ? { ...agent, ...detail, detailLoaded: true } : agent)));
+      })
+      .catch(() => {
+        // Keep the lightweight roster usable; detail errors surface on explicit refresh/send paths.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [agents, selectedId]);
 
   const applyDeepLinkTarget = useCallback((target: MissionControlDeepLinkTarget) => {
     if (target.view) setView(target.view);
@@ -132,12 +168,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // Popstate navigation is still handled by Shell.
   }, []);
 
+  const uploadAttachmentToAgent = useCallback(
+    async (agentId: string, file: File) => {
+      if (!agentId) throw new Error("No agent selected");
+      return client.uploadAttachment(agentId, file);
+    },
+    [],
+  );
+
   const uploadAttachment = useCallback(
     async (file: File) => {
       if (!selectedId) throw new Error("No agent selected");
-      return client.uploadAttachment(selectedId, file);
+      return uploadAttachmentToAgent(selectedId, file);
     },
-    [selectedId],
+    [selectedId, uploadAttachmentToAgent],
   );
 
   const sendToAgent = useCallback(
@@ -232,22 +276,41 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [selectedId, sendToAgent],
   );
 
+  const stopProcessingForAgent = useCallback(
+    async (agentId: string, requestId?: string) => {
+      if (!agentId) return;
+      await client.stopMessage(agentId, requestId);
+    },
+    [],
+  );
+
   const stopProcessing = useCallback(
     async (requestId?: string) => {
       if (!selectedId) return;
-      await client.stopMessage(selectedId, requestId);
+      await stopProcessingForAgent(selectedId, requestId);
     },
-    [selectedId],
+    [selectedId, stopProcessingForAgent],
   );
 
-  const getModelRouter = useCallback(() => client.getModelRouter(), []);
+  const getModelRouter = useCallback(() => cachedJsonRequest("chat-page:model-router", () => client.getModelRouter(), { staleAfterMs: 60_000 }), []);
+  const getAgentRuntimes = useCallback(() => client.getAgentRuntimes(), []);
+  const saveAgentRuntime = useCallback((agentId: string, input: AgentRuntimeAssignment) => client.saveAgentRuntime(agentId, input), []);
+
+  const refreshAgent = useCallback(async (agentId: string) => {
+    if (!agentId) return;
+    const updated = await client.getAgent(agentId);
+    if (!updated) return;
+    setAgents((cur) => {
+      const exists = cur.some((agent) => agent.id === agentId);
+      if (!exists) return [updated, ...cur];
+      return cur.map((agent) => (agent.id === agentId ? { ...agent, ...updated, detailLoaded: true } : agent));
+    });
+  }, []);
 
   const refreshSelected = useCallback(async () => {
     if (!selectedId) return;
-    const updated = await client.getAgent(selectedId);
-    if (!updated) return;
-    setAgents((cur) => cur.map((agent) => (agent.id === selectedId ? updated : agent)));
-  }, [selectedId]);
+    await refreshAgent(selectedId);
+  }, [selectedId, refreshAgent]);
 
   const createAgent = useCallback(
     async (i: { name: string; squad: string; model: string }) => {
@@ -294,6 +357,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [selectedId, refresh],
   );
 
+  const getCapabilityMatrix = useCallback((filters?: { agent?: string; agentId?: string; q?: string; type?: string; status?: string; risk?: string; health?: string; assigned?: string }) => client.getCapabilityMatrix(filters), []);
+
+  const assignCapability = useCallback(
+    async (capabilityId: string, input: { agentId: string; agent?: Record<string, unknown>; reason?: string }) => {
+      const result = await client.assignCapability(capabilityId, input);
+      await refresh();
+      return result;
+    },
+    [refresh],
+  );
+
+  const unassignCapability = useCallback(
+    async (capabilityId: string, input: { agentId: string; agent?: Record<string, unknown>; reason?: string }) => {
+      const result = await client.unassignCapability(capabilityId, input);
+      await refresh();
+      return result;
+    },
+    [refresh],
+  );
+
   const resolveApproval = useCallback(
     async (id: string, decision: "approve" | "reject") => {
       await client.resolveApproval(id, decision);
@@ -317,16 +400,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setUiMode,
     select,
     uploadAttachment,
+    uploadAttachmentToAgent,
     send,
     sendToAgent,
     getModelRouter,
+    getAgentRuntimes,
+    saveAgentRuntime,
     stopProcessing,
+    stopProcessingForAgent,
     refreshSelected,
+    refreshAgent,
     createAgent,
     deleteAgent,
     saveFile,
     addSkill,
     removeSkill,
+    getCapabilityMatrix,
+    assignCapability,
+    unassignCapability,
     resolveApproval,
   };
 

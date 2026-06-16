@@ -3,6 +3,7 @@ import { Icon } from "../components/Icon";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import type { MemoryContextEntry, MemoryContextResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainItem, SecondBrainNoteResponse } from "../types";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 const client = new HttpHermesClient();
 
@@ -101,10 +102,12 @@ export function MemoryContext() {
       <header className="skills-hero memory-hero">
         <div>
           <span className="stub-tag">MEMORY & CONTEXT</span>
-          <h1>Memory & Knowledge Control Panel</h1>
-          <p>
-            Inspect durable Hermes memory plus Melverick&apos;s Obsidian/Second Brain knowledge base. The KB is read-only, searchable, evidence-aware, path constrained, and prepared for later context injection.
-          </p>
+          <div className="hero-title-with-help">
+            <h1>Memory & Knowledge Control Panel</h1>
+            <InfoTooltip label="About memory and knowledge">
+              Inspect durable Hermes memory plus Melverick&apos;s Obsidian/Second Brain knowledge base. The KB is read-only, searchable, evidence-aware, path constrained, and prepared for later context injection.
+            </InfoTooltip>
+          </div>
         </div>
         <div className="task-hero-actions">
           <button className="task-icon-action dark" aria-label="Refresh memory and knowledge context" title="Refresh memory and knowledge context" onClick={() => void load()}>

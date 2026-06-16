@@ -19,14 +19,17 @@ const allowedViews = new Set<ViewKey>([
   "agent-platform-admin",
   "runtimes",
   "tools",
+  "capabilities",
   "plugins",
   "projects",
   "second-brain",
   "board",
   "skills",
+  "reflections",
   "approvals",
   "automations",
   "audit",
+  "usage",
   "costs",
   "models",
   "users-workspaces",
@@ -45,7 +48,16 @@ export function parseMissionControlDeepLink(input: string | URL | Location = win
   const rawView = params.get("view") as ViewKey | null;
   const target: MissionControlDeepLinkTarget = {};
   if (rawView && allowedViews.has(rawView)) target.view = rawView;
-  if (!target.view && url.pathname.replace(/\/$/, "") === "/admin") target.view = "settings";
+  const normalizedPath = url.pathname.replace(/\/$/, "") || "/";
+  if (!target.view) {
+    const appPathView = normalizedPath.startsWith("/app/") ? normalizedPath.slice("/app/".length) as ViewKey : null;
+    if (appPathView && allowedViews.has(appPathView)) target.view = appPathView;
+  }
+  if (!target.view) {
+    const topLevelView = normalizedPath.startsWith("/") ? normalizedPath.slice(1) as ViewKey : null;
+    if (topLevelView && allowedViews.has(topLevelView)) target.view = topLevelView;
+  }
+  if (!target.view && normalizedPath === "/admin") target.view = "settings";
   const taskId = params.get("task") || params.get("task_id");
   const approvalId = params.get("approval") || params.get("approval_id");
   const agentId = params.get("agent") || params.get("agent_id");
@@ -69,7 +81,7 @@ export function buildMissionControlUrl(target: MissionControlDeepLinkTarget, ori
   if (target.agentId) params.set("agent", target.agentId);
   const query = params.toString();
   // Keep these examples literal for regression docs/tests: view=approvals&approval=, view=board&task=, view=agents&agent=
-  const adminViews = new Set<ViewKey>(["settings", "agent-platform-admin", "users-workspaces", "shared-agent-templates", "desktop-gateway", "approval-policy", "quota"]);
+  const adminViews = new Set<ViewKey>(["settings", "agent-platform-admin", "users-workspaces", "workspace-runtime-console", "shared-agent-templates", "runtimes", "desktop-gateway", "models", "capabilities", "costs", "approval-policy", "quota"]);
   const basePath = adminViews.has(view) ? "/admin" : "/app";
   return `${origin.replace(/\/$/, "")}${basePath}?${query}`;
 }

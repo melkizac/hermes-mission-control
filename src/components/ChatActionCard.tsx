@@ -12,7 +12,8 @@ export type ChatActionCardType =
   | "browser_running"
   | "evidence_ready"
   | "connection_needed"
-  | "human_action_needed";
+  | "human_action_needed"
+  | "research_to_deliverable";
 
 type ChatActionCardProps = {
   type: ChatActionCardType;
@@ -39,6 +40,7 @@ const labels: Record<ChatActionCardType, string> = {
   evidence_ready: "Evidence ready",
   connection_needed: "Connection needed",
   human_action_needed: "Human action needed",
+  research_to_deliverable: "Research-to-Deliverable",
 };
 
 export function ChatActionCard({
@@ -61,10 +63,12 @@ export function ChatActionCard({
       <h3>{title}</h3>
       <p>{detail}</p>
       {risk && <small className="chat-card-risk">Risk: {risk}</small>}
-      <div className="chat-card-actions">
-        <button className="btn small" onClick={() => onOpen?.(target)}>{primaryAction}</button>
-        {secondaryAction && <button className="ghost small" onClick={() => onOpen?.(target)}>{secondaryAction}</button>}
-      </div>
+      {onOpen && (
+        <div className="chat-card-actions">
+          <button className="btn small" onClick={() => onOpen(target)}>{primaryAction}</button>
+          {secondaryAction && <button className="ghost small" onClick={() => onOpen(target)}>{secondaryAction}</button>}
+        </div>
+      )}
     </article>
   );
 }
