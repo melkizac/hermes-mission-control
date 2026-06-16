@@ -74,7 +74,8 @@ Feature Contract impact:
 - [ ] Any removal/replacement is explicitly approved below
 
 Checks run:
-- [ ] npm run build
+- [ ] feature contract gate: `npm run check:feature-contract`
+- [ ] `npm run build`
 - [ ] pytest/static checks, if applicable
 - [ ] browser/API smoke for touched routes, if applicable
 
@@ -89,6 +90,14 @@ Rollback notes:
 ```
 
 ## Before merge
+
+Run the static feature-contract gate before build/browser checks:
+
+```bash
+npm run check:feature-contract
+```
+
+This gate intentionally checks stable route affordances from `docs/MISSION_CONTROL_FEATURE_CONTRACT.md` so a clean merge cannot silently remove Task Board filters, Project selector parity, Runtime v0.16 metadata, or PR hygiene requirements.
 
 Update the PR branch from latest `main` and resolve conflicts there:
 

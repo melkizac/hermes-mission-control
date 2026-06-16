@@ -49,6 +49,7 @@ Must preserve:
 Smoke evidence for `/tasks` PRs should include:
 
 - frontend build result;
+- static feature-contract gate result: `npm run check:feature-contract`;
 - static or browser/DOM assertion that search/status/owner/project filters render;
 - evidence for advanced board/source access or a documented approved exception;
 - console check when browser verification is possible.
