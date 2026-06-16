@@ -191,8 +191,8 @@ export function NavRail() {
     };
     const timer = window.setTimeout(() => {
       void load();
-    }, 10000);
-    const interval = window.setInterval(load, 15000);
+    }, 5000);
+    const interval = window.setInterval(load, 60000);
     return () => {
       alive = false;
       window.clearTimeout(timer);
