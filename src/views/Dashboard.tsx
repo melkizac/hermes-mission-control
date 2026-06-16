@@ -87,19 +87,25 @@ export function Dashboard() {
     let alive = true;
     const load = async () => {
       try {
-        const [status, sessions, inbox, automations, costs, board, projects, brain] = await Promise.all([
+        const [status, sessions, inbox, costs] = await Promise.all([
           safe<RuntimeStatus | null>("/api/status", null),
           safe<SessionRow[]>("/api/sessions", []),
           safe<InboxResponse | null>("/api/inbox", null),
-          safe<AutomationsResponse | null>("/api/automations", null),
           safe<CostsResponse | null>("/api/costs", null),
+        ]);
+        if (!alive) return;
+        setData((current) => ({ ...current, status, sessions: sessions.slice(0, 8), inbox, costs }));
+        setError(null);
+        setLoading(false);
+
+        const [automations, board, projects, brain] = await Promise.all([
+          safe<AutomationsResponse | null>("/api/automations", null),
           safe<BoardResponse | null>("/api/task-board", null),
           safe<ProjectsResponse | null>("/api/projects", null),
           safe<SecondBrainResponse | null>("/api/second-brain", null),
         ]);
         if (!alive) return;
-        setData({ status, sessions: sessions.slice(0, 8), inbox, automations, costs, board, projects, brain });
-        setError(null);
+        setData((current) => ({ ...current, automations, board, projects, brain }));
       } catch (err) {
         if (!alive) return;
         setError(err instanceof Error ? err.message : "Unable to load dashboard telemetry");
@@ -108,7 +114,7 @@ export function Dashboard() {
       }
     };
     void load();
-    const id = window.setInterval(load, 15000);
+    const id = window.setInterval(load, 60000);
     return () => { alive = false; window.clearInterval(id); };
   }, []);
 

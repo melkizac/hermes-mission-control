@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import type { Agent, AgentHandoff, BoardStatus, BoardTask, EvidenceGateState, GuardPolicy, HmcWorkflowEvidence, HmcWorkflowPhase, MissionArtifact, ProjectRecord, RunTreePayload, RunTreeRunNode, RunTreeTaskNode } from "../types";
 import { ArtifactCard, EvidenceTimeline, ResultSummaryPanel } from "../components/MissionFoundation";
@@ -123,15 +123,17 @@ export function TaskBoard() {
   const [laneVisibleCounts, setLaneVisibleCounts] = useState<Record<BoardLaneKey, number>>(() => initialLaneCounts());
   const [listVisibleCount, setListVisibleCount] = useState(TASK_PAGE_SIZE);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+  const projectOptionsLoadedRef = useRef(false);
   const deepLinkedTaskId = useMemo(() => parseMissionControlDeepLink(window.location).taskId ?? null, []);
 
   const load = useCallback(async () => {
     const [boardResult, projectsResult] = await Promise.allSettled([
       client.listBoard({ q, status, assignee, project, board }),
-      client.listProjects(),
+      projectOptionsLoadedRef.current ? Promise.resolve(null) : client.listProjects(),
     ]);
-    if (projectsResult.status === "fulfilled") {
+    if (projectsResult.status === "fulfilled" && projectsResult.value) {
       setProjectOptions(projectsResult.value.projects ?? []);
+      projectOptionsLoadedRef.current = true;
     }
     if (boardResult.status === "rejected") throw boardResult.reason;
     const data = boardResult.value;

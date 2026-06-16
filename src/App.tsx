@@ -207,8 +207,8 @@ function NeedsAttentionBell() {
     }
     const timer = window.setTimeout(() => {
       void loadApprovalCount();
-    }, 11000);
-    const interval = window.setInterval(loadApprovalCount, 15000);
+    }, 20000);
+    const interval = window.setInterval(loadApprovalCount, 60000);
     return () => {
       alive = false;
       window.clearTimeout(timer);
