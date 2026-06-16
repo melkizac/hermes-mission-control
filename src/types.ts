@@ -323,6 +323,20 @@ export interface DelegateWorkMutationResponse {
   error?: string;
 }
 
+export interface SpecKitIntakeResponse {
+  ok: boolean;
+  intake?: {
+    id: string;
+    projectId: string;
+    artifactCount: number;
+    childTaskIds: string[];
+  };
+  task?: BoardTask;
+  child_tasks?: BoardTask[];
+  error?: string;
+}
+
+
 export interface WorkflowStep {
   id: string;
   title: string;

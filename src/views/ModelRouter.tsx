@@ -2,6 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import { InfoTooltip } from "../components/InfoTooltip";
 import type { CostsResponse, ModelUsageWindow } from "../types";
 
+type HermesCredential = {
+  provider: string;
+  index: number;
+  label: string;
+  auth_type: string;
+  source: string;
+  active?: boolean;
+  status?: string;
+};
+
 type RouterModel = {
   id: string;
   label: string;
@@ -21,8 +31,8 @@ type HermesSettings = {
   config_path: string;
   env_path: string;
   auth_path: string;
-  active: { provider: string; model: string; base_url?: string; credential_env?: string; auth_provider_configured?: boolean };
-  auth_providers: string[];
+  active: { provider: string; model: string; base_url?: string; credential_env?: string; auth_provider_configured?: boolean; credential?: HermesCredential };
+  auth_credentials?: HermesCredential[];
   provider_options: string[];
 };
 
@@ -55,6 +65,11 @@ type AgentRuntimeAccount = {
   notes?: string;
   configured?: boolean;
   secret_status?: string;
+  auth_label?: string;
+  auth_type?: string;
+  auth_source?: string;
+  auth_active?: boolean;
+  auth_status?: string;
 };
 
 type AgentRuntimeAssignment = {
@@ -171,23 +186,28 @@ function providerModelLabel(account: AgentRuntimeAccount, model?: RouterModel) {
 
 function AccountModelCard({ card, usage }: { card: AdminConsoleModelCard; usage?: ModelUsageLimit }) {
   const { account, model, assignedAgents } = card;
-  const ready = Boolean(account.configured || account.provider === "openai-codex");
+  const ready = Boolean(account.configured);
+  const authLabel = account.auth_label || account.label;
+  const authType = account.auth_type || "—";
+  const authSource = account.auth_source || account.secret_status || "—";
   return <article className={`router-model-card admin-console-model-card ${ready ? "" : "disabled"}`}>
     <div className="router-model-head">
       <div>
-        <b>{account.label}</b>
-        <small>{providerModelLabel(account, model)} · credential / quota bucket</small>
+        <b>{authLabel}</b>
+        <small>{providerModelLabel(account, model)} · {authType} / {authSource}</small>
       </div>
-      <span className={`auth-pill ${ready ? "ok" : "missing"}`}>{ready ? "authorised account" : "credential missing"}</span>
+      <span className={`auth-pill ${ready ? "ok" : "missing"}`}>{ready ? `${account.auth_active ? "active " : ""}OAuth credential` : "credential missing"}</span>
     </div>
     <div className="router-cli-grid compact">
-      <div><span>Credential/account</span><b>{account.label}</b></div>
+      <div><span>Credential label</span><b>{authLabel}</b></div>
+      <div><span>Auth type</span><b>{authType}</b></div>
+      <div><span>Source</span><b>{authSource}</b></div>
       <div><span>Provider</span><b>{account.provider || model?.provider || "—"}</b></div>
       <div><span>Model</span><b>{model?.model || "—"}</b></div>
       <div><span>Quota owner</span><b>{account.billing_owner || "—"}</b></div>
     </div>
-    <p className="muted">Separate Codex authorisation/quota bucket. This is not a separate model ID; both current Codex accounts run the same main model when assigned.</p>
-    {model && <div className="runtime-account-meta"><span>{tierLabel(model.tier)}</span><span>{model.enabled ? "enabled for routing" : "routing disabled"}</span><span>{model.secret_status || "Hermes auth"}</span></div>}
+    <p className="muted">This card is backed by the live Hermes credential pool metadata. Secrets stay server-side; only provider, label, auth type, source, and active status are displayed.</p>
+    {model && <div className="runtime-account-meta"><span>{tierLabel(model.tier)}</span><span>{model.enabled ? "enabled for routing" : "routing disabled"}</span><span>{model.secret_status || account.secret_status || "Hermes auth"}</span>{account.auth_status ? <span>{account.auth_status}</span> : null}</div>}
     <div className={`router-model-usage ${usage && usage.available !== false && !usage.error ? "" : "unavailable"}`}>
       {usage?.error && <p>{usage.error}</p>}
       <UsageLimitRow window={usage?.daily} available={Boolean(usage && usage.available !== false && !usage.error)} />
@@ -207,7 +227,7 @@ export function ModelRouter() {
   const [saving, setSaving] = useState(false);
 
   const adminConsoleCards = useMemo<AdminConsoleModelCard[]>(() => {
-    return runtime.accounts.map((account) => {
+    return runtime.accounts.filter((account) => account.configured).map((account) => {
       const model = modelForAccount(account, runtime);
       const assignedAgents = Object.values(runtime.assignments || {})
         .filter((assignment) => assignment.account_id === account.id)
@@ -219,6 +239,9 @@ export function ModelRouter() {
 
   const uniqueAdminModels = useMemo(() => new Set(adminConsoleCards.map((card) => providerModelLabel(card.account, card.model)).filter(Boolean)), [adminConsoleCards]);
   const usageModels = costs?.model_usage_models?.length ? costs.model_usage_models : costs?.model_usage ? [costs.model_usage] : [];
+  const activeCredential = draft.hermes_settings?.active?.credential;
+  const activeProvider = draft.hermes_settings?.active?.provider || activeCredential?.provider || "—";
+  const activeModel = draft.hermes_settings?.active?.model || "—";
 
   const load = async () => {
     try {
@@ -259,16 +282,16 @@ export function ModelRouter() {
       <div>
         <span className="stub-tag">SETTINGS · MODELS</span>
         <div className="hero-title-with-help"><h1>Models & rate limits</h1><InfoTooltip label="About Models & rate limits">This page mirrors the Hermes Admin Console runtime accounts. It separates Codex quota buckets by authorised account while showing the actual provider/model pair assigned to each account.</InfoTooltip></div>
-        <p>Melkizac/default and Andrej/dev-ops are separated by Codex credential/quota bucket, not by model ID. Both currently run <b>openai-codex/gpt-5.5</b>; new DevOps Builder sessions route through <b>codex-Melverick</b>.</p>
+        <p>Mission Control now mirrors the live Hermes credential pool. The configured OAuth credential is <b>{activeCredential?.label || "not detected"}</b> on <b>{activeProvider}</b>, running <b>{activeModel}</b>.</p>
       </div>
       <button className="btn dark" onClick={() => void save()} disabled={saving}>{saving ? "Saving…" : "Save Admin Console allow-list"}</button>
     </section>
 
     <section className="metrics-grid router-metrics">
-      <div className="metric"><span>Codex accounts</span><b>{adminConsoleCards.length}</b><small>authorised quota buckets from Admin Console</small></div>
+      <div className="metric"><span>Valid OAuth credentials</span><b>{adminConsoleCards.length}</b><small>from live Hermes auth list</small></div>
       <div className="metric"><span>Unique model IDs</span><b>{uniqueAdminModels.size}</b><small>{Array.from(uniqueAdminModels).join(", ") || "none assigned"}</small></div>
       <div className="metric"><span>Agents routed</span><b>{runtime.summary.assigned || 0}</b><small>new sessions use assigned account/model</small></div>
-      <div className="metric"><span>Hidden from page</span><b>{Math.max(0, (draft.models?.length || 0) - uniqueAdminModels.size)}</b><small>models not listed in Admin Console</small></div>
+      <div className="metric"><span>Filtered stale accounts</span><b>{Math.max(0, (runtime.accounts?.length || 0) - adminConsoleCards.length)}</b><small>stored rows without matching live OAuth</small></div>
     </section>
 
     {status && <div className="org-warning">{status}</div>}
@@ -282,12 +305,14 @@ export function ModelRouter() {
         <button className="btn ghost" onClick={() => void load()}>Refresh Admin Console state</button>
       </div>
       <div className="router-cli-grid">
-        <div><span>Melkizac/default</span><b>Codex-Nexius</b></div>
-        <div><span>Andrej/dev-ops</span><b>codex-Melverick</b></div>
-        <div><span>Provider</span><b>openai-codex</b></div>
-        <div><span>Main model</span><b>gpt-5.5</b></div>
+        <div><span>Active credential label</span><b>{activeCredential?.label || "—"}</b></div>
+        <div><span>Auth type</span><b>{activeCredential?.auth_type || "—"}</b></div>
+        <div><span>Source</span><b>{activeCredential?.source || "—"}</b></div>
+        <div><span>Provider</span><b>{activeProvider}</b></div>
+        <div><span>Main model</span><b>{activeModel}</b></div>
+        <div><span>Active marker</span><b>{activeCredential?.active ? "selected" : "—"}</b></div>
       </div>
-      <p className="muted">Separation is by authorised Codex account / quota bucket. HMC runtime routing assigns Andrej / DevOps Builder to codex-Melverick for new sessions.</p>
+      <p className="muted">This block is populated from Hermes auth/config metadata. It intentionally avoids showing tokens or raw OAuth payloads.</p>
     </section>
 
     <section className="router-panel">
