@@ -35,6 +35,7 @@ Rollback:
 Related design docs:
 
 - [`ADMIN_PLATFORM_MULTI_RUNTIME_DESIGN.md`](./ADMIN_PLATFORM_MULTI_RUNTIME_DESIGN.md) — Admin control-plane design for many isolated Hermes user/workspace runtimes, written for both technical and functional stakeholders.
+- [`HERMES_V016_COMPATIBILITY_DESIGN.md`](./HERMES_V016_COMPATIBILITY_DESIGN.md) — Hermes v0.16 impact boundary: native Dashboard/Desktop as runtime console, HMC as governance/control plane, runtime-scoped artifact locators, profile-aware routines, async run trees, and memory/skill approval policy.
 - [`plans/2026-06-06-admin-runtime-governance-phases-7-11.md`](./plans/2026-06-06-admin-runtime-governance-phases-7-11.md) — proposed later phases for Runtime Connectors, Approval Policy, Workflow Routine Admin, workspace run history, Browser Evidence, Research Runs, Costs / Usage, and Quota.
 - [`RUNTIME_CONNECTOR_V2.md`](./RUNTIME_CONNECTOR_V2.md) — external runtime connector registration, heartbeat, and event ingestion.
 - [`CAPABILITY_REGISTRY_OPERATOR_GUIDE.md`](./CAPABILITY_REGISTRY_OPERATOR_GUIDE.md) — operator SOP for adding OSS capabilities, approval gates, smoke evidence, agent assignment, and rollback/disable procedures.
@@ -46,7 +47,7 @@ Related design docs:
 
 ## 1. What Mission Control is
 
-Hermes is the worker layer. **Mission Control is the management, audit, and trust layer.**
+Hermes is the worker layer. **Mission Control is the management, audit, and trust layer.** As of Hermes v0.16, native Hermes Dashboard/Desktop should be treated as the runtime console for profiles/runtimes, while Mission Control remains the governance/control plane across users, workspaces, agents, approvals, evidence, and audit.
 
 Mission Control turns Hermes from a set of chats, cron jobs, Kanban records, logs, and profile folders into one operator cockpit for digital coworkers. The product goal is to move from:
 

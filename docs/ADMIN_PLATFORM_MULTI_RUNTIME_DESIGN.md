@@ -158,6 +158,8 @@ Admin can create **Platform agents** for administration only. Admin can also cre
 
 Admin should be able to select a user/workspace from the Admin UI and open that workspace's runtime console.
 
+For Hermes v0.16 and later, this runtime console may be the native Hermes Dashboard/Desktop surface for that runtime/profile. Mission Control should launch or deep-link to it rather than rebuilding every low-level console feature. Mission Control still owns the workspace governance layer: access policy, agent assignment, approval gates, evidence, and audit.
+
 Example:
 
 ```text
@@ -226,6 +228,8 @@ Container: hmc-user-client-a
 ```
 
 This creates a clean separation between users.
+
+Runtime registry records should also capture Hermes-native connection metadata where available: `native_console_url`, `remote_gateway_url`, `dashboard_auth_mode`, `hermes_version`, profile identity, and capability flags such as managed files, cron, Kanban, async delegation, approvals, and dashboard auth. These fields belong behind a versioned Hermes runtime adapter so UI/domain code does not depend directly on unstable upstream dashboard routes.
 
 ### Control plane vs runtime plane
 

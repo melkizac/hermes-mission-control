@@ -113,10 +113,12 @@ export function TaskBoard() {
   const [boardScopedProjects, setBoardScopedProjects] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showSpecIntake, setShowSpecIntake] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab>("overview");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [draft, setDraft] = useState({ title: "", body: "", assignee: "", priority: 50, tenant: "" });
+  const [specDraft, setSpecDraft] = useState({ title: "", intent: "", projectId: "mission-control", assignee: "project-task", acceptance: "", assumptions: "", priority: 50 });
   const [comment, setComment] = useState("");
   const [humanNote, setHumanNote] = useState("");
   const [agentTarget, setAgentTarget] = useState("");
@@ -230,7 +232,19 @@ export function TaskBoard() {
 
   const selected = useMemo(() => tasks.find((task) => task.id === selectedId), [tasks, selectedId]);
   const availableAgents = useMemo(() => agents.filter((agent) => agent.id), [agents]);
-  const projectNameById = useMemo(() => new Map(projectOptions.map((item) => [item.id, item.name || item.id])), [projectOptions]);
+  const projectNameById = useMemo(() => {
+    const entries: Array<[string, string]> = [];
+    for (const item of projectOptions) {
+      const label = item.name || item.id;
+      entries.push([item.id, label]);
+      // Task Board tenants can retain the native Hermes `project:<slug>` form,
+      // while Projects canonicalizes the same record as `project-<slug>`.
+      // Keep the filter value task-native, but resolve the visible label from
+      // the canonical Projects record so both pages present the same Project.
+      if (item.id.startsWith("project-")) entries.push([`project:${item.id.slice("project-".length)}`, label]);
+    }
+    return new Map(entries);
+  }, [projectOptions]);
   const projectFilterOptions = useMemo(() => {
     const sourceIds = board
       ? boardScopedProjects
@@ -262,6 +276,22 @@ export function TaskBoard() {
       await refreshState.refresh("manual");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Create failed");
+    }
+  };
+
+  const createSpecIntake = async () => {
+    if (!specDraft.title.trim()) return setError("Spec title required");
+    if (!specDraft.intent.trim()) return setError("Intent / business ask required");
+    try {
+      const result = await client.createSpecKitIntake(specDraft);
+      if (!result.ok) throw new Error(result.error || "Spec intake failed");
+      setNotice(`Created Spec Kit intake: ${result.task?.title || specDraft.title} · ${result.intake?.artifactCount ?? 0} artifacts · ${result.intake?.childTaskIds.length ?? 0} child tasks`);
+      setSpecDraft({ title: "", intent: "", projectId: specDraft.projectId || "mission-control", assignee: specDraft.assignee || "project-task", acceptance: "", assumptions: "", priority: 50 });
+      setShowSpecIntake(false);
+      setSelectedId(result.task?.id ?? null);
+      await refreshState.refresh("manual");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Spec intake failed");
     }
   };
 
@@ -423,6 +453,14 @@ ${JSON.stringify(payload, null, 2)}`);
             <div className="task-title-actions" aria-label="Task board actions">
               <span className="runtime-refresh-status realtime-status">{refreshStatusLabel}</span>
               <button
+                className={"task-icon-action" + (showSpecIntake ? " on" : "")}
+                aria-label={showSpecIntake ? "Close Spec Kit intake" : "Open Spec Kit intake"}
+                title={showSpecIntake ? "Close Spec Kit intake" : "Spec Kit intake"}
+                onClick={() => setShowSpecIntake((value) => !value)}
+              >
+                <Icon name="skills" size={18} />
+              </button>
+              <button
                 className={"task-icon-action primary" + (showCreate ? " on" : "")}
                 aria-label={showCreate ? "Close add action form" : "Add action"}
                 title={showCreate ? "Close add action form" : "Add action"}
@@ -455,6 +493,27 @@ ${JSON.stringify(payload, null, 2)}`);
               <option value={20}>Medium</option><option value={50}>High</option><option value={80}>Critical</option><option value={0}>Low</option>
             </select>
             <button className="btn primary" onClick={() => void create()}>Add Action</button>
+          </div>
+        </section>
+      )}
+
+      {showSpecIntake && (
+        <section className="task-create task-create-collapsed spec-kit-intake-panel" aria-label="Spec Kit structured requirements intake">
+          <div className="task-create-main">
+            <div className="project-section-head"><b>Spec Kit intake</b><span>Structured artifacts before execution</span></div>
+            <input value={specDraft.title} onChange={(e) => setSpecDraft({ ...specDraft, title: e.target.value })} placeholder="Feature / requirement title…" />
+            <textarea value={specDraft.intent} onChange={(e) => setSpecDraft({ ...specDraft, intent: e.target.value })} placeholder="Intent / business ask. What outcome should Mission Control compile before workers execute?" />
+            <textarea value={specDraft.acceptance} onChange={(e) => setSpecDraft({ ...specDraft, acceptance: e.target.value })} placeholder="Acceptance criteria, one per line…" />
+            <textarea value={specDraft.assumptions} onChange={(e) => setSpecDraft({ ...specDraft, assumptions: e.target.value })} placeholder="Assumptions or [NEEDS CLARIFICATION] items, one per line…" />
+          </div>
+          <div className="task-create-side">
+            <input value={specDraft.projectId} onChange={(e) => setSpecDraft({ ...specDraft, projectId: e.target.value })} placeholder="Project/tenant" />
+            <input value={specDraft.assignee} onChange={(e) => setSpecDraft({ ...specDraft, assignee: e.target.value })} placeholder="Owner/profile" />
+            <select value={specDraft.priority} onChange={(e) => setSpecDraft({ ...specDraft, priority: Number(e.target.value) })}>
+              <option value={20}>Medium</option><option value={50}>High</option><option value={80}>Critical</option><option value={0}>Low</option>
+            </select>
+            <p className="muted">Creates one blocked parent intake plus child cards for clarify → spec → plan → task breakdown. Workers stay blocked until artifacts are reviewed.</p>
+            <button className="btn primary" onClick={() => void createSpecIntake()}>Create Spec Intake</button>
           </div>
         </section>
       )}
@@ -1354,6 +1413,16 @@ function normalizeOutputArtifact(output: DrawerRecord, index: number): MissionAr
     path: rawPath || null,
     url,
     downloadUrl: getString(output, ["downloadUrl", "download_url"], "") || undefined,
+    download_url: getString(output, ["download_url", "downloadUrl"], "") || undefined,
+    runtimeId: getString(output, ["runtimeId", "runtime_id"], "") || undefined,
+    runtime_id: getString(output, ["runtime_id", "runtimeId"], "") || undefined,
+    profileId: getString(output, ["profileId", "profile_id"], "") || undefined,
+    profile_id: getString(output, ["profile_id", "profileId"], "") || undefined,
+    locatorKind: getString(output, ["locatorKind", "locator_kind"], "") || undefined,
+    evidenceHash: getString(output, ["evidenceHash", "evidence_hash"], "") || undefined,
+    evidence_hash: getString(output, ["evidence_hash", "evidenceHash"], "") || undefined,
+    redactionStatus: getString(output, ["redactionStatus", "redaction_status"], "") || undefined,
+    redaction_status: getString(output, ["redaction_status", "redactionStatus"], "") || undefined,
     previewUrl: getString(output, ["previewUrl", "preview_url"], "") || url,
     driveUrl: getString(output, ["driveUrl", "drive_url"], "") || (url?.includes("drive.google.com") ? url : undefined),
     mime,

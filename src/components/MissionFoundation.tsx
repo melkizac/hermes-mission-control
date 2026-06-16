@@ -66,12 +66,25 @@ function artifactQaClass(status?: string) {
   return `qa-${value || "not-run"}`;
 }
 
+function safeArtifactHref(value?: string | null) {
+  if (!value) return undefined;
+  try {
+    const parsed = new URL(value);
+    if (!["http:", "https:"].includes(parsed.protocol)) return undefined;
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
 export function ArtifactCard({ artifact }: { artifact: MissionArtifact }) {
-  const previewHref = artifact.previewUrl || artifact.url || undefined;
-  const downloadHref = artifact.downloadUrl || artifact.url || undefined;
-  const driveHref = artifact.driveUrl || (artifact.url?.includes("drive.google.com") ? artifact.url : undefined);
-  const qaStatus = artifact.qaStatus || "not-run";
+  const previewHref = safeArtifactHref(artifact.previewUrl || artifact.url);
+  const downloadHref = safeArtifactHref(artifact.downloadUrl || artifact.download_url || artifact.url);
+  const driveHref = safeArtifactHref(artifact.driveUrl || (artifact.url?.includes("drive.google.com") ? artifact.url : undefined));
+  const qaStatus = artifact.qaStatus || artifact.redactionStatus || artifact.redaction_status || "not-run";
   const sizeLabel = artifact.sizeBytes ? `${Math.max(1, Math.round(artifact.sizeBytes / 1024))} KB` : "size unknown";
+  const locatorKind = artifact.locatorKind || artifact.kind;
+  const owner = artifact.runtimeId || artifact.runtime_id || artifact.profileId || artifact.profile_id;
 
   return (
     <article className={`mc-artifact-card ${artifact.format || artifact.kind}`} aria-label={`Artifact ${artifact.title}`}>
@@ -85,7 +98,9 @@ export function ArtifactCard({ artifact }: { artifact: MissionArtifact }) {
         {artifact.preview && <pre className="mc-artifact-preview">{artifact.preview}</pre>}
         <div className="mc-artifact-meta">
           <span>{artifactFormatLabel(artifact)}</span>
-          <span>{artifact.version || "v1"}</span>
+          <span>{String(locatorKind).replace(/[_-]/g, " ")}</span>
+          {owner && <span>{owner}</span>}
+          {artifact.evidenceHash || artifact.evidence_hash ? <span>hash verified</span> : <span>{artifact.version || "v1"}</span>}
           <span>{sizeLabel}</span>
           <span>{compactDate(artifact.createdAt)}</span>
         </div>

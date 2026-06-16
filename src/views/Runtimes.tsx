@@ -35,13 +35,20 @@ function evidencePreview(runtime: RuntimeRecord) {
 function runtimeMeta(runtime: RuntimeRecord) {
   const ev = runtime.evidence ?? {};
   const rows: Array<{ label: string; value: string }> = [];
-  if (typeof ev.version === "string" && ev.version !== "unknown") rows.push({ label: "Version", value: ev.version });
+  if (runtime.hermes_version && runtime.hermes_version !== "unknown") rows.push({ label: "Hermes", value: runtime.hermes_version });
+  else if (typeof ev.version === "string" && ev.version !== "unknown") rows.push({ label: "Version", value: ev.version });
+  if (runtime.profile_name || runtime.profile_id) rows.push({ label: "Profile", value: runtime.profile_name ?? runtime.profile_id ?? "—" });
+  if (runtime.dashboard_auth_mode) rows.push({ label: "Auth", value: runtime.dashboard_auth_mode });
   if (typeof ev.command === "string") rows.push({ label: "Command", value: ev.command });
   if (typeof ev.service === "string") rows.push({ label: "Service", value: ev.service });
   if (typeof ev.port === "string" || typeof ev.port === "number") rows.push({ label: "Port", value: String(ev.port) });
   if (typeof ev.home === "string") rows.push({ label: "Home", value: ev.home });
-  if (typeof ev.auth === "string") rows.push({ label: "Auth", value: ev.auth });
+  if (typeof ev.auth === "string" && !runtime.dashboard_auth_mode) rows.push({ label: "Auth", value: ev.auth });
   return rows.slice(0, 4);
+}
+
+function runtimeCapabilities(runtime: RuntimeRecord) {
+  return runtime.capabilities ?? runtime.capability_flags ?? runtime.adapter?.capabilities ?? [];
 }
 
 function formatDate(value?: string | null) {
@@ -123,7 +130,7 @@ export function Runtimes() {
       setError(null);
       const result = await client.createRuntimeConnectorToken({
         label: tokenLabel,
-        allowed_types: ["openclaw", "nanoclaw", "nemoclaw", "codex", "claude-code", "custom"],
+        allowed_types: ["hermes", "openclaw", "nanoclaw", "nemoclaw", "codex", "claude-code", "custom"],
       });
       setNewToken(result);
       setPageTab("tokens");
@@ -224,9 +231,9 @@ export function Runtimes() {
             <InfoTooltip label="About runtime tabs">Use the tabs to move from the decision layer to inventory, token control, event history, and raw adapter evidence only when needed.</InfoTooltip>
             <div className="runtime-checks">
               <b>Visible by default</b>
-              <span>Connected runtimes, status, safe actions, last update, and registration health.</span>
+              <span>Connected runtimes, status, safe actions, native-console handoff, version/profile/auth fields, last update, and registration health.</span>
               <b>Hidden until Advanced</b>
-              <span>Raw evidence JSON, process hints, config paths, and adapter implementation details.</span>
+              <span>Raw evidence JSON, process hints, config paths, gateway URLs, and adapter implementation details.</span>
             </div>
           </article>
           <article className="runtime-overview-card">
@@ -415,13 +422,33 @@ function RuntimeDrawer({ runtime, tab, setTab, onClose }: { runtime: RuntimeReco
             <div className="settings-kv one-col">
               <div><span>Runtime ID</span><b>{runtime.id}</b></div>
               <div><span>Framework</span><b>{runtime.type.replaceAll("_", " ")}</b></div>
+              <div><span>Hermes version</span><b>{runtime.hermes_version ?? "unknown"}</b></div>
+              {runtime.hermes_release_date && <div><span>Hermes release</span><b>{runtime.hermes_release_date}</b></div>}
+              <div><span>Profile</span><b>{runtime.profile_name ?? runtime.profile_id ?? "—"}</b></div>
+              <div><span>Dashboard auth</span><b>{runtime.dashboard_auth_mode ?? "unknown"}</b></div>
+              <div><span>Adapter</span><b>{runtime.adapter?.name ?? "HermesRuntimeAdapter"}</b></div>
               <div><span>Updated</span><b>{formatDate(runtime.updated_at)}</b></div>
               <div><span>Evidence preview</span><b>{evidencePreview(runtime)}</b></div>
             </div>
+            {runtimeCapabilities(runtime).length > 0 && (
+              <>
+                <h3>Capabilities</h3>
+                <div className="skill-chips">
+                  {runtimeCapabilities(runtime).map((capability) => <span key={capability}>{capability.replaceAll("_", " ")}</span>)}
+                </div>
+              </>
+            )}
           </div>
         )}
         {tab === "actions" && (
           <div className="drawer-section">
+            {runtime.native_console_url && (
+              <div className="runtime-native-console-callout">
+                <h3>Native Hermes console</h3>
+                <p className="muted-copy">Open Dashboard/Desktop for runtime-level operation. Mission Control remains the governance, assignment, approval, evidence, and audit layer.</p>
+                <a className="btn dark" href={runtime.native_console_url} target="_blank" rel="noreferrer">Open Native Hermes Console</a>
+              </div>
+            )}
             <h3>Allowed V1 actions</h3>
             <div className="skill-route-list">
               {runtime.safe_actions.map((action) => <span key={action}>{action.replaceAll("_", " ")}</span>)}

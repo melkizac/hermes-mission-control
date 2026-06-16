@@ -36,6 +36,7 @@ Rollback:
 
 ### Checks run
 
+- [ ] `npm run check:feature-contract`
 - [ ] `npm run build`
 - [ ] Python/static tests, if applicable:
 - [ ] Browser/DOM smoke for touched routes, if applicable:

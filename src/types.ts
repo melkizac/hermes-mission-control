@@ -197,13 +197,23 @@ export interface EvidenceRecord {
 
 export interface MissionArtifact {
   id: string;
-  kind: MissionArtifactKind;
+  kind: MissionArtifactKind | "local_path" | "hermes_managed_file" | "runtime_file" | "external_url" | string;
+  locatorKind?: "local_path" | "hermes_managed_file" | "runtime_file" | "external_url" | string;
   title: string;
   summary?: string;
   filename?: string;
   path?: string | null;
   url?: string | null;
   downloadUrl?: string | null;
+  download_url?: string | null;
+  runtimeId?: string | null;
+  runtime_id?: string | null;
+  profileId?: string | null;
+  profile_id?: string | null;
+  evidenceHash?: string | null;
+  evidence_hash?: string | null;
+  redactionStatus?: string;
+  redaction_status?: string;
   previewUrl?: string | null;
   driveUrl?: string | null;
   mime?: string;
@@ -322,6 +332,20 @@ export interface DelegateWorkMutationResponse {
   task?: Record<string, unknown>;
   error?: string;
 }
+
+export interface SpecKitIntakeResponse {
+  ok: boolean;
+  intake?: {
+    id: string;
+    projectId: string;
+    artifactCount: number;
+    childTaskIds: string[];
+  };
+  task?: BoardTask;
+  child_tasks?: BoardTask[];
+  error?: string;
+}
+
 
 export interface WorkflowStep {
   id: string;
@@ -943,6 +967,12 @@ export interface AutomationRoutine {
   workspace_id?: string | null;
   owner_user_id?: string | null;
   runtime_id?: string | null;
+  profile_id?: string | null;
+  scheduler_source?: string | null;
+  hermes_cron_job_id?: string | null;
+  delivery_target?: string | null;
+  duplicate_execution_guard?: string | null;
+  last_run_evidence?: Record<string, unknown>;
   agent_id?: string | null;
   agent_class?: string | null;
   connector_dependencies?: Array<{ connector_id: string; action: string }>;
@@ -1078,6 +1108,12 @@ export interface BoardRun {
   profile?: string | null;
   step_key?: string | null;
   status: string;
+  async_status?: string | null;
+  completion_cause?: string | null;
+  runtime_id?: string | null;
+  profile_id?: string | null;
+  spawned_by?: string | null;
+  metadata?: Record<string, unknown>;
   started_at: string;
   ended_at?: string | null;
   outcome?: string | null;
@@ -1103,6 +1139,12 @@ export interface RunTreeRunNode {
   toolsets?: string[];
   step_key?: string | null;
   status: string;
+  async_status?: string | null;
+  completion_cause?: string | null;
+  runtime_id?: string | null;
+  profile_id?: string | null;
+  spawned_by?: string | null;
+  metadata?: Record<string, unknown>;
   outcome?: string | null;
   started_at?: string | null;
   ended_at?: string | null;
@@ -1841,6 +1883,25 @@ export interface SecondBrainHealthResponse {
   semantic_search: { status: string; chunks: number };
 }
 
+export type DashboardAuthMode = "loopback" | "basic" | "oidc" | "portal" | "token" | "unknown";
+
+export type RuntimeCapabilityFlag =
+  | "profiles"
+  | "managed_files"
+  | "kanban"
+  | "cron"
+  | "async_delegation"
+  | "dashboard_auth"
+  | "approvals"
+  | "remote_artifacts"
+  | string;
+
+export interface HermesRuntimeAdapterRecord {
+  name: "HermesRuntimeAdapter" | string;
+  version?: string;
+  capabilities?: RuntimeCapabilityFlag[];
+}
+
 export interface RuntimeRecord {
   id: string;
   name: string;
@@ -1853,6 +1914,17 @@ export interface RuntimeRecord {
     controllable: boolean;
   };
   evidence: Record<string, unknown>;
+  native_console_url?: string | null;
+  remote_gateway_url?: string | null;
+  dashboard_auth_mode?: DashboardAuthMode | string | null;
+  hermes_version?: string | null;
+  hermes_release_date?: string | null;
+  profile_id?: string | null;
+  profile_name?: string | null;
+  console_mode_policy?: "supervise" | "manage" | "operate_as_user" | string | null;
+  capabilities?: RuntimeCapabilityFlag[];
+  capability_flags?: RuntimeCapabilityFlag[];
+  adapter?: HermesRuntimeAdapterRecord;
   safe_actions: string[];
   updated_at: string;
 }
