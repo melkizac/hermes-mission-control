@@ -80,6 +80,7 @@ export interface HermesClient {
   linkProjectChat(input: { project_id: string; session_id: string; relationship_type?: string; summary?: string }): Promise<ProjectChatMutationResponse>;
   unlinkProjectChat(input: { project_id: string; session_id: string }): Promise<ProjectChatMutationResponse>;
   confirmProjectChatSuggestion(input: { project_id: string; session_id: string; relationship_type?: string; summary?: string }): Promise<ProjectChatMutationResponse>;
+  updateProjectStatus(projectId: string, status: string): Promise<{ ok: boolean; project_id: string; status: string; updated_at?: string; error?: string }>;
   getProjectBrief(projectId: string): Promise<ProjectBriefResponse>;
   createProjectTask(projectId: string, input: Partial<{ title: string; body: string; assignee: string; priority: number; skills: string[] }>): Promise<BoardTaskMutationResponse>;
   getSecondBrain(filters?: { q?: string; section?: string }): Promise<SecondBrainResponse>;

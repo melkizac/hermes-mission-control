@@ -278,10 +278,15 @@ export function TaskBoard() {
         return counts;
       }, {});
     const representedScopedIds = new Set<string>();
+    const archivedScopedIds = new Set<string>();
     const optionByValue = new Map<string, { value: string; label: string; count: number; canonical: boolean }>();
 
     for (const item of projectOptions) {
       const aliases = [item.id, ...projectIdAliases(item.id)];
+      if ((item.status || "").toLowerCase() === "archived") {
+        aliases.forEach((alias) => { if (scopedIdSet.has(alias)) archivedScopedIds.add(alias); });
+        continue;
+      }
       const scopedAlias = aliases.find((alias) => scopedIdSet.has(alias));
       const value = scopedAlias || item.id;
       const count = aliases.reduce((total, alias) => total + (scopedCounts[alias] ?? 0), 0);
@@ -291,7 +296,7 @@ export function TaskBoard() {
     }
 
     for (const id of scopedIds) {
-      if (representedScopedIds.has(id)) continue;
+      if (representedScopedIds.has(id) || archivedScopedIds.has(id)) continue;
       const count = scopedCounts[id] ?? 0;
       const suffix = board ? ` · ${count} on board` : ` · ${count} tasks`;
       optionByValue.set(id, { value: id, label: `${projectNameById.get(id) || id}${suffix}`, count, canonical: false });

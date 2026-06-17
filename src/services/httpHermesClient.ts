@@ -520,6 +520,13 @@ export class HttpHermesClient implements HermesClient {
     return request<ProjectChatMutationResponse>("/api/project-chats/confirm-suggestion", { method: "POST", body: JSON.stringify(input) });
   }
 
+  async updateProjectStatus(projectId: string, status: string): Promise<{ ok: boolean; project_id: string; status: string; updated_at?: string; error?: string }> {
+    return request<{ ok: boolean; project_id: string; status: string; updated_at?: string; error?: string }>(`/api/projects/${encodeURIComponent(projectId)}/status`, {
+      method: "POST",
+      body: JSON.stringify({ status }),
+    });
+  }
+
   async getProjectBrief(projectId: string): Promise<ProjectBriefResponse> {
     return request<ProjectBriefResponse>(`/api/projects/${encodeURIComponent(projectId)}/brief`);
   }
