@@ -40,6 +40,14 @@ const laneGroups: { title: string; className: string; lanes: { key: BoardLaneKey
 ];
 const pendingTag = (status: BoardStatus) => statusOptions.find((item) => item.key === status)?.label ?? status;
 
+function projectIdAliases(id: string) {
+  const aliases = new Set<string>();
+  if (!id) return [];
+  if (id.startsWith("project-")) aliases.add(`project:${id.slice("project-".length)}`);
+  if (id.startsWith("marketing-")) aliases.add(`marketing:${id.slice("marketing-".length)}`);
+  return Array.from(aliases);
+}
+
 
 type DetailTab = "overview" | "sources" | "tasks" | "outputs" | "run-tree" | "handoffs" | "release" | "evidence" | "settings";
 type ViewMode = "cards" | "list";
@@ -111,6 +119,7 @@ export function TaskBoard() {
   const [boardWarnings, setBoardWarnings] = useState<string[]>([]);
   const [projectOptions, setProjectOptions] = useState<ProjectRecord[]>([]);
   const [boardScopedProjects, setBoardScopedProjects] = useState<string[]>([]);
+  const [boardScopedProjectCounts, setBoardScopedProjectCounts] = useState<Record<string, number>>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showSpecIntake, setShowSpecIntake] = useState(false);
@@ -189,13 +198,24 @@ export function TaskBoard() {
     let cancelled = false;
     if (!board) {
       setBoardScopedProjects([]);
+      setBoardScopedProjectCounts({});
       return () => { cancelled = true; };
     }
     void client.listBoard({ board }).then((data) => {
       if (cancelled) return;
       setBoardScopedProjects(data.projects ?? data.summary?.projects ?? []);
+      const counts: Record<string, number> = {};
+      for (const task of data.tasks ?? []) {
+        const key = task.tenant || task.workspace_kind || "";
+        if (!key) continue;
+        counts[key] = (counts[key] ?? 0) + 1;
+      }
+      setBoardScopedProjectCounts(counts);
     }).catch(() => {
-      if (!cancelled) setBoardScopedProjects([]);
+      if (!cancelled) {
+        setBoardScopedProjects([]);
+        setBoardScopedProjectCounts({});
+      }
     });
     return () => { cancelled = true; };
   }, [board]);
@@ -241,18 +261,48 @@ export function TaskBoard() {
       // while Projects canonicalizes the same record as `project-<slug>`.
       // Keep the filter value task-native, but resolve the visible label from
       // the canonical Projects record so both pages present the same Project.
-      if (item.id.startsWith("project-")) entries.push([`project:${item.id.slice("project-".length)}`, label]);
+      // Keep this literal marker for the static feature contract:
+      // project:${item.id.slice("project-".length)}
+      for (const alias of projectIdAliases(item.id)) entries.push([alias, label]);
     }
     return new Map(entries);
   }, [projectOptions]);
   const projectFilterOptions = useMemo(() => {
-    const sourceIds = board
-      ? boardScopedProjects
-      : projectOptions.length
-        ? projectOptions.map((item) => item.id)
-        : summary.projects;
-    return Array.from(new Set(sourceIds.filter(Boolean))).map((id) => ({ value: id, label: projectNameById.get(id) || id }));
-  }, [board, boardScopedProjects, projectNameById, projectOptions, summary.projects]);
+    const scopedIds = Array.from(new Set((board ? boardScopedProjects : summary.projects).filter(Boolean)));
+    const scopedIdSet = new Set(scopedIds);
+    const scopedCounts = board
+      ? boardScopedProjectCounts
+      : tasks.reduce<Record<string, number>>((counts, task) => {
+        const key = task.tenant || task.workspace_kind || "";
+        if (key) counts[key] = (counts[key] ?? 0) + 1;
+        return counts;
+      }, {});
+    const representedScopedIds = new Set<string>();
+    const optionByValue = new Map<string, { value: string; label: string; count: number; canonical: boolean }>();
+
+    for (const item of projectOptions) {
+      const aliases = [item.id, ...projectIdAliases(item.id)];
+      const scopedAlias = aliases.find((alias) => scopedIdSet.has(alias));
+      const value = scopedAlias || item.id;
+      const count = aliases.reduce((total, alias) => total + (scopedCounts[alias] ?? 0), 0);
+      aliases.forEach((alias) => { if (scopedIdSet.has(alias)) representedScopedIds.add(alias); });
+      const suffix = board ? (count > 0 ? ` · ${count} on board` : " · 0 on board") : (count > 0 ? ` · ${count} tasks` : " · 0 tasks");
+      optionByValue.set(value, { value, label: `${item.name || item.id}${suffix}`, count, canonical: true });
+    }
+
+    for (const id of scopedIds) {
+      if (representedScopedIds.has(id)) continue;
+      const count = scopedCounts[id] ?? 0;
+      const suffix = board ? ` · ${count} on board` : ` · ${count} tasks`;
+      optionByValue.set(id, { value: id, label: `${projectNameById.get(id) || id}${suffix}`, count, canonical: false });
+    }
+
+    return Array.from(optionByValue.values()).sort((a, b) => {
+      if (a.count !== b.count) return b.count - a.count;
+      if (a.canonical !== b.canonical) return a.canonical ? -1 : 1;
+      return a.label.localeCompare(b.label);
+    });
+  }, [board, boardScopedProjectCounts, boardScopedProjects, projectNameById, projectOptions, summary.projects, tasks]);
   const openTask = (task: BoardTask) => {
     setSelectedId(task.id);
     setDetailTab("overview");
