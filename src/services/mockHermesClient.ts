@@ -604,8 +604,13 @@ export class MockHermesClient implements HermesClient {
       cost_source: "mock",
       billing_provider: "mock",
       preview: agent.activity,
+      run_type: "worker",
+      run_type_label: "Worker Run",
+      ui_bucket: "run",
+      origin: "Mock worker",
+      human_initiated: false,
     })));
-    return { sessions, sources: ["mock"], summary: { total: sessions.length, running: 0, tool_calls: 0, tokens: 0, estimated_cost_usd: 0 } };
+    return { sessions, sources: ["mock"], run_types: ["worker"], summary: { total: sessions.length, shown: sessions.length, running: 0, tool_calls: 0, tokens: 0, estimated_cost_usd: 0, by_run_type: { worker: sessions.length }, by_bucket: { run: sessions.length } } };
   }
 
   async getAuditSession(id: string): Promise<AuditSessionDetailResponse> {

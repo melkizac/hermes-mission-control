@@ -7,6 +7,18 @@ import { Icon } from "../components/Icon";
 
 const client = new HttpHermesClient();
 
+const runTypeLabels: Record<string, string> = {
+  chat: "Chat",
+  api_chat: "API Chat",
+  scheduled: "Scheduled Run",
+  api: "API Run",
+  worker: "Worker Run",
+  delegation: "Child Run",
+  event: "Event Run",
+  system: "System Event",
+  run: "Run",
+};
+
 type AuditTab = "summary" | "timeline";
 
 function compactNumber(value: number | undefined | null) {
@@ -38,6 +50,7 @@ export function AuditLog() {
   const [tab, setTab] = useState<AuditTab>("summary");
   const [q, setQ] = useState("");
   const [source, setSource] = useState("");
+  const [runType, setRunType] = useState("");
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +61,7 @@ export function AuditLog() {
       try {
         setLoading(true);
         const [next, runHistory] = await Promise.all([
-          client.listAuditSessions({ q, source, limit: 80 }),
+          client.listAuditSessions({ q, source, runType, limit: 80 }),
           client.listWorkspaceRuns({ q }),
         ]);
         if (!alive) return;
@@ -66,7 +79,7 @@ export function AuditLog() {
       alive = false;
       window.clearTimeout(timer);
     };
-  }, [q, source]);
+  }, [q, source, runType]);
 
   useEffect(() => {
     if (!selected) {
@@ -123,10 +136,10 @@ export function AuditLog() {
     <div className="audit-page audit-drawer-first scroll">
       <header className="audit-hero">
         <div>
-          <span className="stub-tag">AUDIT TRAIL</span>
-          <h1>Audit Log</h1>
+          <span className="stub-tag">RUNS / ACTIVITY</span>
+          <h1>Runs</h1>
           <p>
-            Full-width session history with slide-over run trace details. Click any session to inspect metadata and timeline without shrinking the list.
+            Operational ledger for chats, scheduled automation, API calls, workers, child runs, webhooks, and system events. Human conversations stay on Agent Chat; raw Hermes sessions remain available here for debugging.
           </p>
         </div>
         <button className="task-icon-action dark" aria-label="Refresh audit log" title="Refresh audit log" onClick={() => window.location.reload()}>
@@ -135,7 +148,7 @@ export function AuditLog() {
       </header>
 
       <section className="audit-metrics">
-        <Metric label="Sessions" value={summary?.total ?? sessions.length} sub={`${summary?.running ?? 0} running`} />
+        <Metric label="Runs" value={summary?.shown ?? sessions.length} sub={`${summary?.running ?? 0} running · ${summary?.total ?? 0} raw traces`} />
         <Metric label="Tool calls" value={compactNumber(summary?.tool_calls)} sub="Auditable tool activity" />
         <Metric label="Tokens" value={compactNumber(summary?.tokens)} sub="Input + output + cache" />
         <Metric label="Est. cost" value={money(summary?.estimated_cost_usd)} sub="From Hermes billing fields" />
@@ -154,7 +167,14 @@ export function AuditLog() {
             {(data?.sources ?? []).map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </label>
-        <div className="audit-filter-note">No raw secrets are exposed by default. Message bodies are previewed and server-redacted.</div>
+        <label>
+          <span>Run type</span>
+          <select value={runType} onChange={(e) => setRunType(e.target.value)}>
+            <option value="">All run types</option>
+            {(data?.run_types ?? ["chat", "api_chat", "scheduled", "api", "worker", "delegation", "event", "system", "run"]).map((type) => <option key={type} value={type}>{runTypeLabels[type] || type}</option>)}
+          </select>
+        </label>
+        <div className="audit-filter-note">Terminology: Chat = human-initiated conversation. Run = scheduled/API/worker/event execution. Tool outputs and files are Evidence.</div>
       </section>
 
       {error && <div className="audit-error">{error}</div>}
@@ -170,10 +190,10 @@ export function AuditLog() {
 
       <section className="audit-list audit-list-full">
         <div className="audit-panel-head">
-          <span>Run/session history</span>
+          <span>Run history</span>
           <small>{loading ? "Loading…" : `${sessions.length} shown`}</small>
         </div>
-        {sessions.length === 0 && !loading && <div className="empty big">No audit sessions found for this filter.</div>}
+        {sessions.length === 0 && !loading && <div className="empty big">No runs found for this filter.</div>}
         {sessions.map((session) => (
           <SessionCard
             key={session.id}
@@ -239,13 +259,13 @@ function SessionCard({ session, active, onClick }: { session: AuditSession; acti
       <div className="audit-session-main">
         <div className="audit-session-top">
           <b>{session.title}</b>
-          <span className={"tag " + (session.status === "running" ? "good" : "muted")}>{session.status}</span>
+          <span className={"tag " + (session.status === "running" ? "good" : "muted")}>{session.run_type_label || runTypeLabels[session.run_type || ""] || session.status}</span>
         </div>
         <p>{session.preview || "No preview available."}</p>
         <small className="mono">{session.id}</small>
       </div>
       <div className="audit-session-meta">
-        <span>{session.source}</span>
+        <span>{session.origin || session.source} · {session.status}</span>
         <small>{formatSingaporeTime(session.started_at)}</small>
         <em>{session.message_count} msgs · {session.tool_call_count} tools · {compactNumber(session.total_tokens)} tok</em>
       </div>
@@ -265,7 +285,7 @@ function AuditDrawer({ session, detail, detailLoading, tab, setTab, onClose }: {
     <SlideOverDrawer
       title={session.title}
       subtitle={<span className="mono">{session.id}</span>}
-      eyebrow={session.status}
+      eyebrow={session.run_type_label || session.status}
       statusClassName={"tag " + (session.status === "running" ? "good" : "muted")}
       onClose={onClose}
       closeLabel="Close audit details"
@@ -278,6 +298,8 @@ function AuditDrawer({ session, detail, detailLoading, tab, setTab, onClose }: {
       {tab === "summary" && (
         <>
           <div className="audit-kv">
+            <Info label="Run type" value={session.run_type_label || runTypeLabels[session.run_type || ""] || "Run"} />
+            <Info label="Origin" value={session.origin || session.source} />
             <Info label="Source" value={session.source} />
             <Info label="Model" value={session.model} />
             <Info label="Started" value={formatSingaporeTime(session.started_at)} />

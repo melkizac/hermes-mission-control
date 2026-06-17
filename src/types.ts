@@ -706,12 +706,17 @@ export interface ProjectChatSession {
   kanban_tenant?: string;
   kanban_board?: string;
   project_score?: number;
+  run_type?: string;
+  run_type_label?: string;
+  ui_bucket?: string;
+  origin?: string;
+  human_initiated?: boolean;
 }
 
 export interface ProjectChatResponse {
-  projects: Array<{ id: string; name: string; sessions: number; owner?: string; status?: string; kanban_tenant?: string; kanban_board?: string }>;
+  projects: Array<{ id: string; name: string; sessions: number; chats?: number; owner?: string; status?: string; kanban_tenant?: string; kanban_board?: string }>;
   sessions: ProjectChatSession[];
-  summary: { projects: number; sessions: number; canonical_links?: number; heuristic_links?: number };
+  summary: { projects: number; sessions: number; chats?: number; canonical_links?: number; heuristic_links?: number };
   error?: string;
 }
 
@@ -866,6 +871,11 @@ export interface AuditSession {
   cost_source?: string | null;
   billing_provider?: string | null;
   preview: string;
+  run_type?: string;
+  run_type_label?: string;
+  ui_bucket?: string;
+  origin?: string;
+  human_initiated?: boolean;
 }
 
 export interface AuditMessage {
@@ -883,15 +893,19 @@ export interface AuditMessage {
 
 export interface AuditSummary {
   total: number;
+  shown?: number;
   running: number;
   tool_calls: number;
   tokens: number;
   estimated_cost_usd: number;
+  by_run_type?: Record<string, number>;
+  by_bucket?: Record<string, number>;
 }
 
 export interface AuditSessionListResponse {
   sessions: AuditSession[];
   sources: string[];
+  run_types?: string[];
   summary: AuditSummary;
   error?: string;
 }
@@ -1643,6 +1657,11 @@ export interface ProjectSessionItem {
   linked_by?: string;
   linked_at?: string;
   link_source?: string;
+  run_type?: string;
+  run_type_label?: string;
+  ui_bucket?: string;
+  origin?: string;
+  human_initiated?: boolean;
 }
 
 export interface ProjectActivityItem {

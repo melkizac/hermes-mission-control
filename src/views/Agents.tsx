@@ -13,7 +13,7 @@ async function fetchProjectChats(): Promise<ProjectChatResponse> {
     async () => {
       const res = await fetch(`${window.location.protocol}//${window.location.host}/api/project-chats`, { credentials: "include" });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : "Failed to load project chat sessions");
+      if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : "Failed to load project chats");
       return data as ProjectChatResponse;
     },
     { staleAfterMs: 60_000 },
@@ -177,7 +177,7 @@ export function Agents() {
         })
         .catch((err) => {
           if (!alive) return;
-          setProjectChatError(err instanceof Error ? err.message : "Could not load project sessions");
+          setProjectChatError(err instanceof Error ? err.message : "Could not load project chats");
         })
         .finally(() => {
           if (alive) setProjectChatsHydrating(false);

@@ -101,7 +101,7 @@ const adminConsoleGroups: NavGroup[] = [
   {
     label: "Governance",
     items: [
-      { key: "audit", label: "Global Audit Log", icon: "audit" },
+      { key: "audit", label: "Runs / Activity", icon: "audit" },
       { key: "costs", label: "Costs / Usage", icon: "costs" },
       { key: "approval-policy", label: "Approval Rules", icon: "approvals" },
     ],

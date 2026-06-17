@@ -35,7 +35,7 @@ export interface HermesClient {
   listInbox(filters?: { q?: string; status?: InboxStatus | "all" | "" }): Promise<InboxResponse>;
   inboxAction(id: string, action: InboxAction): Promise<InboxMutationResponse>;
   updateInboxItem(id: string, input: Partial<{ title: string; description: string; body: string; risk: string; destination: string }>): Promise<InboxMutationResponse>;
-  listAuditSessions(filters?: { q?: string; source?: string; limit?: number }): Promise<AuditSessionListResponse>;
+  listAuditSessions(filters?: { q?: string; source?: string; runType?: string; limit?: number }): Promise<AuditSessionListResponse>;
   getAuditSession(id: string): Promise<AuditSessionDetailResponse>;
   listAutomations(filters?: { q?: string; state?: string }): Promise<AutomationsResponse>;
   listFunnelTargets(filters?: { q?: string }): Promise<FunnelTargetsResponse>;
