@@ -123,6 +123,7 @@ input, select, textarea { font-family: inherit; }
 }
 .hermes-desktop-admin-bar h1 { font-size: 18px; letter-spacing: -.02em; margin-top: 2px; }
 .hermes-desktop-admin-bar .eyebrow { color: rgba(255,255,255,.56); }
+.hermes-desktop-subtitle { margin-top: 4px; max-width: 720px; color: rgba(226,232,240,.72); font-size: 12px; line-height: 1.35; }
 .hermes-desktop-admin-actions { display: flex; align-items: center; gap: 9px; min-width: 0; flex-wrap: wrap; justify-content: flex-end; }
 .hermes-desktop-status,
 .hermes-desktop-meta,

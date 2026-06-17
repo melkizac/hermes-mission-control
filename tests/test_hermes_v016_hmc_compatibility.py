@@ -48,6 +48,18 @@ def test_v016_runtime_registration_exposes_native_console_and_adapter_capabiliti
     assert "open_native_console" in runtime["safe_actions"]
 
 
+def test_hmc_embeds_vps_hermes_desktop_from_admin_runtime_nav():
+    app = Path("/opt/hermes-mission-control/source/src/App.tsx").read_text(encoding="utf-8")
+    nav = Path("/opt/hermes-mission-control/source/src/components/NavRail.tsx").read_text(encoding="utf-8")
+    desktop = Path("/opt/hermes-mission-control/source/src/views/HermesDesktopAdmin.tsx").read_text(encoding="utf-8")
+
+    assert '{ key: "desktop-gateway", label: "Hermes Desktop", icon: "dashboard" }' in nav
+    assert 'view === "desktop-gateway" && <HermesDesktopAdmin />' in app
+    assert 'const desktopGatewayPath = "/desktop-gateway/sessions"' in desktop
+    assert 'className="hermes-desktop-frame"' in desktop
+    assert 'HMC remains the governance, approvals, evidence, and audit layer.' in desktop
+
+
 def test_v016_runtime_artifact_locator_normalizes_remote_and_external_artifacts(tmp_path, monkeypatch):
     app = load_app(tmp_path, monkeypatch)
 
