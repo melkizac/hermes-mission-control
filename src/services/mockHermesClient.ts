@@ -987,6 +987,11 @@ export class MockHermesClient implements HermesClient {
     return { ok: true };
   }
 
+  async updateProjectStatus(_projectId: string, status: string): Promise<{ ok: boolean; project_id: string; status: string; updated_at?: string }> {
+    await delay(50);
+    return { ok: true, project_id: _projectId, status, updated_at: new Date().toISOString() };
+  }
+
   async getProjectBrief(): Promise<ProjectBriefResponse> {
     await delay(90);
     return { ok: false, error: "Mock projects are read-only" };

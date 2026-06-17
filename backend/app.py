@@ -7992,6 +7992,53 @@ def clear_projects_cache():
         _PROJECTS_CACHE['payload'] = None
 
 
+PROJECT_STATUS_VALUES = {'active', 'paused', 'archived', 'done'}
+
+
+def ensure_project_status_overrides_table():
+    con = auth_db_connect()
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS project_status_overrides (
+            project_id TEXT PRIMARY KEY,
+            status TEXT NOT NULL,
+            updated_by TEXT DEFAULT '',
+            updated_at INTEGER NOT NULL
+        )
+    """)
+    con.commit()
+    return con
+
+
+def project_status_overrides():
+    try:
+        con = ensure_project_status_overrides_table()
+        rows = con.execute('SELECT project_id, status, updated_by, updated_at FROM project_status_overrides').fetchall()
+        con.close()
+        return {r['project_id']: {'status': r['status'], 'updated_by': r['updated_by'] or '', 'updated_at': r['updated_at']} for r in rows}
+    except Exception:
+        return {}
+
+
+def project_status_payload(project_id, payload, identity=None):
+    pid = project_slug(project_id)
+    status = safe_id(payload.get('status') or '')
+    if not pid:
+        return {'ok': False, 'error': 'project_id is required'}, 400
+    if status not in PROJECT_STATUS_VALUES:
+        return {'ok': False, 'error': f"status must be one of: {', '.join(sorted(PROJECT_STATUS_VALUES))}"}, 400
+    actor = project_chat_actor(identity)
+    now = int(time.time())
+    con = ensure_project_status_overrides_table()
+    con.execute("""
+        INSERT INTO project_status_overrides (project_id, status, updated_by, updated_at)
+        VALUES (?,?,?,?)
+        ON CONFLICT(project_id) DO UPDATE SET status=excluded.status, updated_by=excluded.updated_by, updated_at=excluded.updated_at
+    """, (pid, status, actor, now))
+    con.commit(); con.close()
+    clear_projects_cache()
+    return {'ok': True, 'project_id': pid, 'status': status, 'updated_by': actor, 'updated_at': iso(now)}, 200
+
+
 def project_chat_actor(identity):
     user = (identity or {}).get('user') or {}
     return user.get('email') or user.get('name') or (identity or {}).get('email') or 'operator'
@@ -9373,6 +9420,7 @@ def list_projects(filters=None, identity=None):
             if cached is not None and now < float(_PROJECTS_CACHE.get('expires_at') or 0):
                 return copy.deepcopy(cached)
     projects = {}
+    status_overrides = project_status_overrides()
     plan = APP_ROOT / 'source' / '.hermes' / 'plans' / '2026-05-30_233542-paperclip-functions-into-hermes-mission-control.md'
     if plan.exists():
         title, summary = md_title_and_summary(plan)
@@ -9473,6 +9521,11 @@ def list_projects(filters=None, identity=None):
         proj['progress'] = int((proj['actions']['done'] / total_actions) * 100) if total_actions else min(95, 35 + len(proj.get('knowledge', []))*10 + len(proj.get('artifacts', []))*2)
         if total_actions and open_count == 0 and proj['actions']['done']:
             proj['status'] = 'done'
+        override = status_overrides.get(project_slug(proj.get('id') or ''))
+        if override:
+            proj['status'] = override.get('status') or proj.get('status')
+            proj['status_updated_by'] = override.get('updated_by') or ''
+            proj['status_updated_at'] = iso(override.get('updated_at'))
         proj['health'] = max(35, min(98, 82 - proj['actions']['blocked']*12 + proj['actions']['done']*2))
         if proj['actions']['blocked']:
             proj['risks'].append({'label': 'Blocked actions', 'severity': 'high', 'count': proj['actions']['blocked']})
@@ -17955,6 +18008,8 @@ def demo_response_for_mutation(path, payload=None, method='POST'):
         return {'ok': True, 'token': {'id': 'demo-token', 'label': str(payload.get('label') or 'Demo connector token'), 'allowed_types': payload.get('allowed_types') or ['openclaw','nanoclaw','nemoclaw'], 'status': 'active', 'created_at': demo_now()}, 'secret': 'hmc_rt_demo_copy_me', 'warning': 'Demo token only works in demo mode.'}, 201
     if path.startswith('/api/runtime-connect/tokens/') and path.endswith('/revoke'):
         return {'ok': True, 'id': path.split('/')[3], 'status': 'revoked'}, 200
+    if path.startswith('/api/projects/') and path.endswith('/status'):
+        return {'ok': True, 'demo': True, 'project_id': path.strip('/').split('/')[2], 'status': safe_id(payload.get('status') or 'active'), 'updated_at': demo_now()}, 200
     if path.startswith('/api/projects/') and path.endswith('/tasks'): return {'ok':True,'task':demo_board_tasks()[0]}, 200
     if path.startswith('/api/workflows/') and path.endswith('/launch'):
         workflow_id = safe_id(path.strip('/').split('/')[2] if len(path.strip('/').split('/')) >= 3 else '')
@@ -19763,6 +19818,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(result, status)
         if parsed.path == '/api/project-chats/confirm-suggestion':
             result, status = project_chat_confirm_suggestion_payload(payload, identity)
+            return self.send_json(result, status)
+        if parsed.path.startswith('/api/projects/') and parsed.path.endswith('/status'):
+            parts = parsed.path.strip('/').split('/')
+            result, status = project_status_payload(parts[2] if len(parts) >= 3 else '', payload, identity)
             return self.send_json(result, status)
         if parsed.path.startswith('/api/user/agents/') and parsed.path.endswith('/select'):
             parts = parsed.path.strip('/').split('/')

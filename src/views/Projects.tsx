@@ -8,6 +8,12 @@ import { InfoTooltip } from "../components/InfoTooltip";
 
 const client = new HttpHermesClient();
 type Tab = "overview" | "workflow" | "operations" | "knowledge" | "activity" | "chats";
+const projectStatusOptions = [
+  { value: "active", label: "Active", helper: "Show in Task Board filters" },
+  { value: "paused", label: "Paused", helper: "Visible but de-emphasized" },
+  { value: "done", label: "Done", helper: "Completed but still filterable" },
+  { value: "archived", label: "Archived", helper: "Hide from Task Board Project filter" },
+];
 
 function pct(value: number) {
   return `${Math.max(0, Math.min(100, Math.round(value || 0)))}%`;
@@ -318,6 +324,26 @@ export function Projects() {
     }
   };
 
+  const updateProjectStatus = async (project: ProjectRecord, status: string) => {
+    if (!status || status === project.status) return;
+    setBusy(`status:${project.id}`);
+    setError(null);
+    setNotice(null);
+    const previousStatus = project.status;
+    setProjects((current) => current.map((item) => item.id === project.id ? { ...item, status } : item));
+    try {
+      const result = await client.updateProjectStatus(project.id, status);
+      if (!result.ok) throw new Error(result.error || "Unable to update project status");
+      setNotice(`${project.name} marked ${status}. ${status === "archived" ? "It remains visible here but is hidden from Task Board Project filters." : ""}`.trim());
+      await load("manual");
+    } catch (err) {
+      setProjects((current) => current.map((item) => item.id === project.id ? { ...item, status: previousStatus } : item));
+      setError(err instanceof Error ? err.message : "Unable to update project status");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const filteredChats = useMemo(() => {
     const needle = chatQ.trim().toLowerCase();
     if (!selected) return [];
@@ -416,7 +442,12 @@ export function Projects() {
             </div>
 
             <div className="project-detail-kv">
-              <div><span>Status</span><b>{selected.status}</b></div>
+              <div>
+                <span>Status</span>
+                <select className="project-status-selector" value={selected.status || "active"} disabled={busy === `status:${selected.id}`} onChange={(event) => void updateProjectStatus(selected, event.target.value)} aria-label={`Project status for ${selected.name}`}>
+                  {projectStatusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </div>
               <div><span>Type</span><b>{selected.kind || "Project"}</b></div>
               <div><span>Updated</span><b>{formatSingaporeTime(selected.updated_at)}</b></div>
             </div>
