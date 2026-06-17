@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { GuardPolicy, ProjectOperatingLink, ProjectRecord, ProjectRiskItem } from "../types";
+import type { GuardPolicy, ProjectOperatingLink, ProjectRecord, ProjectRiskItem, ProjectSessionItem } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { queryCacheEventName } from "../services/queryCache";
 import { formatSingaporeTime } from "../utils/time";
@@ -34,6 +34,49 @@ function recency(project: ProjectRecord) {
   if (project.activity?.[0]?.at) return `Latest: ${formatSingaporeTime(project.activity[0].at)}`;
   if (project.updated_at) return `Updated: ${formatSingaporeTime(project.updated_at)}`;
   return "No recent signal";
+}
+
+function chatLinkLabel(item: ProjectSessionItem) {
+  if (item.link_source === "canonical") return "Canonical";
+  if (item.link_source === "suggested" || item.link_source === "heuristic") return "Suggested";
+  return item.link_source || "Unlinked";
+}
+
+function chatConfidence(item: ProjectSessionItem) {
+  if (item.link_source === "canonical") return "100%";
+  if (typeof item.confidence === "number") return `${Math.round(item.confidence * 100)}%`;
+  if (typeof item.project_score === "number") return `${Math.min(95, Math.max(10, item.project_score * 10))}%`;
+  return "—";
+}
+
+function copySessionLink(item: ProjectSessionItem) {
+  const text = `hmc://chat/${item.id}`;
+  if (navigator?.clipboard?.writeText) void navigator.clipboard.writeText(text);
+}
+
+function ProjectChatRow({ item, project, busy, onConfirm, onUnlink }: { item: ProjectSessionItem; project: ProjectRecord; busy: string | null; onConfirm: (item: ProjectSessionItem) => void; onUnlink: (item: ProjectSessionItem) => void }) {
+  const canonical = item.link_source === "canonical";
+  const busyKey = `${project.id}:${item.id}`;
+  return (
+    <div className="project-chat-row">
+      <div className="project-chat-main">
+        <b>{item.title}</b>
+        <span>{item.origin || item.source} · {item.model} · {formatSingaporeTime(item.started_at)}</span>
+        <small>{item.messages} messages · {item.tools} tools · {item.tokens.toLocaleString()} tokens</small>
+        {item.summary && <p>{item.summary}</p>}
+      </div>
+      <div className="project-chat-meta">
+        <span className={`tag ${canonical ? "good" : "muted"}`}>{chatLinkLabel(item)}</span>
+        <small>{item.relationship_type || "discussion"} · confidence {chatConfidence(item)}</small>
+        <small>{canonical ? `linked by ${item.linked_by || "operator"}` : "review before adding to project memory"}</small>
+        <div className="project-chat-actions">
+          <button className="btn ghost" onClick={() => copySessionLink(item)}>Copy link</button>
+          {!canonical && <button className="btn dark" disabled={busy === `confirm:${busyKey}`} onClick={() => onConfirm(item)}>{busy === `confirm:${busyKey}` ? "Approving…" : "Approve"}</button>}
+          {canonical && <button className="btn ghost danger-lite" disabled={busy === `unlink:${busyKey}`} onClick={() => onUnlink(item)}>{busy === `unlink:${busyKey}` ? "Unlinking…" : "Unlink"}</button>}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function projectGuardList(value: unknown): string[] {
@@ -189,6 +232,7 @@ export function Projects() {
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [summary, setSummary] = useState({ total: 0, active: 0, open_actions: 0, blocked: 0, knowledge: 0, workspaces: 0 });
   const [q, setQ] = useState("");
+  const [chatQ, setChatQ] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
@@ -238,6 +282,7 @@ export function Projects() {
     setTab("overview");
     setBrief(null);
     setNotice(null);
+    setChatQ("");
   };
 
   const generateBrief = async (project: ProjectRecord) => {
@@ -268,6 +313,51 @@ export function Projects() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to create project task");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const filteredChats = useMemo(() => {
+    const needle = chatQ.trim().toLowerCase();
+    if (!selected) return [];
+    return (selected.sessions || []).filter((item) => {
+      if (!needle) return true;
+      return [item.title, item.summary, item.origin, item.source, item.relationship_type, item.link_source, item.linked_by]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(needle);
+    });
+  }, [selected, chatQ]);
+
+  const confirmProjectChat = async (project: ProjectRecord, item: ProjectSessionItem) => {
+    setBusy(`confirm:${project.id}:${item.id}`);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await client.confirmProjectChatSuggestion({ project_id: project.id, session_id: item.id, relationship_type: item.relationship_type || "discussion", summary: item.summary || "" });
+      if (!result.ok) throw new Error(result.error || "Unable to approve chat link");
+      setNotice(`Approved chat link for ${project.name}.`);
+      await load("manual");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to approve chat link");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const unlinkProjectChat = async (project: ProjectRecord, item: ProjectSessionItem) => {
+    setBusy(`unlink:${project.id}:${item.id}`);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await client.unlinkProjectChat({ project_id: project.id, session_id: item.id });
+      if (!result.ok) throw new Error(result.error || "Unable to unlink chat");
+      setNotice(`Unlinked chat from ${project.name}.`);
+      await load("manual");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to unlink chat");
     } finally {
       setBusy(null);
     }
@@ -392,9 +482,21 @@ export function Projects() {
               {!selected.activity.length && <p>No recent project activity yet.</p>}
             </div>}
 
-            {tab === "chats" && <div className="project-tab-panel listy">
-              {selected.sessions.map((item) => <div key={item.id}><b>{item.title}</b><span>{item.origin || item.source} · {item.model} · {formatSingaporeTime(item.started_at)}</span><small>{item.messages} messages · {item.tools} tools · {item.tokens.toLocaleString()} tokens</small></div>)}
+            {tab === "chats" && <div className="project-tab-panel project-chats-panel">
+              <div className="project-section-head">
+                <b>Project Chats</b>
+                <span>{selected.sessions.length} linked/suggested human chat{selected.sessions.length === 1 ? "" : "s"}</span>
+              </div>
+              <div className="project-chat-controls">
+                <input value={chatQ} onChange={(event) => setChatQ(event.target.value)} placeholder="Search project chats by title, origin, relationship…" />
+                <span>{filteredChats.filter((item) => item.link_source === "canonical").length} canonical · {filteredChats.filter((item) => item.link_source !== "canonical").length} suggested</span>
+              </div>
+              <p className="project-chat-policy">Human conversations can be linked to multiple projects. Suggested links come from deterministic project aliases, domains, repos, task IDs, and transcript/title signals. Automation and worker executions stay in Activity/Runs.</p>
+              <div className="project-chat-list">
+                {filteredChats.map((item) => <ProjectChatRow key={`${item.project_id || selected.id}:${item.id}:${item.link_source}`} item={item} project={selected} busy={busy} onConfirm={(chat) => void confirmProjectChat(selected, chat)} onUnlink={(chat) => void unlinkProjectChat(selected, chat)} />)}
+              </div>
               {!selected.sessions.length && <p>No human chats linked to this project yet. Automation and worker executions appear under Activity as runs/evidence.</p>}
+              {selected.sessions.length > 0 && filteredChats.length === 0 && <p>No project chats matched this search.</p>}
             </div>}
           </aside>
         </div>
