@@ -90,6 +90,7 @@ const adminConsoleGroups: NavGroup[] = [
   {
     label: "Runtime",
     items: [
+      { key: "desktop-gateway", label: "Hermes Desktop", icon: "dashboard" },
       { key: "runtimes", label: "Runtime Connectors", icon: "runtimes" },
       { key: "workflow-library", label: "Workflow Templates Admin", icon: "skills" },
       { key: "research-runs", label: "Research Run Monitor", icon: "audit" },

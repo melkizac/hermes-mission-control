@@ -142,7 +142,7 @@ function Shell() {
         {canRenderView && view === "users-workspaces" && <AdminSetupPage kind="users-workspaces" />}
         {canRenderView && view === "workspace-runtime-console" && <AdminSetupPage kind="workspace-runtime-console" />}
         {canRenderView && view === "shared-agent-templates" && <AdminSetupPage kind="shared-agent-templates" />}
-        {canRenderView && view === "desktop-gateway" && <AdminSetupPage kind="desktop-gateway" />}
+        {canRenderView && view === "desktop-gateway" && <HermesDesktopAdmin />}
         {canRenderView && view === "browser-ops" && <BrowserOperations />}
         {canRenderView && view === "research-runs" && <ResearchRuns />}
         {canRenderView && view === "approval-policy" && <AdminSetupPage kind="approval-policy" />}

@@ -26,6 +26,8 @@ function healthLabel(data: DesktopGatewayHealth | null, error: string) {
   return "Attention needed";
 }
 
+const desktopGatewayPath = "/desktop-gateway/sessions";
+
 export function HermesDesktopAdmin() {
   const [data, setData] = useState<DesktopGatewayHealth | null>(null);
   const [error, setError] = useState("");
@@ -51,8 +53,9 @@ export function HermesDesktopAdmin() {
     <section className="hermes-desktop-admin" aria-label="Hermes Desktop admin console">
       <header className="hermes-desktop-admin-bar">
         <div>
-          <span className="eyebrow">Admin Console</span>
+          <span className="eyebrow">Native Hermes runtime console · VPS</span>
           <h1>Hermes Desktop</h1>
+          <p className="hermes-desktop-subtitle">Embedded from the VPS Desktop Gateway. HMC remains the governance, approvals, evidence, and audit layer.</p>
         </div>
         <div className="hermes-desktop-admin-actions">
           <span className={`hermes-desktop-status ${statusTone}`}>{status}</span>
@@ -62,13 +65,13 @@ export function HermesDesktopAdmin() {
             <Icon name="refresh" size={18} />
           </button>
           <button className="btn ghost small" onClick={() => setFrameKey((value) => value + 1)}>Reload desktop</button>
-          <a className="btn dark small" href="/desktop-gateway/" target="_blank" rel="noreferrer">Open full screen</a>
+          <a className="btn dark small" href={desktopGatewayPath} target="_blank" rel="noreferrer">Open full screen</a>
         </div>
       </header>
       <iframe
         key={frameKey}
         className="hermes-desktop-frame"
-        src="/desktop-gateway/"
+        src={desktopGatewayPath}
         title="Hermes Desktop"
         allow="clipboard-read; clipboard-write"
       />
