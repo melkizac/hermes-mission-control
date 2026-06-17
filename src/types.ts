@@ -700,7 +700,8 @@ export interface ProjectChatSession {
   summary?: string;
   linked_by?: string;
   linked_at?: string;
-  link_source?: "canonical" | "heuristic" | string;
+  link_source?: "canonical" | "suggested" | "heuristic" | string;
+  confidence?: number;
   project_owner?: string;
   project_status?: string;
   kanban_tenant?: string;
@@ -716,8 +717,17 @@ export interface ProjectChatSession {
 export interface ProjectChatResponse {
   projects: Array<{ id: string; name: string; sessions: number; chats?: number; owner?: string; status?: string; kanban_tenant?: string; kanban_board?: string }>;
   sessions: ProjectChatSession[];
-  summary: { projects: number; sessions: number; chats?: number; canonical_links?: number; heuristic_links?: number };
+  summary: { projects: number; sessions: number; chats?: number; canonical_links?: number; suggested_links?: number; heuristic_links?: number };
   error?: string;
+}
+
+export interface ProjectChatMutationResponse {
+  ok: boolean;
+  error?: string;
+  removed?: number;
+  link?: ProjectChatSession;
+  project_id?: string;
+  session_id?: string;
 }
 
 export type TaskStatus = "queued" | "running" | "blocked" | "done" | "error";
@@ -1657,6 +1667,8 @@ export interface ProjectSessionItem {
   linked_by?: string;
   linked_at?: string;
   link_source?: string;
+  confidence?: number;
+  project_score?: number;
   run_type?: string;
   run_type_label?: string;
   ui_bucket?: string;

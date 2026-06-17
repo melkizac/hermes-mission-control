@@ -7733,19 +7733,35 @@ def project_session_text_index(session_ids=None, limit=250):
     return out
 
 
-def score_project_for_session(project, session):
+def project_match_keys(project):
+    metadata = project.get('metadata') if isinstance(project.get('metadata'), dict) else {}
     raw_keys = [
         project.get('id'), project.get('name'), Path(project.get('path') or '').name,
-        project_slug(project.get('name') or ''), *(project.get('tags') or []),
+        project_slug(project.get('name') or ''), *(project.get('tags') or []), *(metadata.get('tags') or []),
+        *(metadata.get('aliases') or []), *(metadata.get('domains') or []), *(metadata.get('repos') or []),
     ]
+    pid = str(project.get('id') or '').lower()
+    pname = str(project.get('name') or '').lower()
+    if pid == 'mission-control' or 'mission control' in pname:
+        raw_keys.extend(['hmc', 'hermes.melverick.com', 'hermes mission control', 'runs activity', 'agent chat'])
+    if 'nexius' in pid or 'nexius' in pname:
+        raw_keys.extend(['nexiuslabs.com', 'academy.nexiuslabs.com', 'skillsfuture', 'lead form', 'lead capture'])
+    if 'academy' in pid or 'academy' in pname:
+        raw_keys.extend(['academy.nexiuslabs.com', 'skillsfuture', 'agentic ai course'])
+    if 'melverick-site' in pid or 'melverick site' in pname:
+        raw_keys.extend(['melverick.com', 'personal website', 'homepage'])
+    return [str(x or '').strip().lower() for x in raw_keys if str(x or '').strip()]
+
+
+def score_project_for_session(project, session):
     hay = text_blob(session.get('title'), session.get('source'), session.get('model'), session.get('_transcript'))
+    title_hay = text_blob(session.get('title'))
     score = 0
-    for key in raw_keys:
-        k = str(key or '').strip().lower()
+    for k in project_match_keys(project):
         if len(k) <= 2:
             continue
         if k in hay:
-            score += 3 if k in text_blob(session.get('title')) else 1
+            score += 3 if k in title_hay else 1
     pid = (project.get('id') or '').lower()
     pname = (project.get('name') or '').lower()
     if pid == 'mission-control' and any(x in hay for x in ('mission control', 'hermes', 'gateway', 'desktop', 'agent', 'global command chat')):
@@ -7759,6 +7775,19 @@ def score_project_for_session(project, session):
     if 'net worth' in pname and any(x in hay for x in ('net worth', 'portfolio', 'holdings')):
         score += 3
     return score
+
+
+def session_project_suggestions(session, visible_projects, min_score=1):
+    suggestions = []
+    for project in visible_projects:
+        if project.get('id') == 'general-chat':
+            continue
+        score = score_project_for_session(project.get('_raw') or project, session)
+        if score >= min_score:
+            confidence = max(0.1, min(0.95, round(score / 10, 2)))
+            suggestions.append({'project_id': project.get('id'), 'project_name': project.get('name'), 'score': score, 'confidence': confidence})
+    suggestions.sort(key=lambda item: (-item.get('score', 0), item.get('project_name') or ''))
+    return suggestions
 
 
 def session_project_assignments(sessions, project_rows=None):
@@ -7846,6 +7875,41 @@ def read_state_project_records():
     return records
 
 
+def ensure_project_sessions_table():
+    STATE_DB.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(STATE_DB, timeout=SQLITE_BUSY_TIMEOUT_MS / 1000)
+    con.execute(f'PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}')
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS project_sessions (
+            project_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            relationship_type TEXT DEFAULT 'discussion',
+            summary TEXT DEFAULT '',
+            linked_by TEXT DEFAULT '',
+            linked_at REAL,
+            confidence REAL DEFAULT 1.0,
+            link_source TEXT DEFAULT 'canonical',
+            PRIMARY KEY (project_id, session_id)
+        )
+    """)
+    cols = {row[1] for row in con.execute("PRAGMA table_info(project_sessions)").fetchall()}
+    for col, ddl in {
+        'confidence': "ALTER TABLE project_sessions ADD COLUMN confidence REAL DEFAULT 1.0",
+        'link_source': "ALTER TABLE project_sessions ADD COLUMN link_source TEXT DEFAULT 'canonical'",
+    }.items():
+        if col not in cols:
+            con.execute(ddl)
+    con.commit()
+    return con
+
+
+def project_sessions_columns(con):
+    try:
+        return {row[1] for row in con.execute("PRAGMA table_info(project_sessions)").fetchall()}
+    except Exception:
+        return set()
+
+
 def canonical_project_session_links(session_ids=None, project_id=None, limit=500):
     if not STATE_DB.exists():
         return []
@@ -7855,6 +7919,9 @@ def canonical_project_session_links(session_ids=None, project_id=None, limit=500
         exists = con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='project_sessions'").fetchone()
         if not exists:
             con.close(); return []
+        cols = project_sessions_columns(con)
+        confidence_expr = 'ps.confidence' if 'confidence' in cols else '1.0 AS confidence'
+        link_source_expr = 'ps.link_source' if 'link_source' in cols else "'canonical' AS link_source"
         where, params = [], []
         if session_ids:
             ids = [str(x) for x in session_ids if x]
@@ -7867,6 +7934,7 @@ def canonical_project_session_links(session_ids=None, project_id=None, limit=500
         where_sql = ('WHERE ' + ' AND '.join(where)) if where else ''
         rows = con.execute(f"""
             SELECT ps.project_id, ps.session_id, ps.relationship_type, ps.summary, ps.linked_by, ps.linked_at,
+                   {confidence_expr}, {link_source_expr},
                    p.name AS project_name, p.owner AS project_owner, p.status AS project_status, p.metadata AS project_metadata,
                    s.title, s.source, s.model, s.started_at, s.message_count, s.tool_call_count, s.input_tokens, s.output_tokens
             FROM project_sessions ps
@@ -7908,13 +7976,100 @@ def canonical_project_session_links(session_ids=None, project_id=None, limit=500
             'summary': r['summary'] or '',
             'linked_by': r['linked_by'] or '',
             'linked_at': iso(r['linked_at']) if r['linked_at'] is not None else '—',
-            'link_source': 'canonical',
+            'link_source': r['link_source'] or 'canonical',
+            'confidence': float(r['confidence'] if r['confidence'] is not None else 1.0),
             'project_score': 100,
         }
         raw.update(classify_run_trace(raw))
         raw['title'] = human_session_title(raw)
         out.append(raw)
     return out
+
+
+def clear_projects_cache():
+    with _PROJECTS_CACHE_LOCK:
+        _PROJECTS_CACHE['expires_at'] = 0.0
+        _PROJECTS_CACHE['payload'] = None
+
+
+def project_chat_actor(identity):
+    user = (identity or {}).get('user') or {}
+    return user.get('email') or user.get('name') or (identity or {}).get('email') or 'operator'
+
+
+def project_chat_session_record(session_id):
+    indexed = project_session_text_index(session_ids={session_id}, limit=1)
+    return indexed.get(session_id)
+
+
+def project_chat_link_payload(payload, identity=None, *, link_source='canonical', confidence=1.0):
+    project_id = safe_id(payload.get('project_id') or payload.get('projectId') or '')
+    session_id = str(payload.get('session_id') or payload.get('sessionId') or '').strip()
+    if not project_id or not session_id:
+        return {'ok': False, 'error': 'project_id and session_id are required'}, 400
+    session = project_chat_session_record(session_id)
+    if not session:
+        return {'ok': False, 'error': 'session not found'}, 404
+    if not is_human_chat_trace(session):
+        return {'ok': False, 'error': 'Only human chat traces can be linked as Project Chats. Use Runs / Activity for automation, workers, and system traces.'}, 400
+    relationship_type = safe_id(payload.get('relationship_type') or payload.get('relationshipType') or 'discussion') or 'discussion'
+    summary = trim(str(payload.get('summary') or ''), 900)
+    actor = project_chat_actor(identity)
+    linked_at = time.time()
+    source = safe_id(link_source or payload.get('link_source') or payload.get('linkSource') or 'canonical') or 'canonical'
+    conf = max(0.0, min(1.0, float(payload.get('confidence', confidence if confidence is not None else 1.0))))
+    con = ensure_project_sessions_table()
+    con.execute("""
+        INSERT INTO project_sessions (project_id, session_id, relationship_type, summary, linked_by, linked_at, confidence, link_source)
+        VALUES (?,?,?,?,?,?,?,?)
+        ON CONFLICT(project_id, session_id) DO UPDATE SET
+            relationship_type=excluded.relationship_type,
+            summary=excluded.summary,
+            linked_by=excluded.linked_by,
+            linked_at=excluded.linked_at,
+            confidence=excluded.confidence,
+            link_source=excluded.link_source
+    """, (project_id, session_id, relationship_type, summary, actor, linked_at, conf, source))
+    con.commit(); con.close()
+    links = canonical_project_session_links(session_ids={session_id}, project_id=project_id, limit=1)
+    clear_projects_cache()
+    return {'ok': True, 'link': links[0] if links else {'project_id': project_id, 'id': session_id, 'link_source': source, 'confidence': conf}}, 200
+
+
+def project_chat_confirm_suggestion_payload(payload, identity=None):
+    return project_chat_link_payload({**(payload or {}), 'confidence': 1.0}, identity, link_source='canonical', confidence=1.0)
+
+
+def project_chat_unlink_payload(payload, identity=None):
+    project_id = safe_id(payload.get('project_id') or payload.get('projectId') or '')
+    session_id = str(payload.get('session_id') or payload.get('sessionId') or '').strip()
+    if not project_id or not session_id:
+        return {'ok': False, 'error': 'project_id and session_id are required'}, 400
+    if not STATE_DB.exists():
+        return {'ok': True, 'removed': 0}, 200
+    con = ensure_project_sessions_table()
+    cur = con.execute('DELETE FROM project_sessions WHERE project_id=? AND session_id=?', (project_id, session_id))
+    removed = cur.rowcount if cur.rowcount is not None else 0
+    con.commit(); con.close()
+    clear_projects_cache()
+    return {'ok': True, 'removed': removed, 'project_id': project_id, 'session_id': session_id}, 200
+
+
+def project_chat_suggestion_item(session, suggestion):
+    clean = {k: v for k, v in session.items() if not k.startswith('_')}
+    clean['title'] = human_session_title(clean)
+    clean.update({
+        'project_id': suggestion.get('project_id'),
+        'project_name': suggestion.get('project_name'),
+        'project_score': suggestion.get('score', 0),
+        'confidence': suggestion.get('confidence', 0),
+        'relationship_type': 'discussion',
+        'summary': '',
+        'linked_by': 'deterministic-classifier',
+        'linked_at': '',
+        'link_source': 'suggested',
+    })
+    return clean
 
 
 def project_chat_sessions_payload(filters=None, identity=None):
@@ -7934,8 +8089,10 @@ def project_chat_sessions_payload(filters=None, identity=None):
     session_ids = {session.get('id') for session in sessions if session.get('id')}
     canonical_links = [link for link in canonical_project_session_links(session_ids=session_ids, project_id=project_filter or None, limit=500) if is_human_chat_trace(link)]
     canonical_by_session = {}
+    canonical_pairs = set()
     for link in canonical_links:
-        canonical_by_session.setdefault(link.get('id'), link)
+        canonical_by_session.setdefault(link.get('id'), []).append(link)
+        canonical_pairs.add((link.get('project_id'), link.get('id')))
     assignments, visible_projects = session_project_assignments(sessions, project_rows)
     project_counts = {p.get('id'): 0 for p in visible_projects}
     canonical_project_counts = {}
@@ -7948,32 +8105,35 @@ def project_chat_sessions_payload(filters=None, identity=None):
             visible_projects.append({'id': pid, 'name': record.get('name') or pid, 'sessions': 0, '_raw': record})
             project_counts.setdefault(pid, 0)
     out = []
-    heuristic_count = 0
     for s in sessions:
-        canonical = canonical_by_session.get(s.get('id'))
-        if canonical:
-            clean = {**canonical, '_transcript': s.get('_transcript') or ''}
-        else:
+        canonical_items = canonical_by_session.get(s.get('id')) or []
+        if canonical_items:
+            for canonical in canonical_items:
+                clean = {**canonical, '_transcript': s.get('_transcript') or ''}
+                if project_filter and (clean.get('project_id') or '').lower() != project_filter:
+                    continue
+                if q and q not in text_blob(clean.get('title'), clean.get('project_name'), clean.get('source'), clean.get('model'), clean.get('summary'), s.get('_transcript')):
+                    continue
+                out.append({k: v for k, v in clean.items() if not k.startswith('_')})
+            if not project_filter:
+                continue
+        suggestions = session_project_suggestions(s, visible_projects)
+        if project_filter:
+            suggestions = [item for item in suggestions if (item.get('project_id') or '').lower() == project_filter]
+        elif suggestions:
+            suggestions = suggestions[:1]
+        if not suggestions and not canonical_items:
             assigned = assignments.get(s.get('id')) or {}
-            clean = {k: v for k, v in s.items() if not k.startswith('_')}
-            clean['title'] = human_session_title(clean)
-            clean.update({
-                'project_id': assigned.get('project_id'),
-                'project_name': assigned.get('project_name'),
-                'project_score': assigned.get('score', 0),
-                'relationship_type': 'discussion',
-                'summary': '',
-                'linked_by': 'heuristic-classifier',
-                'linked_at': '',
-                'link_source': 'heuristic',
-            })
-            heuristic_count += 1
-        if project_filter and (clean.get('project_id') or '').lower() != project_filter:
-            continue
-        if q and q not in text_blob(clean.get('title'), clean.get('project_name'), clean.get('source'), clean.get('model'), clean.get('summary'), s.get('_transcript')):
-            continue
-        clean = {k: v for k, v in clean.items() if not k.startswith('_')}
-        out.append(clean)
+            suggestions = [{'project_id': assigned.get('project_id'), 'project_name': assigned.get('project_name'), 'score': assigned.get('score', 0), 'confidence': max(0.0, min(0.95, round((assigned.get('score', 0) or 0) / 10, 2)))}]
+        for suggestion in suggestions:
+            if not suggestion.get('project_id') or (suggestion.get('project_id'), s.get('id')) in canonical_pairs:
+                continue
+            clean = project_chat_suggestion_item(s, suggestion)
+            if project_filter and (clean.get('project_id') or '').lower() != project_filter:
+                continue
+            if q and q not in text_blob(clean.get('title'), clean.get('project_name'), clean.get('source'), clean.get('model'), clean.get('summary'), s.get('_transcript')):
+                continue
+            out.append({k: v for k, v in clean.items() if not k.startswith('_')})
     out.sort(key=lambda item: (0 if item.get('link_source') == 'canonical' else 1, 1 if str(item.get('source') or '').lower() == 'cron' else 0, -(parse_iso_timestamp(item.get('started_at')).timestamp() if parse_iso_timestamp(item.get('started_at')) else 0)))
     for item in out:
         pid = item.get('project_id')
@@ -7983,7 +8143,7 @@ def project_chat_sessions_payload(filters=None, identity=None):
     for p in visible_projects:
         pid = p.get('id')
         state_record = state_projects.get(pid) or {}
-        count = canonical_project_counts.get(pid, project_counts.get(pid, 0))
+        count = project_counts.get(pid, 0)
         projects.append({
             'id': pid,
             'name': p.get('name') or state_record.get('name') or pid,
@@ -7998,7 +8158,7 @@ def project_chat_sessions_payload(filters=None, identity=None):
         p = next((item for item in visible_projects if item.get('id') == 'mission-control'), visible_projects[0])
         projects.append({'id': p.get('id'), 'name': p.get('name'), 'sessions': project_counts.get(p.get('id'), 0), 'chats': project_counts.get(p.get('id'), 0), 'kanban_tenant': p.get('id')})
     projects.sort(key=lambda p: (-int(p.get('sessions') or 0), (p.get('name') or '').lower()))
-    return {'projects': projects, 'sessions': out[:120], 'summary': {'projects': len(projects), 'sessions': len(out), 'chats': len(out), 'canonical_links': sum(1 for x in out if x.get('link_source') == 'canonical'), 'heuristic_links': sum(1 for x in out if x.get('link_source') == 'heuristic')}}
+    return {'projects': projects, 'sessions': out[:120], 'summary': {'projects': len(projects), 'sessions': len(out), 'chats': len(out), 'canonical_links': sum(1 for x in out if x.get('link_source') == 'canonical'), 'suggested_links': sum(1 for x in out if x.get('link_source') == 'suggested'), 'heuristic_links': sum(1 for x in out if x.get('link_source') in ('heuristic', 'suggested'))}}
 
 
 def project_operating_text(project):
@@ -9292,25 +9452,19 @@ def list_projects(filters=None, identity=None):
             if len(target.setdefault('activity', [])) < 12:
                 target['activity'].append({'kind': link.get('run_type') or 'run', 'title': link.get('title'), 'status': link.get('run_type_label') or link.get('source'), 'at': link.get('started_at'), 'id': link.get('id')})
     sessions = [{k: v for k, v in session.items() if not k.startswith('_')} for sid, session in session_index_for_projects.items() if sid not in linked_session_ids and is_human_chat_trace(session)]
+    visible_project_rows = [{'id': p.get('id'), 'name': p.get('name'), 'sessions': 0, '_raw': p} for p in projects.values()]
     for session in sessions:
-        title_text = text_blob(session.get('title'), session.get('source'), session.get('model'))
-        best_key = 'mission-control' if 'mission-control' in projects else None
-        best_score = 0
-        for key, proj in projects.items():
-            keys = [proj.get('id'), proj.get('name'), Path(proj.get('path') or '').name, *(proj.get('tags') or [])]
-            score = sum(1 for k in keys if k and len(str(k)) > 2 and str(k).lower() in title_text)
-            if key == 'mission-control' and any(x in title_text for x in ('mission control', 'hermes', 'gateway', 'desktop', 'agent')):
-                score += 1
-            if score > best_score:
-                best_score = score; best_key = key
-        if best_key and best_key in projects:
-            target = projects[best_key]
-            enriched_session = {**session, 'project_id': target.get('id'), 'project_name': target.get('name'), 'relationship_type': 'discussion', 'summary': '', 'linked_by': 'heuristic-classifier', 'linked_at': '', 'link_source': 'heuristic'}
-            target.setdefault('sessions', [])
-            if len(target['sessions']) < 12:
-                target['sessions'].append(enriched_session)
-            if len(target.setdefault('activity', [])) < 12:
-                target['activity'].append({'kind': 'chat', 'title': session['title'], 'status': session.get('origin') or session['source'], 'at': session['started_at'], 'id': session['id']})
+        suggestions = session_project_suggestions(session, visible_project_rows)
+        for suggestion in suggestions[:3]:
+            best_key = suggestion.get('project_id')
+            if best_key and best_key in projects:
+                target = projects[best_key]
+                enriched_session = {**session, 'project_id': target.get('id'), 'project_name': target.get('name'), 'relationship_type': 'discussion', 'summary': '', 'linked_by': 'deterministic-classifier', 'linked_at': '', 'link_source': 'suggested', 'project_score': suggestion.get('score', 0), 'confidence': suggestion.get('confidence', 0)}
+                target.setdefault('sessions', [])
+                if len(target['sessions']) < 12:
+                    target['sessions'].append(enriched_session)
+                if len(target.setdefault('activity', [])) < 12:
+                    target['activity'].append({'kind': 'chat', 'title': session['title'], 'status': session.get('origin') or session['source'], 'at': session['started_at'], 'id': session['id']})
     for proj in projects.values():
         apply_canonical_project(proj)
         if not proj.get('guard_policy'):
@@ -19600,6 +19754,15 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(permission, permission_status)
         if parsed.path == '/api/intent/create-kanban':
             result, status = agent_os_create_kanban_from_intent(payload)
+            return self.send_json(result, status)
+        if parsed.path == '/api/project-chats/link':
+            result, status = project_chat_link_payload(payload, identity)
+            return self.send_json(result, status)
+        if parsed.path == '/api/project-chats/unlink':
+            result, status = project_chat_unlink_payload(payload, identity)
+            return self.send_json(result, status)
+        if parsed.path == '/api/project-chats/confirm-suggestion':
+            result, status = project_chat_confirm_suggestion_payload(payload, identity)
             return self.send_json(result, status)
         if parsed.path.startswith('/api/user/agents/') and parsed.path.endswith('/select'):
             parts = parsed.path.strip('/').split('/')

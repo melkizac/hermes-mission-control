@@ -1,4 +1,4 @@
-import type { Agent, AgentRuntimeAssignment, AgentRuntimeSwitcher, AgentHandoffMutationResponse, AgentHandoffResponse, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, CapabilityAssignmentMutationResponse, CapabilityAssessmentResponse, CapabilityIntakeMutationResponse, CapabilityIntakeResponse, CapabilityMatrixResponse, CapabilityRegistryResponse, CapabilitySandboxResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionPayload, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, ResearchRunCreateRequest, ResearchRunCreateResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillFileResponse, SkillsHubResponse, SpecKitIntakeResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
+import type { Agent, AgentRuntimeAssignment, AgentRuntimeSwitcher, AgentHandoffMutationResponse, AgentHandoffResponse, Approval, Attachment, BrowserConnectorMutationResponse, BrowserConnectorProbeResponse, BrowserConnectorsResponse, BrowserSession, BrowserSessionsResponse, BrowserRuntimeEventIngestRequest, BrowserRuntimeEventIngestResponse, CapabilityAssignmentMutationResponse, CapabilityAssessmentResponse, CapabilityIntakeMutationResponse, CapabilityIntakeResponse, CapabilityMatrixResponse, CapabilityRegistryResponse, CapabilitySandboxResponse, AuditSessionDetailResponse, AuditSessionListResponse, AutomationActionPayload, AutomationActionResponse, AutomationsResponse, BoardResponse, BoardStatus, BoardTaskMutationResponse, ConfigFile, CostsResponse, DelegateWorkContextResponse, DelegateWorkMutationResponse, DesktopGatewayStatus, FunnelTargetDetailResponse, FunnelTargetMutationResponse, FunnelTargetsResponse, InboxAction, InboxMutationResponse, InboxResponse, InboxStatus, Message, MissionControlMe, ModelRoutingSelection, MemoryContextResponse, OperatorLinkPreviewResponse, PluginsHubResponse, ProjectBriefResponse, ProjectChatMutationResponse, ProjectChatResponse, ProjectsResponse, ReplyContext, ResearchRunsResponse, ResearchRunCreateRequest, ResearchRunCreateResponse, RouterConfig, RuntimeConnectorResponse, RuntimeConnectorTokenResponse, RuntimeRegistryResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainNoteResponse, SecondBrainResponse, SecondBrainSearchResponse, Skill, SkillFileResponse, SkillsHubResponse, SpecKitIntakeResponse, TaskResultResponse, WindowsGatewayConfigResponse, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
 import type { HermesClient } from "./hermesClient";
 import { cachedJsonRequest, invalidateQueryCache } from "./queryCache";
 
@@ -506,6 +506,18 @@ export class HttpHermesClient implements HermesClient {
     if (filters?.project) params.set("project", filters.project);
     const suffix = params.toString() ? `?${params.toString()}` : "";
     return request<ProjectChatResponse>(`/api/project-chats${suffix}`);
+  }
+
+  async linkProjectChat(input: { project_id: string; session_id: string; relationship_type?: string; summary?: string }): Promise<ProjectChatMutationResponse> {
+    return request<ProjectChatMutationResponse>("/api/project-chats/link", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  async unlinkProjectChat(input: { project_id: string; session_id: string }): Promise<ProjectChatMutationResponse> {
+    return request<ProjectChatMutationResponse>("/api/project-chats/unlink", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  async confirmProjectChatSuggestion(input: { project_id: string; session_id: string; relationship_type?: string; summary?: string }): Promise<ProjectChatMutationResponse> {
+    return request<ProjectChatMutationResponse>("/api/project-chats/confirm-suggestion", { method: "POST", body: JSON.stringify(input) });
   }
 
   async getProjectBrief(projectId: string): Promise<ProjectBriefResponse> {
