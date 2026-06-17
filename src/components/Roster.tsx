@@ -21,13 +21,13 @@ function relationshipLabel(value?: string) {
 }
 
 function sessionLabel(session?: ProjectChatSession) {
-  if (!session) return "All chat history";
+  if (!session) return "All human chats";
   const title = session.title.replace(/\s+/g, " ").trim() || session.id.slice(0, 12);
   const when = formatSingaporeShort(session.started_at);
-  const source = session.source ? session.source.replace(/_/g, " ") : "chat";
+  const origin = session.origin || (session.source ? session.source.replace(/_/g, " ") : "chat");
   const relation = relationshipLabel(session.relationship_type);
   const linked = session.link_source === "canonical" ? relation : `${relation} · suggested`;
-  return `${title.slice(0, 40)} · ${linked} · ${source} · ${when}`;
+  return `${title.slice(0, 40)} · ${linked} · ${origin} · ${when}`;
 }
 
 function agentGroupLabel(name: string) {
@@ -114,7 +114,7 @@ export function Roster({
       </div>
 
       <div className="left-chat-scope" aria-label="Project chat organization controls">
-        <div className="glabel">Chat history</div>
+        <div className="glabel">Chats</div>
         <label>
           <span>Context</span>
           <select
@@ -124,11 +124,14 @@ export function Roster({
             aria-busy={projectChatsHydrating && !projectChats}
           >
             <option value="all">General chat · all contexts</option>
-            {(projectChats?.projects ?? []).map((project) => (
-              <option key={project.id} value={project.id}>
-                {project.name} · {project.sessions ? `${project.sessions} ${project.sessions === 1 ? "chat" : "chats"}` : "no chats yet"}
-              </option>
-            ))}
+            {(projectChats?.projects ?? []).map((project) => {
+              const chatCount = project.chats ?? project.sessions;
+              return (
+                <option key={project.id} value={project.id}>
+                  {project.name} · {chatCount ? `${chatCount} ${chatCount === 1 ? "chat" : "chats"}` : "no chats yet"}
+                </option>
+              );
+            })}
           </select>
         </label>
         <label>
@@ -139,7 +142,7 @@ export function Roster({
             disabled={projectChatsHydrating && !projectChats}
             aria-busy={projectChatsHydrating && !projectChats}
           >
-            <option value="all">{projectChatsHydrating && !projectChats ? "Loading saved conversations…" : "All chat history"}</option>
+            <option value="all">{projectChatsHydrating && !projectChats ? "Loading saved chats…" : "All human chats"}</option>
             {projectSessions.slice(0, 80).map((session) => (
               <option key={session.id} value={session.id}>
                 {sessionLabel(session)}
@@ -155,8 +158,8 @@ export function Roster({
             : selectedSession
               ? `${selectedSession.project_name} · ${relationshipLabel(selectedSession.relationship_type)}${selectedSession.summary ? ` · ${selectedSession.summary.slice(0, 90)}` : ""}${selectedSession.linked_by ? ` · linked by ${selectedSession.linked_by}` : ""}`
               : selectedProjectId === "all"
-                ? `${projectChats?.summary.sessions ?? 0} saved conversations · ${projectChats?.summary.canonical_links ?? 0} canonical links${projectChats?.summary.heuristic_links ? ` · ${projectChats.summary.heuristic_links} suggested` : ""}`
-                : `${activeProject?.name ?? "Context"} · ${projectSessions.length} visible conversations · ${activeProject?.kanban_tenant ? `tenant ${activeProject.kanban_tenant}` : "canonical context"}`}
+                ? `${projectChats?.summary.chats ?? projectChats?.summary.sessions ?? 0} saved human chats · ${projectChats?.summary.canonical_links ?? 0} canonical links${projectChats?.summary.heuristic_links ? ` · ${projectChats.summary.heuristic_links} suggested` : ""}`
+                : `${activeProject?.name ?? "Context"} · ${projectSessions.length} visible chats · ${activeProject?.kanban_tenant ? `tenant ${activeProject.kanban_tenant}` : "canonical context"}`}
         </div>
       </div>
 

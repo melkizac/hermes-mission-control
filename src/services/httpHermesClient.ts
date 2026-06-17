@@ -231,10 +231,11 @@ export class HttpHermesClient implements HermesClient {
     });
   }
 
-  async listAuditSessions(filters?: { q?: string; source?: string; limit?: number }): Promise<AuditSessionListResponse> {
+  async listAuditSessions(filters?: { q?: string; source?: string; runType?: string; limit?: number }): Promise<AuditSessionListResponse> {
     const params = new URLSearchParams();
     if (filters?.q) params.set("q", filters.q);
     if (filters?.source) params.set("source", filters.source);
+    if (filters?.runType) params.set("run_type", filters.runType);
     if (filters?.limit) params.set("limit", String(filters.limit));
     const suffix = params.toString() ? `?${params.toString()}` : "";
     return request<AuditSessionListResponse>(`/api/audit/sessions${suffix}`);

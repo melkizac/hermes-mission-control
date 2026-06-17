@@ -7,7 +7,7 @@ import { Icon } from "../components/Icon";
 import { InfoTooltip } from "../components/InfoTooltip";
 
 const client = new HttpHermesClient();
-type Tab = "overview" | "workflow" | "operations" | "knowledge" | "activity" | "sessions";
+type Tab = "overview" | "workflow" | "operations" | "knowledge" | "activity" | "chats";
 
 function pct(value: number) {
   return `${Math.max(0, Math.min(100, Math.round(value || 0)))}%`;
@@ -345,7 +345,7 @@ export function Projects() {
             </div>
 
             <div className="project-tabs">
-              {(["overview", "workflow", "operations", "knowledge", "activity", "sessions"] as Tab[]).map((item) => <button key={item} className={tab === item ? "on" : ""} onClick={() => setTab(item)}>{item}</button>)}
+              {(["overview", "workflow", "operations", "knowledge", "activity", "chats"] as Tab[]).map((item) => <button key={item} className={tab === item ? "on" : ""} onClick={() => setTab(item)}>{item}</button>)}
             </div>
 
             {tab === "overview" && <div className="project-tab-panel project-overview-panel">
@@ -392,9 +392,9 @@ export function Projects() {
               {!selected.activity.length && <p>No recent project activity yet.</p>}
             </div>}
 
-            {tab === "sessions" && <div className="project-tab-panel listy">
-              {selected.sessions.map((item) => <div key={item.id}><b>{item.title}</b><span>{item.source} · {item.model} · {formatSingaporeTime(item.started_at)}</span><small>{item.messages} messages · {item.tools} tools · {item.tokens.toLocaleString()} tokens</small></div>)}
-              {!selected.sessions.length && <p>No sessions linked to this project yet.</p>}
+            {tab === "chats" && <div className="project-tab-panel listy">
+              {selected.sessions.map((item) => <div key={item.id}><b>{item.title}</b><span>{item.origin || item.source} · {item.model} · {formatSingaporeTime(item.started_at)}</span><small>{item.messages} messages · {item.tools} tools · {item.tokens.toLocaleString()} tokens</small></div>)}
+              {!selected.sessions.length && <p>No human chats linked to this project yet. Automation and worker executions appear under Activity as runs/evidence.</p>}
             </div>}
           </aside>
         </div>
