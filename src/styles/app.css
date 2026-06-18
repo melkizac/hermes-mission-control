@@ -1324,6 +1324,38 @@ input, select, textarea { font-family: inherit; }
 .task-title-status { display: inline-flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
 .task-title-count { color: #8a99b2; font-size: 12px; font-weight: 850; white-space: nowrap; }
 .task-title-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.task-create-menu-wrap { position: relative; display: inline-flex; }
+.task-create-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  z-index: 30;
+  min-width: 178px;
+  padding: 7px;
+  border: 1px solid #e2e8f0;
+  border-radius: 15px;
+  background: #fff;
+  box-shadow: 0 18px 44px rgba(20, 26, 38, .16);
+  animation: taskDrop .14s ease-out;
+}
+.task-create-menu button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  border-radius: 11px;
+  padding: 10px 11px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 850;
+  text-align: left;
+  cursor: pointer;
+}
+.task-create-menu button:hover,
+.task-create-menu button:focus-visible { background: #f3f7fa; outline: none; }
+.task-create-menu button + button { margin-top: 2px; }
+.task-create-menu svg { color: #0f766e; flex: 0 0 auto; }
 .task-icon-action {
   width: 40px;
   height: 40px;

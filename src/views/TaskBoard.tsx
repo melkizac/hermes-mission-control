@@ -123,6 +123,7 @@ export function TaskBoard() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showSpecIntake, setShowSpecIntake] = useState(false);
+  const [showCreateMenu, setShowCreateMenu] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab>("overview");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -135,6 +136,7 @@ export function TaskBoard() {
   const [listVisibleCount, setListVisibleCount] = useState(TASK_PAGE_SIZE);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const projectOptionsLoadedRef = useRef(false);
+  const createMenuRef = useRef<HTMLDivElement | null>(null);
   const deepLinkedTaskId = useMemo(() => parseMissionControlDeepLink(window.location).taskId ?? null, []);
 
   const load = useCallback(async () => {
@@ -228,11 +230,24 @@ export function TaskBoard() {
 
   useEffect(() => {
     const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelectedId(null);
+      if (event.key === "Escape") {
+        setSelectedId(null);
+        setShowCreateMenu(false);
+      }
     };
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
   }, []);
+
+  useEffect(() => {
+    if (!showCreateMenu) return;
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (createMenuRef.current?.contains(event.target as Node)) return;
+      setShowCreateMenu(false);
+    };
+    window.addEventListener("mousedown", closeOnOutsideClick);
+    return () => window.removeEventListener("mousedown", closeOnOutsideClick);
+  }, [showCreateMenu]);
 
   useEffect(() => {
     if (!deepLinkedTaskId || loading) return;
@@ -507,22 +522,46 @@ ${JSON.stringify(payload, null, 2)}`);
             </div>
             <div className="task-title-actions" aria-label="Task board actions">
               <span className="runtime-refresh-status realtime-status">{refreshStatusLabel}</span>
-              <button
-                className={"task-icon-action" + (showSpecIntake ? " on" : "")}
-                aria-label={showSpecIntake ? "Close Spec Kit intake" : "Open Spec Kit intake"}
-                title={showSpecIntake ? "Close Spec Kit intake" : "Spec Kit intake"}
-                onClick={() => setShowSpecIntake((value) => !value)}
-              >
-                <Icon name="skills" size={18} />
-              </button>
-              <button
-                className={"task-icon-action primary" + (showCreate ? " on" : "")}
-                aria-label={showCreate ? "Close add action form" : "Add action"}
-                title={showCreate ? "Close add action form" : "Add action"}
-                onClick={() => setShowCreate((value) => !value)}
-              >
-                <Icon name="plus" size={18} />
-              </button>
+              <div className="task-create-menu-wrap" ref={createMenuRef}>
+                <button
+                  className={"task-icon-action primary" + (showCreateMenu || showCreate || showSpecIntake ? " on" : "")}
+                  aria-label={showCreateMenu ? "Close create menu" : "Open create menu"}
+                  aria-haspopup="menu"
+                  aria-expanded={showCreateMenu}
+                  title="Create"
+                  onClick={() => setShowCreateMenu((value) => !value)}
+                >
+                  <Icon name="plus" size={18} />
+                </button>
+                {showCreateMenu && (
+                  <div className="task-create-menu" role="menu" aria-label="Create task board item">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setShowCreate(true);
+                        setShowSpecIntake(false);
+                        setShowCreateMenu(false);
+                      }}
+                    >
+                      <Icon name="plus" size={16} />
+                      <span>New Task</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setShowSpecIntake(true);
+                        setShowCreate(false);
+                        setShowCreateMenu(false);
+                      }}
+                    >
+                      <Icon name="skills" size={16} />
+                      <span>New Spec Kit</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
