@@ -19,11 +19,12 @@ def test_task_board_header_actions_are_icon_only_and_next_to_title():
 
     assert 'task-title-row' in task_board
     assert 'task-title-actions' in task_board
-    assert 'className="task-icon-action' in task_board
-    assert 'aria-label={showCreate ? "Close add action form" : "Add action"}' in task_board
-    assert 'aria-label="Refresh task board"' in task_board
-    assert '<Icon name="plus"' in task_board
-    assert '<Icon name="refresh"' in task_board
+    assert 'className={"task-icon-action primary"' in task_board
+    assert 'aria-label={showCreateMenu ? "Close create menu" : "Open create menu"}' in task_board
+    assert 'aria-haspopup="menu"' in task_board
+    assert '<span>New Task</span>' in task_board
+    assert '<span>New Spec Kit</span>' in task_board
+    assert 'aria-label={showSpecIntake ? "Close Spec Kit intake" : "Open Spec Kit intake"}' not in task_board
     assert '>{showCreate ? "Close Form" : "+ Add Action"}</button>' not in task_board
     assert '>Refresh</button>' not in task_board
 
