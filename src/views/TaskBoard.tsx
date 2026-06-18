@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
-import type { Agent, AgentHandoff, BoardStatus, BoardTask, EvidenceGateState, GuardPolicy, HmcWorkflowEvidence, HmcWorkflowPhase, MissionArtifact, ProjectRecord, RunTreePayload, RunTreeRunNode, RunTreeTaskNode } from "../types";
+import type { Agent, AgentHandoff, ApprovalGate, BoardStatus, BoardTask, EvidenceGateState, GuardPolicy, HmcWorkflowEvidence, HmcWorkflowPhase, MissionArtifact, ProjectRecord, RunTreePayload, RunTreeRunNode, RunTreeTaskNode } from "../types";
 import { ArtifactCard, EvidenceTimeline, ResultSummaryPanel } from "../components/MissionFoundation";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { useStore } from "../services/store";
@@ -49,7 +49,7 @@ function projectIdAliases(id: string) {
 }
 
 
-type DetailTab = "overview" | "sources" | "tasks" | "outputs" | "run-tree" | "handoffs" | "release" | "evidence" | "settings";
+type DetailTab = "overview" | "actions" | "approvals" | "evidence" | "runs" | "rules" | "metrics" | "learning";
 type ViewMode = "cards" | "list";
 type HumanActionKind = "feedback" | "approval" | "manual" | "agent";
 
@@ -123,6 +123,7 @@ export function TaskBoard() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showSpecIntake, setShowSpecIntake] = useState(false);
+  const [showCreateMenu, setShowCreateMenu] = useState(false);
   const [detailTab, setDetailTab] = useState<DetailTab>("overview");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -135,6 +136,7 @@ export function TaskBoard() {
   const [listVisibleCount, setListVisibleCount] = useState(TASK_PAGE_SIZE);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const projectOptionsLoadedRef = useRef(false);
+  const createMenuRef = useRef<HTMLDivElement | null>(null);
   const deepLinkedTaskId = useMemo(() => parseMissionControlDeepLink(window.location).taskId ?? null, []);
 
   const load = useCallback(async () => {
@@ -228,11 +230,24 @@ export function TaskBoard() {
 
   useEffect(() => {
     const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelectedId(null);
+      if (event.key === "Escape") {
+        setSelectedId(null);
+        setShowCreateMenu(false);
+      }
     };
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
   }, []);
+
+  useEffect(() => {
+    if (!showCreateMenu) return;
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (createMenuRef.current?.contains(event.target as Node)) return;
+      setShowCreateMenu(false);
+    };
+    window.addEventListener("mousedown", closeOnOutsideClick);
+    return () => window.removeEventListener("mousedown", closeOnOutsideClick);
+  }, [showCreateMenu]);
 
   useEffect(() => {
     if (!deepLinkedTaskId || loading) return;
@@ -507,22 +522,46 @@ ${JSON.stringify(payload, null, 2)}`);
             </div>
             <div className="task-title-actions" aria-label="Task board actions">
               <span className="runtime-refresh-status realtime-status">{refreshStatusLabel}</span>
-              <button
-                className={"task-icon-action" + (showSpecIntake ? " on" : "")}
-                aria-label={showSpecIntake ? "Close Spec Kit intake" : "Open Spec Kit intake"}
-                title={showSpecIntake ? "Close Spec Kit intake" : "Spec Kit intake"}
-                onClick={() => setShowSpecIntake((value) => !value)}
-              >
-                <Icon name="skills" size={18} />
-              </button>
-              <button
-                className={"task-icon-action primary" + (showCreate ? " on" : "")}
-                aria-label={showCreate ? "Close add action form" : "Add action"}
-                title={showCreate ? "Close add action form" : "Add action"}
-                onClick={() => setShowCreate((value) => !value)}
-              >
-                <Icon name="plus" size={18} />
-              </button>
+              <div className="task-create-menu-wrap" ref={createMenuRef}>
+                <button
+                  className={"task-icon-action primary" + (showCreateMenu || showCreate || showSpecIntake ? " on" : "")}
+                  aria-label={showCreateMenu ? "Close create menu" : "Open create menu"}
+                  aria-haspopup="menu"
+                  aria-expanded={showCreateMenu}
+                  title="Create"
+                  onClick={() => setShowCreateMenu((value) => !value)}
+                >
+                  <Icon name="plus" size={18} />
+                </button>
+                {showCreateMenu && (
+                  <div className="task-create-menu" role="menu" aria-label="Create task board item">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setShowCreate(true);
+                        setShowSpecIntake(false);
+                        setShowCreateMenu(false);
+                      }}
+                    >
+                      <Icon name="plus" size={16} />
+                      <span>New Task</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setShowSpecIntake(true);
+                        setShowCreate(false);
+                        setShowCreateMenu(false);
+                      }}
+                    >
+                      <Icon name="skills" size={16} />
+                      <span>New Spec Kit</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -682,6 +721,350 @@ function TaskListRow({ task, active, onSelect }: { task: BoardTask; active: bool
   );
 }
 
+const workflowDrawerTabs: DetailTab[] = ["overview", "actions", "approvals", "evidence", "runs", "rules", "metrics", "learning"];
+const workflowDrawerTabBaseLabels: Record<DetailTab, string> = {
+  overview: "Overview",
+  actions: "Actions",
+  approvals: "Approvals",
+  evidence: "Evidence",
+  runs: "Runs",
+  rules: "Rules",
+  metrics: "Metrics",
+  learning: "Learning",
+};
+
+function getApprovalGates(task: BoardTask) {
+  return task.mission_result?.approvalGates ?? task.result_details?.approval_gates ?? [];
+}
+
+function getWorkflowNeedsHumanCount(task: BoardTask) {
+  const gates = getApprovalGates(task).filter((gate) => gate.status === "pending" || gate.status === "changes-requested").length;
+  const blockerCount = task.result_details?.blockers?.length ?? 0;
+  return Math.max(shouldSurfaceNeedsYou(task) ? 1 : 0, gates + blockerCount);
+}
+
+function getWorkflowEvidenceCount(task: BoardTask, projectData: ProjectDrawerData) {
+  const artifacts = task.mission_result?.artifacts?.length ?? task.result_details?.artifacts?.length ?? 0;
+  const proof = task.mission_result?.evidence?.length ?? task.result_details?.evidence?.length ?? 0;
+  const outputs = projectData.outputs.length;
+  const sources = projectData.sources.length;
+  const releaseEvidence = getWorkflowEvidenceRecords(task).length;
+  return artifacts + proof + outputs + sources + releaseEvidence + (task.result ? 1 : 0);
+}
+
+function getWorkflowRunCount(task: BoardTask) {
+  return task.runs.length + (task.run_tree?.summary?.total_runs ?? 0);
+}
+
+function getWorkflowRiskLevel(task: BoardTask) {
+  const hasApproval = getApprovalGates(task).some((gate) => gate.status === "pending" || gate.risk === "external-facing" || gate.risk === "destructive" || gate.risk === "account-sensitive");
+  if (task.status === "error" || task.priority_label === "critical") return "High";
+  if (task.status === "blocked" || hasApproval || task.priority_label === "high") return "Medium";
+  return "Low";
+}
+
+function getWorkflowAutonomyLevel(task: BoardTask, projectData: ProjectDrawerData) {
+  const policy = projectData.guardPolicy;
+  if (policy?.freeze) return "Frozen";
+  if (task.status === "review" || taskHasPendingApprovalGate(task)) return "Approval-gated";
+  if (policy?.mode) return String(policy.mode);
+  return "Agent-owned";
+}
+
+function WorkflowDrawerHeader({ task, projectData }: { task: BoardTask; projectData: ProjectDrawerData }) {
+  const needsHumanCount = getWorkflowNeedsHumanCount(task);
+  const risk = getWorkflowRiskLevel(task);
+  const autonomy = getWorkflowAutonomyLevel(task, projectData);
+  return (
+    <div className="workflow-drawer-header" aria-label="Workflow state summary">
+      <div className="workflow-drawer-meta-grid">
+        <Info label="Owner" value={task.assignee || "unassigned"} />
+        <Info label="Risk" value={risk} />
+        <Info label="Autonomy" value={autonomy} />
+        <Info label="Needs human" value={String(needsHumanCount)} />
+        <Info label="Updated" value={formatSingaporeTime(task.updated_at)} />
+      </div>
+      <div className="workflow-drawer-progress" aria-label={`${projectData.progress}% workflow progress`}>
+        <span>{projectData.progressKnown ? `${projectData.progress}% complete` : "Progress estimated"}</span>
+        <span className="project-progress-track" aria-hidden="true"><span className="project-progress-fill" style={{ width: `${projectData.progress}%` }} /></span>
+      </div>
+    </div>
+  );
+}
+
+function WorkflowMetricsTab({ task, projectData }: { task: BoardTask; projectData: ProjectDrawerData }) {
+  const evidenceCount = getWorkflowEvidenceCount(task, projectData);
+  const approvalCount = getApprovalGates(task).length;
+  const runCount = getWorkflowRunCount(task);
+  return (
+    <section className="task-section workflow-metrics-tab">
+      <div className="task-result-heading"><span className="stub-tag">Metrics</span><h3>Workflow health</h3></div>
+      <div className="task-metrics task-metrics-compact workflow-metric-grid">
+        <Metric label="Activity" value={projectData.stages.length} sub="tracked actions / stages" />
+        <Metric label="Runs" value={runCount} sub="worker + delegated cycles" />
+        <Metric label="Evidence" value={evidenceCount} sub="proof, sources, outputs" tone={evidenceCount > 0 ? "good" : undefined} />
+        <Metric label="Approvals" value={approvalCount} sub="local gates" tone={getWorkflowNeedsHumanCount(task) > 0 ? "bad" : undefined} />
+      </div>
+      <ReleaseLaneOverview task={task} />
+      {evidenceCount === 0 && <div className="empty big">No workflow metrics beyond task state are available yet. As agents attach structured evidence, runs, and outputs, this panel will split activity, quality, and business-impact signals.</div>}
+    </section>
+  );
+}
+
+function WorkflowLearningTab({ task }: { task: BoardTask }) {
+  const details = asRecord(task.result_details);
+  const learning = asRecordArray(details.learning ?? details.lessons ?? details.retro ?? details.retrospective);
+  return (
+    <section className="task-section workflow-learning-tab">
+      <div className="task-result-heading"><span className="stub-tag">Learning</span><h3>Improvement notes</h3></div>
+      {learning.length === 0 && <div className="empty big">No learning notes have been recorded for this workflow yet. Periodic retrospectives, rule changes, prompt improvements, and “what worked / what did not” summaries will appear here.</div>}
+      <div className="settings-record-list">{learning.map((item, index) => <div key={getString(item, ["id", "title"], `learning_${index}`)}><span>{getString(item, ["title", "kind", "type"], `Learning ${index + 1}`)}</span><b>{getString(item, ["summary", "note", "recommendation"], formatRecordValue(item))}</b></div>)}</div>
+    </section>
+  );
+}
+
+function WorkflowApprovalsTab({ task, projectData, intent, humanNote, setHumanNote, onHumanAction, agents, agentTarget, setAgentTarget, onAssignToAgent }: {
+  task: BoardTask;
+  projectData: ProjectDrawerData;
+  intent: HumanActionKind;
+  humanNote: string;
+  setHumanNote: (value: string) => void;
+  onHumanAction: (task: BoardTask, kind: HumanActionKind, note?: string) => void;
+  agents: Agent[];
+  agentTarget: string;
+  setAgentTarget: (value: string) => void;
+  onAssignToAgent: (task: BoardTask) => void;
+}) {
+  const gates = getApprovalGates(task);
+  return (
+    <section className="task-section workflow-approvals-tab">
+      <div className="task-result-heading"><span className="stub-tag">Approvals</span><h3>Workflow-local judgement queue</h3></div>
+      {projectData.needsHuman ? <HumanActionPanel task={task} intent={intent} note={humanNote} setNote={setHumanNote} onHumanAction={onHumanAction} agents={agents} agentTarget={agentTarget} setAgentTarget={setAgentTarget} onAssignToAgent={onAssignToAgent} /> : <div className="empty big">No human Approval Gate is currently blocking this workflow. External, irreversible, costly, or policy-sensitive actions should appear here before execution.</div>}
+      {gates.length > 0 && <div className="task-result-block"><h4>Approval gates</h4>{gates.map((gate) => <div className="task-approval-gate workflow-approval-card" key={gate.id}>
+        <div className="workflow-approval-card-head"><b>{gate.title}</b><span>{gate.status} · {gate.risk}</span></div>
+        <div className="task-kv project-task-kv">
+          <Info label="Actor" value={gate.requestedBy || task.assignee || "agent"} />
+          <Info label="Action" value={gate.title} />
+          <Info label="Target" value={gate.sourceRef?.title || gate.sourceRef?.id || task.title} />
+          <Info label="Effect" value={gate.reason} />
+          <Info label="Recommendation" value={approvalRecommendation(gate, task)} />
+        </div>
+        <p>{gate.reason}</p>
+      </div>)}</div>}
+    </section>
+  );
+}
+
+function AgentAssignmentPanel({ agents, agentTarget, setAgentTarget, onAssignToAgent }: { agents: Agent[]; agentTarget: string; setAgentTarget: (value: string) => void; onAssignToAgent: () => void }) {
+  return (
+    <section className="task-section agent-assignment-panel">
+      <div className="human-action-head">
+        <div>
+          <span className="stub-tag">AGENT HANDOFF</span>
+          <h3>Agent repair suggested</h3>
+          <p>This workflow is agent-owned unless a human Approval Gate appears. Assign it to the agent that should investigate, fix, rerun, and attach evidence.</p>
+        </div>
+        <span className="tag muted">optional</span>
+      </div>
+      <div className="agent-handoff-row">
+        <select value={agentTarget} onChange={(e) => setAgentTarget(e.target.value)} aria-label="Assign task to agent">
+          <option value="">Choose agent…</option>
+          {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
+        </select>
+        <button className="ghost tiny" onClick={() => void onAssignToAgent()}>Assign to agent & open chat</button>
+      </div>
+    </section>
+  );
+}
+
+
+type WorkflowActionRow = {
+  id: string;
+  status: string;
+  time: string;
+  agent: string;
+  action: string;
+  target: string;
+  decision: string;
+  risk: string;
+  evidence: string;
+  details?: string;
+};
+
+function eventPayloadSummary(payload: unknown) {
+  if (!payload || typeof payload !== "object") return stringifyValue(payload);
+  const record = payload as DrawerRecord;
+  return getString(record, ["summary", "reason", "status", "outcome", "assignee", "profile", "error"], formatRecordValue(record));
+}
+
+function buildWorkflowActionRows(task: BoardTask, projectData: ProjectDrawerData): WorkflowActionRow[] {
+  const rows: WorkflowActionRow[] = [];
+  projectData.stages.forEach((stage) => rows.push({
+    id: `stage:${stage.id}`,
+    status: stage.status,
+    time: task.updated_at,
+    agent: stage.owner,
+    action: stage.label,
+    target: projectData.displayProjectId,
+    decision: stage.status === "blocked" ? "Needs decision or repair" : stage.status === "done" ? "Completed" : "Pending execution",
+    risk: getWorkflowRiskLevel(task),
+    evidence: stage.evidence || "—",
+  }));
+  task.events.forEach((event) => rows.push({
+    id: `event:${event.id ?? event.created_at}:${event.kind}`,
+    status: event.kind,
+    time: event.created_at,
+    agent: event.run_id ? `run ${event.run_id}` : task.assignee || "system",
+    action: event.kind.replace(/_/g, " "),
+    target: task.id,
+    decision: eventPayloadSummary(event.payload) || "Event recorded",
+    risk: event.kind.includes("blocked") || event.kind.includes("error") ? "Medium" : "Low",
+    evidence: event.run_id ? `run ${event.run_id}` : "event log",
+    details: event.payload ? JSON.stringify(event.payload, null, 2) : undefined,
+  }));
+  task.comments.forEach((comment) => rows.push({
+    id: `comment:${comment.id ?? comment.created_at}`,
+    status: "comment",
+    time: comment.created_at,
+    agent: comment.author,
+    action: "operator note",
+    target: task.id,
+    decision: truncateSentence(comment.body, 120),
+    risk: /approval|block|error|failed/i.test(comment.body) ? "Medium" : "Low",
+    evidence: comment.body.includes("hmc.workflow_evidence.v1") ? "structured evidence" : "comment thread",
+    details: comment.body,
+  }));
+  return rows.sort((a, b) => String(b.time || "").localeCompare(String(a.time || "")));
+}
+
+function WorkflowActionsTab({ task, projectData, comment, setComment, onAddComment }: { task: BoardTask; projectData: ProjectDrawerData; comment: string; setComment: (value: string) => void; onAddComment: () => void }) {
+  const rows = buildWorkflowActionRows(task, projectData);
+  return (
+    <>
+      <section className="task-section workflow-actions-tab">
+        <div className="task-result-heading"><span className="stub-tag">Actions</span><h3>Audit trail</h3></div>
+        {rows.length === 0 && <div className="empty big">No workflow actions are recorded yet. Kanban events, agent comments, run steps, and structured stages will appear here with evidence links.</div>}
+        <WorkflowStageList stages={projectData.stages} />
+      {rows.length > 0 && <div className="workflow-action-table" role="table" aria-label="Workflow action audit trail">
+          <div className="workflow-action-row head" role="row"><span>Status</span><span>Time</span><span>Agent</span><span>Action</span><span>Target</span><span>Decision / risk</span><span>Evidence</span></div>
+          {rows.map((row) => <details className="workflow-action-row" role="row" key={row.id}>
+            <summary>
+              <span className={`tag ${row.status === "blocked" || row.status === "error" ? "warn" : row.status === "done" ? "good" : "muted"}`}>{row.status}</span>
+              <span>{formatSingaporeTime(row.time)}</span>
+              <span>{row.agent}</span>
+              <span>{row.action}</span>
+              <span>{row.target}</span>
+              <span>{row.decision}<small>{row.risk} risk</small></span>
+              <span>{row.evidence}</span>
+            </summary>
+            {row.details && <pre>{row.details}</pre>}
+          </details>)}
+        </div>}
+      </section>
+      <WorkflowTasksTab task={task} comment={comment} setComment={setComment} onAddComment={onAddComment} />
+    </>
+  );
+}
+
+function approvalRecommendation(gate: ApprovalGate, task: BoardTask) {
+  if (gate.status === "approved") return "Already approved; verify execution evidence before closing.";
+  if (gate.status === "rejected") return "Rejected; keep the workflow stopped until the agent revises the plan.";
+  if (gate.status === "changes-requested") return "Ask the agent to revise and attach new evidence before approval.";
+  if (gate.risk === "external-facing" || gate.risk === "account-sensitive") return "Review source context, target, and effect before approving this action.";
+  if (gate.risk === "destructive") return "Require rollback evidence and explicit operator approval before execution.";
+  return task.status === "review" ? "Inspect the output, then approve or request changes." : "Approve only if the actor/action/target/effect are correct.";
+}
+
+function buildWorkflowEvidenceList(task: BoardTask, projectData: ProjectDrawerData) {
+  const rows: Array<{ id: string; type: string; description: string; source: string; created: string; linked: string; path?: string | null; url?: string | null }> = [];
+  (task.mission_result?.artifacts ?? task.result_details?.artifacts ?? []).forEach((artifact, index) => rows.push({
+    id: artifact.id || `artifact:${index}`,
+    type: artifact.kind || artifact.format || "artifact",
+    description: artifact.summary || artifact.title || artifact.filename || `Artifact ${index + 1}`,
+    source: artifact.createdBy || artifact.runtimeId || artifact.profileId || "mission result",
+    created: artifact.createdAt,
+    linked: artifact.evidenceIds?.join(", ") || task.id,
+    path: artifact.path,
+    url: artifact.url || artifact.downloadUrl,
+  }));
+  (task.mission_result?.evidence ?? task.result_details?.evidence ?? []).forEach((item, index) => rows.push({
+    id: item.id || `evidence:${index}`,
+    type: item.kind || item.type || "evidence",
+    description: item.summary || item.title,
+    source: item.source || item.sourceId || "task evidence",
+    created: item.createdAt || item.created_at || task.updated_at,
+    linked: item.taskId || item.runId || item.artifactId || task.id,
+    path: item.path,
+    url: item.url,
+  }));
+  projectData.outputs.forEach((output, index) => {
+    const artifact = normalizeOutputArtifact(output, index);
+    rows.push({ id: `output:${artifact.id}`, type: artifact.kind || artifact.format || "output", description: artifact.summary || artifact.title, source: artifact.createdBy || "task output", created: artifact.createdAt, linked: task.id, path: artifact.path, url: artifact.url || artifact.downloadUrl });
+  });
+  projectData.sources.forEach((source) => rows.push({ id: `source:${source.id}`, type: source.type, description: source.title, source: source.uri || "project source", created: getString(source.record, ["created_at", "createdAt", "updated_at", "updatedAt"], task.updated_at), linked: source.statusLabel, url: /^https?:\/\//.test(source.uri) ? source.uri : undefined, path: source.uri && !/^https?:\/\//.test(source.uri) ? source.uri : undefined }));
+  getWorkflowEvidenceRecords(task).forEach((item, index) => rows.push({ id: `workflow:${item.phase}:${index}`, type: "workflow evidence", description: item.summary, source: item.created_by || item.createdBy || "worker", created: item.created_at || item.createdAt || task.updated_at, linked: item.task_id || item.taskId || String(item.phase), path: item.workspace_path || item.workspacePath || null }));
+  if (task.result) rows.push({ id: "result:summary", type: "result summary", description: truncateSentence(task.result, 160), source: task.assignee || "worker", created: task.completed_at || task.updated_at, linked: task.id });
+  return rows;
+}
+
+function WorkflowEvidenceList({ task, projectData }: { task: BoardTask; projectData: ProjectDrawerData }) {
+  const evidenceRows = buildWorkflowEvidenceList(task, projectData);
+  return (
+    <section className="task-section workflow-evidence-list">
+      <div className="task-result-heading"><span className="stub-tag">Evidence</span><h3>Artifacts, proof, and linked sources</h3></div>
+      {evidenceRows.length === 0 && <div className="empty big">No evidence artifacts are attached yet. Command output, screenshots, generated files, API responses, approval records, and source links will appear here without exposing raw private content by default.</div>}
+      <div className="workflow-evidence-grid">
+        {evidenceRows.map((item) => <article key={item.id} className="workflow-evidence-card">
+          <span className="stub-tag">{item.type}</span>
+          <h4>{item.description}</h4>
+          <div className="task-kv project-task-kv"><Info label="Source" value={item.source} /><Info label="Created" value={formatSingaporeTime(item.created)} /><Info label="Linked action" value={item.linked} /></div>
+          {(item.url || item.path) && <p className="mono">{item.url || item.path}</p>}
+        </article>)}
+      </div>
+    </section>
+  );
+}
+
+function WorkflowRunsTab({ task }: { task: BoardTask }) {
+  return (
+    <>
+      <section className="task-section workflow-runs-tab">
+        <div className="task-result-heading"><span className="stub-tag">Runs</span><h3>Execution cycles and outcomes</h3></div>
+        {task.runs.length === 0 && <div className="empty big">No direct worker runs are attached yet. Worker profile, status, start/end time, outcome, and summaries will appear here when available.</div>}
+        {task.runs.map((run) => <article className="workflow-run-card" key={run.id}>
+          <div className="workflow-approval-card-head"><b>{run.profile || "worker"} · run {run.id}</b><span>{run.status}{run.outcome ? ` · ${run.outcome}` : ""}</span></div>
+          <div className="task-kv project-task-kv"><Info label="Started" value={formatSingaporeTime(run.started_at)} /><Info label="Ended" value={run.ended_at ? formatSingaporeTime(run.ended_at) : "—"} /><Info label="Runtime" value={run.runtime_id || run.profile_id || "default"} /></div>
+          <p>{run.summary || run.error || "No run summary recorded yet."}</p>
+        </article>)}
+      </section>
+      <RunTreePanel runTree={task.run_tree ?? null} handoffs={task.agent_handoffs ?? []} />
+      <ReleaseLaneTab task={task} />
+    </>
+  );
+}
+
+function WorkflowRulesTab({ task, projectData }: { task: BoardTask; projectData: ProjectDrawerData }) {
+  const policy = projectData.guardPolicy;
+  const allowed = policy ? guardList(policy.allowed_edit_paths ?? policy.allowedEditPaths) : ["Prepare drafts", "Read project context", "Attach evidence", "Run safe verification"];
+  const approvalRequired = guardList(policy?.evidence_required ?? policy?.evidenceRequired);
+  const requires = approvalRequired.length ? approvalRequired : ["External publishing", "Destructive changes", "Credential/account-sensitive actions", "Production deploys without rollback evidence"];
+  const never = ["Expose secrets or raw private content by default", "Delete cloud resources without explicit approval", "Publish externally without an Approval Gate"];
+  const escalation = task.status === "blocked" ? "Escalate current blocker to operator or responsible agent." : "Escalate access gaps, policy-sensitive actions, unclear business decisions, and failed verification.";
+  return (
+    <section className="task-section workflow-rules-tab">
+      <div className="task-result-heading"><span className="stub-tag">Rules</span><h3>Visible autonomy contract</h3></div>
+      <div className="workflow-rule-grid">
+        <div><h4>Allowed without approval</h4><ul>{allowed.map((item) => <li key={item}>{item}</li>)}</ul></div>
+        <div><h4>Requires approval</h4><ul>{requires.map((item) => <li key={item}>{item}</li>)}</ul></div>
+        <div><h4>Never allowed</h4><ul>{never.map((item) => <li key={item}>{item}</li>)}</ul></div>
+        <div><h4>Escalation / evidence</h4><p>{escalation}</p><p>Completion evidence should include real tool output, run IDs, files, API responses, or browser proof where relevant.</p></div>
+      </div>
+      <GuardPolicyPanel policy={policy} />
+      <SettingsTab settings={projectData.settings} task={task} />
+    </section>
+  );
+}
+
 function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onMove, onDelete, onSaveAssignee, onAddComment, humanNote, setHumanNote, onHumanAction, agents, agentTarget, setAgentTarget, onAssignToAgent, onSourceAction }: {
   task: BoardTask;
   tab: DetailTab;
@@ -705,51 +1088,49 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
   const intent = classifyHumanTask(task);
   const displayCopy = getTaskDisplayCopy(task);
   const projectData = getProjectDrawerData(task);
+  const approvalCount = getApprovalGates(task).length;
+  const evidenceCount = getWorkflowEvidenceCount(task, projectData);
+  const runCount = getWorkflowRunCount(task);
+  const actionCount = projectData.stages.length + task.events.length + task.comments.length;
+  const tabLabels = workflowDrawerTabs.reduce((acc, item) => {
+    const count = item === "actions" ? actionCount : item === "approvals" ? approvalCount : item === "evidence" ? evidenceCount : item === "runs" ? runCount : 0;
+    acc[item] = <>{workflowDrawerTabBaseLabels[item]}{count > 0 && <span className="mc-tab-count">{count}</span>}</>;
+    return acc;
+  }, {} as Record<DetailTab, JSX.Element>);
   return (
-    <SlideOverDrawer
+    <SlideOverDrawer<DetailTab>
       title={displayCopy.title}
-      subtitle={<span className="mono">{task.id} · {projectData.displayProjectId}</span>}
+      subtitle={<div className="workflow-drawer-subtitle"><span className="mono">{task.id} · {projectData.displayProjectId}</span><span>{projectData.workflowType.replace(/[_-]+/g, " ")}</span></div>}
       eyebrow={pendingTag(task.status)}
-      statusClassName={`tag ${task.status === "blocked" ? "warn" : "good"}`}
+      statusClassName={`tag ${task.status === "blocked" || task.status === "error" ? "warn" : task.status === "done" ? "good" : "muted"}`}
       onClose={onClose}
-      closeLabel="Close project task cockpit"
-      ariaLabel="Project-aware task cockpit"
+      closeLabel="Close workflow detail drawer"
+      ariaLabel="Workflow detail drawer"
       dataDeepLinkTarget="task"
       // rendered attribute: data-deeplink-target="task"
-      tabs={["overview", "sources", "tasks", "outputs", "run-tree", "handoffs", "release", "evidence", "settings"] as const}
+      tabs={workflowDrawerTabs}
+      tabLabels={tabLabels}
       activeTab={tab}
       onTabChange={setTab}
-      className="task-detail task-detail-drawer project-task-drawer"
+      actions={<WorkflowDrawerHeader task={task} projectData={projectData} />}
+      className="task-detail task-detail-drawer project-task-drawer workflow-detail-drawer"
       width="wide"
     >
       {tab === "overview" && (
         <>
-          <section className="task-project-summary" aria-label="Project workflow overview">
-            <div className="project-cockpit-heading">
-              <span className="stub-tag">TASK SUMMARY</span>
-              {projectData.progressKnown && (
-                <div className="project-progress-inline" aria-label={`${projectData.progress}% complete`}>
-                  <span className="project-progress-inline-label">{projectData.progress}% complete</span>
-                  <span className="project-progress-track" aria-hidden="true">
-                    <span className="project-progress-fill" style={{ width: `${projectData.progress}%` }} />
-                  </span>
-                </div>
-              )}
-            </div>
+          <section className="task-project-summary" aria-label="Workflow overview">
+            <div className="project-cockpit-heading"><span className="stub-tag">Overview</span></div>
             <h3>{projectData.objective}</h3>
             <p>{projectData.nextAction}</p>
-            <div className="task-briefing-grid" aria-label="Task briefing">
-              <div><span>Why this is here</span><b>{projectData.needsHuman ? "Needs operator attention" : projectData.reasonLabel}</b></div>
-              <div><span>Next action</span><b>{projectData.nextAction}</b></div>
+            <div className="task-briefing-grid" aria-label="Workflow briefing">
+              <div><span>Current objective</span><b>{projectData.objective}</b></div>
+              <div><span>Needs attention</span><b>{projectData.needsHuman ? projectData.reasonLabel : "No human blocker detected"}</b></div>
+              <div><span>Recent summary</span><b>{task.result || task.last_failure_error || "No result summary recorded yet."}</b></div>
+              <div><span>Current run / progress</span><b>{projectData.currentStage} · {projectData.progress}%</b></div>
             </div>
           </section>
-          {projectData.needsHuman ? <div className="project-needs-you"><b>Needs you</b><span>A genuine human decision, Approval Gate, access fix, or manual outcome is required before agents can continue.</span></div> : <div className="project-agent-resolvable"><b>Agent repair suggested</b><span>This is an operational task or routine failure. Assign it to the right agent if it should be fixed without a manual decision.</span></div>}
-          <GuardPolicyPanel policy={projectData.guardPolicy} compact />
-          <ReleaseLaneOverview task={task} compact />
+          {projectData.needsHuman ? <div className="project-needs-you"><b>Needs you</b><span>A genuine human decision, Approval Gate, access fix, or manual outcome is required before agents can continue.</span></div> : <div className="project-agent-resolvable"><b>Agent-owned</b><span>This workflow can continue through agent execution unless a new Approval Gate or blocker appears.</span></div>}
           <div className="task-kv project-task-kv">
-            <Info label="Owner" value={task.assignee || "unassigned"} />
-            <Info label="Status" value={projectData.currentStage} />
-            <Info label="Updated" value={formatSingaporeTime(task.updated_at)} />
             <Info label="Project" value={projectData.displayProjectId} />
             <Info label="Priority" value={`${task.priority_label.charAt(0).toUpperCase()}${task.priority_label.slice(1)} · score ${task.priority}`} />
             <Info label="Workspace" value={formatWorkspaceLabel(task)} />
@@ -759,19 +1140,17 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
             <button className="ghost tiny danger" onClick={() => void onDelete(task)}>Delete</button>
           </div>
           <label className="task-inline-edit"><span>Owner / profile</span><input defaultValue={task.assignee === "unassigned" ? "" : task.assignee} onBlur={(e) => e.target.value !== task.assignee && void onSaveAssignee(task, e.target.value)} /></label>
-          {projectData.needsHuman ? <HumanActionPanel task={task} intent={intent} note={humanNote} setNote={setHumanNote} onHumanAction={onHumanAction} agents={agents} agentTarget={agentTarget} setAgentTarget={setAgentTarget} onAssignToAgent={onAssignToAgent} /> : <AgentAssignmentPanel agents={agents} agentTarget={agentTarget} setAgentTarget={setAgentTarget} onAssignToAgent={() => onAssignToAgent(task)} />}
-          <WorkflowStageList stages={projectData.stages} />
+          {!projectData.needsHuman && <AgentAssignmentPanel agents={agents} agentTarget={agentTarget} setAgentTarget={setAgentTarget} onAssignToAgent={() => onAssignToAgent(task)} />}
         </>
       )}
 
-      {tab === "sources" && <SourcesTab task={task} sources={projectData.sources} onSourceAction={(action, source) => onSourceAction(task, action, source)} />}
-      {tab === "tasks" && <WorkflowTasksTab task={task} comment={comment} setComment={setComment} onAddComment={onAddComment} />}
-      {tab === "outputs" && <OutputsTab outputs={projectData.outputs} />}
-      {tab === "run-tree" && <RunTreePanel runTree={task.run_tree ?? null} handoffs={task.agent_handoffs ?? []} />}
-      {tab === "handoffs" && <section className="task-section"><TaskHandoffTimeline handoffs={task.agent_handoffs ?? []} /></section>}
-      {tab === "release" && <ReleaseLaneTab task={task} />}
-      {tab === "evidence" && <TaskEvidenceProofView task={task} />}
-      {tab === "settings" && <SettingsTab settings={projectData.settings} task={task} />}
+      {tab === "actions" && <WorkflowActionsTab task={task} projectData={projectData} comment={comment} setComment={setComment} onAddComment={onAddComment} />}
+      {tab === "approvals" && <WorkflowApprovalsTab task={task} projectData={projectData} intent={intent} humanNote={humanNote} setHumanNote={setHumanNote} onHumanAction={onHumanAction} agents={agents} agentTarget={agentTarget} setAgentTarget={setAgentTarget} onAssignToAgent={onAssignToAgent} />}
+      {tab === "evidence" && <><WorkflowEvidenceList task={task} projectData={projectData} /><TaskEvidenceProofView task={task} /><SourcesTab task={task} sources={projectData.sources} onSourceAction={(action, source) => onSourceAction(task, action, source)} /><OutputsTab outputs={projectData.outputs} /></>}
+      {tab === "runs" && <WorkflowRunsTab task={task} />}
+      {tab === "rules" && <WorkflowRulesTab task={task} projectData={projectData} />}
+      {tab === "metrics" && <WorkflowMetricsTab task={task} projectData={projectData} />}
+      {tab === "learning" && <WorkflowLearningTab task={task} />}
     </SlideOverDrawer>
   );
 }
@@ -1403,7 +1782,7 @@ function SourcesTab({ task, sources, onSourceAction }: { task: BoardTask; source
           <span className="source-status-chip warning">{(counts.warning ?? 0) + (counts.error ?? 0)} attention</span>
         </div>
       </div>
-      {task.body && <section className="source-raw-context"><h4>Raw source context</h4><pre>{task.body}</pre></section>}
+      {task.body && <details className="source-raw-context"><summary>Raw source context</summary><pre>{task.body}</pre></details>}
       <div className="source-add-card" aria-label="Add a source to this project">
         <select value={draftType} onChange={(e) => setDraftType(e.target.value as ProjectSourceType)}>
           <option value="url">URL</option><option value="file">File</option><option value="video">Video</option><option value="audio">Audio</option><option value="note">Note</option>
@@ -1634,7 +2013,7 @@ function TaskEvidenceProofView({ task }: { task: BoardTask }) {
       {nextActions.length > 0 && <div className="task-result-block"><h4>Next actions</h4><ul>{nextActions.map((action) => <li key={action}>{action}</li>)}</ul></div>}
     </section>
     <StructuredResult task={task} />
-    {task.result && <section className="task-section"><h3>Raw result</h3><pre>{task.result}</pre></section>}
+    {task.result && <details className="task-section source-raw-context"><summary>Raw result</summary><pre>{task.result}</pre></details>}
     </>
   );
 }
@@ -1737,28 +2116,6 @@ function HumanActionPanel({ task, intent, note, setNote, onHumanAction, agents, 
           {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
         </select>
         <button className="ghost tiny" onClick={() => void onAssignToAgent(task)}>Assign to agent & open chat</button>
-      </div>
-    </section>
-  );
-}
-
-function AgentAssignmentPanel({ agents, agentTarget, setAgentTarget, onAssignToAgent }: { agents: Agent[]; agentTarget: string; setAgentTarget: (value: string) => void; onAssignToAgent: () => void }) {
-  return (
-    <section className="task-section agent-assignment-panel">
-      <div className="human-action-head">
-        <div>
-          <span className="stub-tag">AGENT HANDOFF</span>
-          <h3>Agent repair suggested</h3>
-          <p>This card is an operational task, failed routine, or agent-resolvable issue. Assign it to the agent that should investigate, fix, rerun, and attach evidence.</p>
-        </div>
-        <span className="tag muted">auto</span>
-      </div>
-      <div className="agent-handoff-row">
-        <select value={agentTarget} onChange={(e) => setAgentTarget(e.target.value)} aria-label="Assign task to agent">
-          <option value="">Choose agent…</option>
-          {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-        </select>
-        <button className="ghost tiny" onClick={() => void onAssignToAgent()}>Assign to agent & open chat</button>
       </div>
     </section>
   );

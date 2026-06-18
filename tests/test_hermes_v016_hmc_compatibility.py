@@ -241,3 +241,56 @@ def test_v016_runtime_ui_preserves_control_plane_native_console_boundary():
     assert "runtime.remote_gateway_url" not in view  # gateway URL stays out of the default operator surface
     assert "HermesRuntimeAdapterRecord" in types
     assert "DashboardAuthMode" in types
+
+
+def test_linkedin_growth_brand_content_policy_requires_enrico_review(tmp_path, monkeypatch):
+    app = load_app(tmp_path, monkeypatch)
+
+    policy = app.linkedin_growth_brand_content_policy({
+        "assignee": "linkedin-growth",
+        "title": "Draft high-visibility LinkedIn comment for campaign positioning",
+        "body": "Prepare final copy and decide if this is on-brand for Melverick.",
+    })
+
+    assert policy["required"] is True
+    assert policy["reviewer_agent_id"] == "content-ops"
+    assert "brand_content_judgement" in policy["scope"]
+    assert "high_visibility_linkedin_action" in policy["triggers"]
+
+    low_risk = app.linkedin_growth_brand_content_policy({
+        "assignee": "linkedin-growth",
+        "title": "Find ASEAN SME posts worth commenting on",
+        "body": "Discover ICP targets and draft lightweight internal comment options under 50 words.",
+    })
+    assert low_risk["required"] is False
+
+
+def test_linkedin_growth_brand_content_gate_blocks_completion_until_enrico_approval(tmp_path, monkeypatch):
+    app = load_app(tmp_path, monkeypatch)
+    monkeypatch.setattr(app, "KANBAN_DB", tmp_path / "kanban.db")
+
+    created, status = app.create_task({
+        "id": "linkedin-brand-gate",
+        "title": "Draft high-visibility LinkedIn campaign comment",
+        "body": "LinkedIn Growth should prepare final campaign-linked copy and brand judgement.",
+        "assignee": "linkedin-growth",
+        "status": "review",
+        "result": {"summary": "Draft ready", "evidence_required": False},
+    })
+    assert status == 201
+
+    blocked, status = app.update_task("linkedin-brand-gate", {"status": "done"})
+    assert status == 409
+    assert blocked["error"] == "completion blocked by pending Enrico brand/content review"
+    assert "Enrico/content-ops review required" in blocked["blocking_reasons"][0]
+
+    con = app.ensure_kanban_tables()
+    con.execute(
+        "INSERT INTO task_comments(task_id,author,body,created_at) VALUES (?,?,?,?)",
+        ("linkedin-brand-gate", "Enrico / content-ops", "Approved for brand/content judgement.", 1_700_000_001),
+    )
+    con.commit(); con.close()
+
+    completed, status = app.update_task("linkedin-brand-gate", {"status": "done"})
+    assert status == 200
+    assert completed["task"]["status"] == "done"

@@ -986,23 +986,42 @@ def seed_agent_directory(force=False):
             and bool(row['policy_metadata'])
             for row in existing.values()
         )
+        if complete and 'linkedin-growth' in existing:
+            try:
+                linkedin_policy = json.loads(existing['linkedin-growth']['policy_metadata'] or '{}')
+            except Exception:
+                linkedin_policy = {}
+            complete = bool(((linkedin_policy.get('review_relationships') or {}).get('subordinate_to') == 'content-ops'))
         if complete and not force:
             con.close(); AGENT_DIRECTORY_SEEDED = True; return
         for aid, name, desc, category, caps, ref in rows:
+            policy = default_agent_policy_metadata('workspace')
+            if aid == 'linkedin-growth':
+                policy['review_relationships'] = {
+                    'subordinate_to': 'content-ops',
+                    'scope': ['brand_content_judgement', 'campaign_fit', 'high_visibility_linkedin_actions'],
+                    'reviewer_name': 'Enrico / content-ops',
+                    'hard_enforcement': True,
+                    'allowed_without_review': LINKEDIN_GROWTH_ENRICO_BRAND_POLICY['allowed_without_review'],
+                    'requires_review': LINKEDIN_GROWTH_ENRICO_BRAND_POLICY['requires_review'],
+                    'requires_human_approval': LINKEDIN_GROWTH_ENRICO_BRAND_POLICY['requires_human_approval'],
+                }
+                policy['approval_gates'] = agent_os_unique_strings(list(policy.get('approval_gates') or []) + ['enrico_brand_content_review', 'external_linkedin_action'])
+            policy_json = json.dumps(policy)
             con.execute('''
                 INSERT OR IGNORE INTO agent_directory
                     (id,name,description,category,capabilities,shared_agent_ref,status,admin_managed_only,agent_class,scope,visibility,owner_type,policy_metadata)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-            ''', (aid, name, desc, category, json.dumps(caps), ref, 'active', 1, 'workspace', 'workspace', 'workspace-assigned', 'workspace', workspace_policy))
+            ''', (aid, name, desc, category, json.dumps(caps), ref, 'active', 1, 'workspace', 'workspace', 'workspace-assigned', 'workspace', policy_json))
             con.execute('''
                 UPDATE agent_directory
                 SET agent_class=coalesce(nullif(agent_class, ''), 'workspace'),
                     scope=coalesce(nullif(scope, ''), 'workspace'),
                     visibility=coalesce(nullif(visibility, ''), 'workspace-assigned'),
                     owner_type=coalesce(nullif(owner_type, ''), 'workspace'),
-                    policy_metadata=coalesce(nullif(policy_metadata, ''), ?)
+                    policy_metadata=case when id='linkedin-growth' then ? else coalesce(nullif(policy_metadata, ''), ?) end
                 WHERE id=?
-            ''', (workspace_policy, aid))
+            ''', (policy_json, policy_json, aid))
         con.commit(); con.close(); AGENT_DIRECTORY_SEEDED = True
 
 
@@ -5505,6 +5524,141 @@ def task_result_details(result):
 
 
 
+LINKEDIN_GROWTH_ENRICO_BRAND_POLICY = {
+    'policy_id': 'linkedin-growth-enrico-brand-content-review',
+    'agent_id': 'linkedin-growth',
+    'reviewer_agent_id': 'content-ops',
+    'reviewer_name': 'Enrico / content-ops',
+    'scope': ['brand_content_judgement', 'campaign_fit', 'high_visibility_linkedin_action'],
+    'allowed_without_review': [
+        'discover_icp_profiles',
+        'classify_profile_fit',
+        'discover_posts',
+        'monitor_feed_trends',
+        'draft_lightweight_comments_internal',
+        'suggest_engagement_timing',
+        'prepare_opportunity_list',
+    ],
+    'requires_review': [
+        'full_linkedin_post',
+        'company_page_post',
+        'repost_with_thoughts',
+        'campaign_linked_comment',
+        'high_visibility_comment',
+        'positioning_claim',
+        'ambiguous_brand_voice',
+        'sensitive_topic',
+        'final_content_quality_judgement',
+    ],
+    'requires_human_approval': [
+        'submit_comment',
+        'send_dm',
+        'send_connection_request',
+        'publish_post',
+        'schedule_post',
+        'edit_profile_or_company_page',
+    ],
+}
+
+
+def linkedin_growth_brand_content_policy(task_or_route=None, details=None):
+    """Scoped hard gate: LinkedIn Growth defers brand/content judgement to Enrico.
+
+    Discovery and lightweight internal drafts remain unblocked. Brand voice, campaign
+    positioning, high-visibility comments/posts, and final content judgement require
+    Enrico/content-ops review before the task can be completed as approval-ready/done.
+    """
+    task = task_or_route or {}
+    details = details if isinstance(details, dict) else {}
+    assignee = safe_id(str(task.get('assignee') or task.get('agent_id') or task.get('agentId') or ''))
+    if assignee not in {'linkedin-growth', 'linkedin_growth'}:
+        return {**LINKEDIN_GROWTH_ENRICO_BRAND_POLICY, 'required': False, 'triggers': [], 'reason': ''}
+    prompt = text_blob(
+        task.get('title'), task.get('body'), task.get('result'), task.get('prompt'),
+        details.get('summary'), details.get('approval_policy'), details.get('requirements'),
+    ).lower()
+    triggers = []
+    trigger_patterns = [
+        ('full_linkedin_post', r'\b(full\s+linkedin\s+post|linkedin\s+post|post\s+draft|draft\s+post)\b'),
+        ('company_page_post', r'\b(company\s+page|page\s+post)\b'),
+        ('repost_with_thoughts', r'\b(repost|repost\s+with\s+thoughts)\b'),
+        ('campaign_linked_comment', r'\b(campaign|campaign-linked|campaign\s+positioning|campaign\s+fit)\b'),
+        ('high_visibility_linkedin_action', r'\b(high[-\s]?visibility|founder|influencer|public\s+comment|sensitive\s+audience)\b'),
+        ('positioning_claim', r'\b(positioning|claim|official\s+line|narrative|market\s+stance)\b'),
+        ('ambiguous_brand_voice', r'\b(brand\s+voice|on[-\s]?brand|tone|voice|sounds\s+like\s+melverick)\b'),
+        ('sensitive_topic', r'\b(sensitive|controversial|political|legal|funding|subsidy|guarantee|medical|financial\s+advice)\b'),
+        ('final_content_quality_judgement', r'\b(final\s+copy|final\s+content|approval-ready|approval\s+ready|content\s+quality|brand/content\s+judgement)\b'),
+    ]
+    for name, pattern in trigger_patterns:
+        if re.search(pattern, prompt):
+            triggers.append(name)
+    low_risk_only = bool(re.search(r'\b(discover|find|classify|score|monitor|scan|target|opportunit|icp|profile\s+fit|lightweight\s+internal|under\s+50\s+words)\b', prompt)) and not triggers
+    required = bool(triggers) and not low_risk_only
+    reason = ''
+    if required:
+        reason = 'Enrico/content-ops review required for LinkedIn Growth brand/content judgement before completion or high-visibility action.'
+    return {
+        **LINKEDIN_GROWTH_ENRICO_BRAND_POLICY,
+        'required': required,
+        'triggers': agent_os_unique_strings(triggers),
+        'reason': reason,
+        'gate_id': 'enrico-brand-content-review',
+    }
+
+
+def linkedin_growth_enrico_review_satisfied(details=None, comments=None, events=None):
+    details = details if isinstance(details, dict) else {}
+    comments = comments or []
+    events = events or []
+    for gate in list(details.get('approval_gates') or details.get('approvalGates') or []):
+        if not isinstance(gate, dict):
+            continue
+        blob = text_blob(gate.get('id'), gate.get('title'), gate.get('reviewer'), gate.get('reviewer_agent_id'))
+        if 'enrico' in blob.lower() or 'content-ops' in blob.lower() or 'brand-content-review' in blob.lower():
+            if str(gate.get('status') or '').lower() in {'approved', 'complete', 'passed'}:
+                return True
+    for comment in comments:
+        if not isinstance(comment, dict):
+            continue
+        author = str(comment.get('author') or '').lower()
+        body = str(comment.get('body') or '').lower()
+        if ('enrico' in author or 'content-ops' in author or 'content ops' in author) and re.search(r'\b(approved|approve|brand/content\s+approved|on[-\s]?brand)\b', body):
+            return True
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        payload = event.get('payload') if isinstance(event.get('payload'), dict) else {}
+        blob = text_blob(event.get('kind'), payload.get('reviewer'), payload.get('reviewer_agent_id'), payload.get('status'))
+        if ('enrico' in blob.lower() or 'content-ops' in blob.lower()) and str(payload.get('status') or '').lower() in {'approved', 'complete', 'passed'}:
+            return True
+    return False
+
+
+def linkedin_growth_enrico_gate_state(task, details=None, comments=None, events=None):
+    details = details if isinstance(details, dict) else {}
+    policy = linkedin_growth_brand_content_policy(task or {}, details)
+    if not policy.get('required'):
+        return {'required': False, 'status': 'not-required', 'completionBlocked': False, 'policy': policy}
+    approved = linkedin_growth_enrico_review_satisfied(details, comments or [], events or [])
+    return {
+        'required': True,
+        'status': 'approved' if approved else 'pending',
+        'completionBlocked': not approved,
+        'policy': policy,
+        'gate': {
+            'id': policy.get('gate_id'),
+            'title': 'Enrico brand/content review',
+            'risk': 'brand-reputation',
+            'status': 'approved' if approved else 'pending',
+            'reviewer': policy.get('reviewer_name'),
+            'reviewer_agent_id': policy.get('reviewer_agent_id'),
+            'reason': policy.get('reason'),
+            'triggers': policy.get('triggers') or [],
+        },
+        'blocking_reasons': [] if approved else [policy.get('reason')],
+    }
+
+
 def hmc_guard_policy(project_id='', task=None, result_details=None):
     """Return advisory guard-mode metadata for the HMC governed software factory."""
     details = result_details if isinstance(result_details, dict) else {}
@@ -5865,6 +6019,11 @@ def task_mission_result_payload(task, details=None, comments=None, events=None, 
     for comment in comments[:5]:
         evidence.append(normalize_task_evidence(task, {'id': f"{task.get('id')}-comment-{comment.get('id') or comment.get('created_at')}", 'kind': 'human-note', 'type': 'human_note', 'title': f"Operator note · {comment.get('author')}", 'summary': comment.get('body'), 'source': 'Mission Control comment', 'sourceId': str(comment.get('id') or ''), 'reference': comment.get('author'), 'createdAt': comment.get('created_at') or now_iso, 'confidence': 'medium'}, len(evidence), 'human-note', now_iso))
     approval_gates = list(details.get('approval_gates') or [])
+    enrico_gate = linkedin_growth_enrico_gate_state(task, details, comments, events)
+    if enrico_gate.get('required') and enrico_gate.get('gate'):
+        existing_gate_ids = {str(g.get('id') or '') for g in approval_gates if isinstance(g, dict)}
+        if enrico_gate['gate']['id'] not in existing_gate_ids:
+            approval_gates.append(enrico_gate['gate'])
     approval_policy = agent_os_approval_policy({
         'title': task.get('title'),
         'body': task.get('body'),
@@ -6632,6 +6791,15 @@ def update_task(task_id, payload):
                             'error': 'completion blocked by missing required evidence',
                             'evidence_gate': evidence_gate,
                             'blocking_reasons': [f"Missing evidence: {', '.join(evidence_gate.get('missingTypes') or [])}"],
+                        }, 409
+                    enrico_gate = linkedin_growth_enrico_gate_state(candidate_task, candidate_details, gate_comments, gate_events)
+                    if enrico_gate.get('completionBlocked'):
+                        con.close()
+                        return {
+                            'ok': False,
+                            'error': 'completion blocked by pending Enrico brand/content review',
+                            'enrico_brand_content_gate': enrico_gate,
+                            'blocking_reasons': enrico_gate.get('blocking_reasons') or ['Enrico/content-ops review required before completion.'],
                         }, 409
                     tree_payload, tree_status = task_run_tree_response(tid)
                     tree_summary = ((tree_payload.get('run_tree') or {}).get('summary') or {}) if tree_status == 200 else {}

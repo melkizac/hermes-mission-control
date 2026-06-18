@@ -11,6 +11,7 @@ type SlideOverDrawerProps<Tab extends string = string> = {
   onClose: () => void;
   children: ReactNode;
   tabs?: readonly Tab[];
+  tabLabels?: Partial<Record<Tab, ReactNode>>;
   activeTab?: Tab;
   onTabChange?: (tab: Tab) => void;
   actions?: ReactNode;
@@ -30,6 +31,7 @@ export function SlideOverDrawer<Tab extends string = string>({
   onClose,
   children,
   tabs,
+  tabLabels,
   activeTab,
   onTabChange,
   actions,
@@ -70,7 +72,7 @@ export function SlideOverDrawer<Tab extends string = string>({
             <button className="mc-drawer-tab-arrow" type="button" aria-label="Scroll tabs left" onClick={() => scrollTabs(-1)}>‹</button>
             <nav className="mc-drawer-tabs" ref={tabRailRef}>
               {tabs.map((item) => (
-                <button key={item} className={activeTab === item ? "on" : ""} aria-current={activeTab === item ? "page" : undefined} onClick={() => onTabChange(item)}>{item}</button>
+                <button key={item} className={activeTab === item ? "on" : ""} aria-current={activeTab === item ? "page" : undefined} onClick={() => onTabChange(item)}>{tabLabels?.[item] ?? item}</button>
               ))}
             </nav>
             <button className="mc-drawer-tab-arrow" type="button" aria-label="Scroll tabs right" onClick={() => scrollTabs(1)}>›</button>
