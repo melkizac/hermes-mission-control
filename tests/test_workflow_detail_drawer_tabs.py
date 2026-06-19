@@ -18,6 +18,7 @@ def test_workflow_library_detail_drawer_has_standard_tabs_and_header():
     assert 'workflow-detail-tabs' in source
     assert 'WorkflowTabBody' in source
     assert '.workflow-detail-tabs {' in css
+    assert '.workflow-detail-drawer-standard { align-content: start; grid-auto-rows: max-content; }' in css
     assert '.workflow-drawer-header {' in css
     assert '.workflow-action-list li,' in css
     assert '.workflow-routines-linked .workflow-steps li' in css
