@@ -4451,6 +4451,7 @@ input, select, textarea { font-family: inherit; }
 .workflow-detail-layer { position: fixed; inset: 0; z-index: 220; display: flex; justify-content: flex-end; pointer-events: none; }
 .workflow-detail-scrim { position: absolute; inset: 0; border: 0; background: rgba(15, 23, 42, .28); backdrop-filter: blur(2px); pointer-events: auto; cursor: pointer; }
 .workflow-detail-drawer { position: relative; width: min(820px, calc(100vw - 28px)); height: calc(100vh - 28px); margin: 14px; overflow-y: auto; pointer-events: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 24px; padding: 18px; box-shadow: 0 28px 80px rgba(15,23,42,.24); display: grid; gap: 16px; }
+.workflow-detail-drawer-standard { align-content: start; grid-auto-rows: max-content; }
 .workflow-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--line); padding-bottom: 14px; }
 .workflow-detail-head span { color: #0b6f66; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: .11em; }
 .workflow-detail-head h2 { font-size: 24px; margin-top: 6px; letter-spacing: -0.035em; }
