@@ -744,6 +744,7 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
   const intent = classifyHumanTask(task);
   const displayCopy = getTaskDisplayCopy(task);
   const projectData = getProjectDrawerData(task);
+  const cockpit = buildOverviewExecutionCockpit(task, projectData);
   return (
     <SlideOverDrawer
       title={displayCopy.title}
@@ -763,9 +764,12 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
     >
       {tab === "overview" && (
         <>
-          <section className="task-project-summary" aria-label="Project workflow overview">
+          <section className="task-project-summary task-execution-cockpit" aria-label="At a glance execution cockpit" data-testid="task-execution-cockpit-overview">
             <div className="project-cockpit-heading">
-              <span className="stub-tag">TASK SUMMARY</span>
+              <div>
+                <span className="stub-tag">At a glance execution cockpit</span>
+                <h3>{projectData.objective}</h3>
+              </div>
               {projectData.progressKnown && (
                 <div className="project-progress-inline" aria-label={`${projectData.progress}% complete`}>
                   <span className="project-progress-inline-label">{projectData.progress}% complete</span>
@@ -775,14 +779,11 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
                 </div>
               )}
             </div>
-            <h3>{projectData.objective}</h3>
             <p>{projectData.nextAction}</p>
-            <div className="task-briefing-grid" aria-label="Task briefing">
-              <div><span>Why this is here</span><b>{projectData.needsHuman ? "Needs operator attention" : projectData.reasonLabel}</b></div>
-              <div><span>Next action</span><b>{projectData.nextAction}</b></div>
-            </div>
+            <TaskExecutionCockpitOverview model={cockpit} />
+            <p className="task-cockpit-footnote">No duplicate page: this overview summarizes the same drawer tabs operators can drill into.</p>
           </section>
-          {projectData.needsHuman ? <div className="project-needs-you"><b>Needs you</b><span>A genuine human decision, Approval Gate, access fix, or manual outcome is required before agents can continue.</span></div> : <div className="project-agent-resolvable"><b>Agent repair suggested</b><span>This is an operational task or routine failure. Assign it to the right agent if it should be fixed without a manual decision.</span></div>}
+          {projectData.needsHuman ? <div className="project-needs-you"><b>Needs you</b><span>{cockpit.humanActionCopy}</span></div> : <div className="project-agent-resolvable"><b>Agent repair suggested</b><span>This is an operational task or routine failure. Assign it to the right agent if it should be fixed without a manual decision.</span></div>}
           <GuardPolicyPanel policy={projectData.guardPolicy} compact />
           <ReleaseLaneOverview task={task} compact />
           <div className="task-kv project-task-kv">
@@ -813,6 +814,140 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
       {tab === "settings" && <SettingsTab settings={projectData.settings} task={task} />}
     </SlideOverDrawer>
   );
+}
+
+type TaskCockpitSignal = { label: string; value: string; detail: string; tone?: "good" | "warn" | "muted" | "needs-human" };
+type TaskCockpitArtifact = { id: string; title: string; meta: string; status: string };
+type TaskCockpitTimelineItem = { id: string; label: string; summary: string; time: string };
+type TaskExecutionCockpitModel = {
+  signals: TaskCockpitSignal[];
+  artifacts: TaskCockpitArtifact[];
+  timeline: TaskCockpitTimelineItem[];
+  evidenceGateLabel: string;
+  approvalLabel: string;
+  humanActionCopy: string;
+};
+
+function TaskExecutionCockpitOverview({ model }: { model: TaskExecutionCockpitModel }) {
+  return (
+    <div className="task-cockpit-body">
+      <div className="task-cockpit-signal-grid" aria-label="Task cockpit signals">
+        {model.signals.map((signal) => (
+          <div className={`task-cockpit-signal-card ${signal.tone ?? ""}`} key={signal.label}>
+            <span>{signal.label}</span>
+            <b>{signal.value}</b>
+            <small>{signal.detail}</small>
+          </div>
+        ))}
+      </div>
+      <div className="task-cockpit-preview-grid">
+        <section className="task-cockpit-preview-card" aria-label="Artifact preview">
+          <div className="task-cockpit-preview-head"><span className="stub-tag">Artifact preview</span><b>{model.artifacts.length ? `${model.artifacts.length} shown` : "None yet"}</b></div>
+          {model.artifacts.length > 0 ? (
+            <div className="task-cockpit-artifact-list">
+              {model.artifacts.map((artifact) => <span key={artifact.id}><b>{artifact.title}</b><small>{artifact.meta} · {artifact.status}</small></span>)}
+            </div>
+          ) : <p>No artifact chips yet. Full outputs and proof stay in Outputs and Evidence.</p>}
+        </section>
+        <section className="task-cockpit-preview-card" aria-label="Recent execution timeline">
+          <div className="task-cockpit-preview-head"><span className="stub-tag">Recent execution timeline</span><b>{model.timeline.length ? `${model.timeline.length} signals` : "Waiting"}</b></div>
+          {model.timeline.length > 0 ? (
+            <div className="task-cockpit-timeline">
+              {model.timeline.map((item) => <div key={item.id}><span>{item.label}</span><b>{item.summary}</b><small>{item.time}</small></div>)}
+            </div>
+          ) : <p>No run, handoff, or event signal has been attached yet.</p>}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function buildOverviewExecutionCockpit(task: BoardTask, projectData: ProjectDrawerData): TaskExecutionCockpitModel {
+  const artifacts = getTaskArtifactPreview(task, projectData.outputs);
+  const approval = getTaskApprovalGateSummary(task);
+  const evidenceGate = getTaskEvidenceGateSummary(task);
+  const timeline = getTaskExecutionTimelinePreview(task);
+  const humanActionCopy = projectData.needsHuman
+    ? approval.pendingCount > 0
+      ? `Approval needed: ${approval.actor} must decide ${approval.action} for ${approval.target}. Effect: ${approval.effect}`
+      : `${projectData.reasonLabel}: ${projectData.nextAction}`
+    : "No human approval is blocking the current agent path.";
+  return {
+    artifacts,
+    timeline,
+    evidenceGateLabel: evidenceGate.value,
+    approvalLabel: approval.value,
+    humanActionCopy,
+    signals: [
+      { label: "Task objective", value: projectData.currentStage, detail: projectData.objective, tone: projectData.needsHuman ? "warn" : "muted" },
+      { label: "Owner", value: task.assignee || "unassigned", detail: `Project: ${projectData.displayProjectId}`, tone: "muted" },
+      { label: "Next action", value: projectData.needsHuman ? "Needs operator" : "Agent-operable", detail: projectData.nextAction, tone: projectData.needsHuman ? "needs-human" : "good" },
+      { label: "Evidence gate", value: evidenceGate.value, detail: evidenceGate.detail, tone: evidenceGate.blocked ? "warn" : "good" },
+      { label: "Artifacts surfaced", value: `${artifacts.length}/${projectData.outputs.length}`, detail: artifacts.length ? "Latest/high-value chips shown here; full list remains in Outputs/Evidence." : "No outputs attached yet.", tone: artifacts.length ? "good" : "muted" },
+      { label: "Approval gates", value: approval.value, detail: approval.detail, tone: approval.pendingCount > 0 ? "needs-human" : "muted" },
+      { label: "Latest run signal", value: timeline[0]?.label || "No signal yet", detail: timeline[0]?.summary || "Run tree, handoffs, evidence, and events will populate this preview.", tone: timeline.length ? "good" : "muted" },
+    ],
+  };
+}
+
+function getTaskArtifactPreview(task: BoardTask, outputs: DrawerRecord[]): TaskCockpitArtifact[] {
+  const detailArtifacts = task.mission_result?.artifacts.map((artifact) => artifact as unknown as DrawerRecord) ?? [];
+  const normalized = (outputs.length ? outputs : detailArtifacts).map((output, index) => normalizeOutputArtifact(output, index));
+  return normalized.slice(0, 4).map((artifact) => ({
+    id: artifact.id,
+    title: artifact.title,
+    meta: [artifact.kind, artifact.format, artifact.version].filter(Boolean).join(" · ") || "artifact",
+    status: artifact.qaStatus || artifact.redactionStatus || "available",
+  }));
+}
+
+function getTaskApprovalGateSummary(task: BoardTask) {
+  const gates = task.mission_result?.approvalGates ?? task.result_details?.approval_gates ?? [];
+  const pending = gates.filter((gate) => gate.status === "pending" || gate.status === "changes-requested");
+  const latest = pending[0] ?? gates[0];
+  const value = gates.length ? `${pending.length}/${gates.length} pending` : "No gates";
+  return {
+    value,
+    detail: latest ? `${latest.title}: ${latest.reason || latest.status}` : "Approvals are not required unless external, irreversible, or sensitive actions are requested.",
+    pendingCount: pending.length,
+    actor: latest?.reviewedBy || latest?.requestedBy || "operator",
+    action: latest?.title || "the approval gate",
+    target: latest?.sourceRef?.id || task.id,
+    effect: latest?.reason || "agents can continue once approved or changes are requested",
+  };
+}
+
+function getTaskEvidenceGateSummary(task: BoardTask) {
+  const gate = task.mission_result?.evidenceGate ?? task.result_details?.evidenceGate ?? task.result_details?.evidence_gate;
+  if (!gate) return { value: "Not attached", detail: "Evidence tab will show proof once workers attach it.", blocked: false };
+  const missing = gate.missingTypes?.length ? ` Missing: ${gate.missingTypes.map(formatEvidenceGateType).join(", ")}.` : "";
+  return {
+    value: gate.completionBlocked ? "Blocked" : gate.status,
+    detail: `${gate.summary || (gate.required ? "Completion evidence required." : "Evidence gate is informational.")}${missing}`,
+    blocked: gate.completionBlocked || gate.status === "missing" || gate.status === "blocked",
+  };
+}
+
+function getTaskExecutionTimelinePreview(task: BoardTask): TaskCockpitTimelineItem[] {
+  const eventItems = task.events.slice(-3).map((event, index) => ({
+    id: `event-${event.id ?? index}-${event.created_at}`,
+    label: `Event · ${event.kind}`,
+    summary: event.kind.replace(/[-_]+/g, " "),
+    time: formatSingaporeTime(event.created_at),
+  }));
+  const runItems = task.runs.slice(-2).map((run) => ({
+    id: `run-${run.id}`,
+    label: `Run · ${run.status}`,
+    summary: run.summary || run.error || run.outcome || `worker ${run.profile || "agent"}`,
+    time: formatSingaporeTime(run.ended_at || run.started_at),
+  }));
+  const handoffItems = (task.agent_handoffs ?? []).slice(-2).map((handoff) => ({
+    id: `handoff-${handoff.id}`,
+    label: `Handoff · ${handoff.status}`,
+    summary: `${handoff.from_agent} → ${handoff.to_agent}: ${handoff.objective}`,
+    time: formatSingaporeTime(handoff.updated_at || handoff.created_at),
+  }));
+  return [...handoffItems, ...runItems, ...eventItems].filter((item) => item.summary).slice(-5).reverse();
 }
 
 function asRecord(value: unknown): DrawerRecord {

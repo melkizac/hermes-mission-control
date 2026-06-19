@@ -54,7 +54,7 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
     label: "Workforce",
     items: [
       { key: "agents", label: "Agents", icon: "agents" },
-      { key: "agent-org", label: "Org Chart", icon: "agentOrg" },
+      { key: "agent-org", label: "Capabilities", icon: "agentOrg" },
       { key: "skills", label: "Skills", icon: "skills" },
       { key: "memory", label: "Memory", icon: "memory" },
       { key: "reflections", label: "Reflections", icon: "memory" },

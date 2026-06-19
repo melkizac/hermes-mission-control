@@ -7,7 +7,7 @@ import type { AgentHandoff, CapabilityMatrixCapability, CapabilityMatrixRow, Run
 import { useRealtimeRefresh, type RefreshMode } from "../hooks/useRealtimeRefresh";
 import { cachedJsonRequest, invalidateQueryCache } from "../services/queryCache";
 
-type Tab = "org" | "agents" | "goals" | "queues" | "handoffs" | "flows" | "runs" | "delegation" | "outputs" | "permissions" | "health";
+type Tab = "org" | "capabilities" | "agents" | "goals" | "queues" | "handoffs" | "flows" | "runs" | "delegation" | "outputs" | "permissions" | "health";
 type DrawerTab = "overview" | "goals" | "queue" | "handoffs" | "approvals" | "runs" | "run-tree" | "outputs" | "activity" | "tools" | "memory" | "skills" | "permissions" | "profile" | "config";
 type AgentStatus = "active" | "idle" | "blocked" | "failed" | "attention";
 
@@ -87,59 +87,115 @@ const emptyOrg: AgentOrgResponse = { agents: [], relationships: [], flows: [], s
 const CANONICAL_TEAM_MAP = [
   {
     profile: "default",
+    label: "Melkizac / default",
     name: "Melkizac / Mission Control Orchestrator",
+    role: "Mission Control Orchestrator",
     owns: "Triage, routing, governance, approvals, evidence checks, stuck-work unblocking, and final operator reporting.",
+    safe: "Clarify work, create task plans, route to specialists, inspect evidence, and summarize status from HMC/Kanban.",
+    approval: "External publishing, business commitments, credential/secret actions, destructive operations, or overriding specialist authority.",
+    evidence: "Routing rationale, task links, child-owner handoffs, approval state, and verified completion evidence before reporting done.",
+    escalation: "Melverick for business judgment; Andrej for engineering risk; Enrico for marketing/public-content review.",
+    why: "Default owner for ambiguous cross-domain work because orchestration and evidence governance are the core responsibility.",
     handoff: "Hands off domain execution to specialists when a role exists; verifies completion before reporting done.",
     visible: "Chief operator plus cross-domain goals, tasks, handoffs, approvals, outputs, and evidence.",
   },
   {
     profile: "dev-ops",
+    label: "Andrej / dev-ops",
     name: "Andrej / DevOps Builder",
+    role: "DevOps Builder / engineering authority",
     owns: "HMC UI/API work, code changes, tests, deployments, runtime debugging, GitHub, web properties, and automation buildout.",
+    safe: "Inspect repos/services, patch source, run tests/builds, prepare PRs, collect logs, and verify UI/API behavior.",
+    approval: "Destructive production DB changes, DNS/cloud deletion, live secret rotation, or production deploys not explicitly requested.",
+    evidence: "Changed files, test/build output, git branch/commit or PR, health checks, browser screenshots/DOM proof, and rollback notes.",
+    escalation: "Melverick for production-risk decisions; reviewer gate before merge when code changes need human eyes.",
+    why: "Engineering work belongs with the agent that owns implementation, deployment safety, and evidence-backed verification.",
     handoff: "Use for build/fix/test/deploy work and technical verification; approval required for destructive production, DB, DNS, or secret changes.",
     visible: "DevOps-owned tasks with repo/path, desired behavior, command/browser evidence, and deployment state.",
   },
   {
     profile: "content-ops",
+    label: "Enrico / content-ops",
     name: "Content Ops / Enrico",
+    role: "Marketing and Content Ops",
     owns: "Content strategy, campaign angles, blogs/articles, LinkedIn drafts, visuals, reports, and approval-ready publishing assets.",
+    safe: "Draft content, produce campaign variants, prepare review packets, organize assets, and hand approved execution packages downstream.",
+    approval: "Publishing, public comments, DMs, claims about Nexius/Melverick, and brand-sensitive external messaging.",
+    evidence: "Draft artifact paths, source material, target channel, approval status, review notes, and final handoff instructions.",
+    escalation: "Melverick for brand/business judgment; LinkedIn Growth for ICP execution after Enrico review.",
+    why: "Marketing and narrative work needs content ownership before any public execution path is opened.",
     handoff: "Use for marketing/content assets; hand live LinkedIn execution to LinkedIn Growth and engineering changes to DevOps.",
     visible: "Content tasks or campaign goals with draft artifacts, target channel, approval status, and downstream handoff.",
   },
   {
     profile: "linkedin-growth",
+    label: "LinkedIn Growth",
     name: "LinkedIn Growth",
+    role: "ICP / LinkedIn execution under Enrico review",
     owns: "LinkedIn ICP engagement, feed/profile analysis, comments/posts/DM drafts, scheduling support, and DM follow-up audits.",
+    safe: "Research targets, draft comments/posts/DMs, prepare schedules, and collect engagement evidence without submitting externally.",
+    approval: "Every external comment, post, DM, connection request, or profile/account action.",
+    evidence: "Target URL/profile, proposed copy, approval gate, submit path, timestamped outcome, and screenshot/log evidence.",
+    escalation: "Enrico reviews content/brand fit; Melverick approves high-impact outreach or relationship-sensitive actions.",
+    why: "LinkedIn work has channel-specific context and higher reputation risk, so execution stays specialized and review-gated.",
     handoff: "Use for LinkedIn execution; every external comment, post, DM, or request needs verified target + submit path and approval.",
     visible: "LinkedIn tasks/routines with target URL/profile, proposed action, approval gate, outcome, and screenshot/log evidence.",
   },
   {
-    profile: "nexius-leads",
-    name: "Nexius Lead Agent",
-    owns: "Nexius Labs/Academy lead capture monitoring, qualification, source attribution, course signup monitoring, and lead-gen reporting.",
-    handoff: "Use for lead checks, SkillsFuture/class lead qualification, and course funnel monitoring; outbound follow-up remains approval-gated.",
-    visible: "Lead campaign goals/tasks with source, lead delta, qualification status, blockers, approvals, and report artifacts.",
-  },
-  {
     profile: "second-brain",
+    label: "Second Brain",
     name: "Second Brain",
+    role: "KB/provenance/source ingestion",
     owns: "Provenance-backed KB ingestion, wiki synthesis, source preservation, index/log hygiene, and context retrieval.",
+    safe: "Ingest sources, write/update canonical notes, preserve provenance, index knowledge, and retrieve source-backed context.",
+    approval: "Sensitive data movement, deleting source records, or converting uncertain claims into canonical policy.",
+    evidence: "Source paths/URLs, wiki pages changed, provenance notes, index/log updates, and retrieval terms used.",
+    escalation: "Melverick for knowledge-policy decisions; Andrej when ingestion requires backend/tooling changes.",
+    why: "Source-backed knowledge work needs provenance discipline rather than ad-hoc chat summaries.",
     handoff: "Use for source ingestion, canonical notes, project memory, research context retrieval, and wiki cleanup.",
     visible: "KB tasks with source paths/URLs, created or updated wiki pages, log/index changes, and provenance notes.",
   },
   {
     profile: "project-task",
+    label: "Project & Task Coordinator",
     name: "Project & Task Coordinator",
+    role: "HMC/Kanban state/evidence/routing",
     owns: "HMC/Kanban state, goal/action decomposition, evidence gates, blocked-work review, and worker routing.",
+    safe: "Create/route cards, audit stale states, reconcile board visibility, decompose goals, and document evidence gates.",
+    approval: "Closing ambiguous business decisions, deleting Kanban history, or changing project priorities without operator direction.",
+    evidence: "Task IDs, parent/child dependencies, status rationale, comments/handoffs, and verified board/API counts.",
+    escalation: "Melkizac for orchestration conflicts; Melverick for priority or human-execution decisions.",
+    why: "Persistent multi-agent work should live in Kanban with explicit ownership, dependencies, and evidence expectations.",
     handoff: "Use when work needs persistent tracking, multiple steps, visible status, or cross-agent supervision.",
     visible: "Tasks, goals, runs, handoffs, approvals, outputs, and evidence linked to the responsible agent.",
   },
   {
     profile: "email-attention",
+    label: "Email Attention Ops",
     name: "Email Attention Ops",
+    role: "Read-only email checks and follow-up task creation",
     owns: "Read-only email attention monitoring, high-signal inbox triage, snooze reminders, follow-up task creation, and reply drafts.",
+    safe: "Check configured inbox views, flag attention items, draft replies, create follow-up tasks, and report due reminders.",
+    approval: "Sending replies, mutating mailbox state, changing filters, or moving sensitive email content outside approved context.",
+    evidence: "Mailbox/source context, sender/subject metadata, due time, draft response, approval gate, and follow-up task link.",
+    escalation: "Melverick for send/delete/archive decisions; Enrico for marketing replies; Andrej for integration issues.",
+    why: "Email monitoring can stay useful and safe when it is read-only by default with explicit send/mutation approval.",
     handoff: "Use for recurring inbox monitoring, important-email surfacing, and follow-up reminders; external replies or mailbox mutations remain approval-gated.",
     visible: "Email attention routines/tasks with source mailbox context, due time, drafted response when applicable, approval gate, and follow-up status.",
+  },
+  {
+    profile: "nexius-leads",
+    label: "Nexius Lead Agent",
+    name: "Nexius Lead Agent",
+    role: "Lead monitoring/qualification/source attribution",
+    owns: "Nexius Labs/Academy lead capture monitoring, qualification, source attribution, course signup monitoring, and lead-gen reporting.",
+    safe: "Monitor lead sources, qualify inbound signals, attribute source/campaign, produce lead reports, and create follow-up tasks.",
+    approval: "Outbound follow-up, external CRM/email mutations, business commitments, or sensitive personal-data movement.",
+    evidence: "Lead source, capture timestamp, qualification rationale, attribution/campaign, blocker notes, and report artifacts.",
+    escalation: "Melverick for sales/business decisions; Andrej for integration/data pipeline issues.",
+    why: "Lead monitoring needs attribution and qualification context so follow-up work is prioritized without unsafe outreach.",
+    handoff: "Use for lead checks, SkillsFuture/class lead qualification, and course funnel monitoring; outbound follow-up remains approval-gated.",
+    visible: "Lead campaign goals/tasks with source, lead delta, qualification status, blockers, approvals, and report artifacts.",
   },
 ];
 
@@ -240,6 +296,57 @@ function AgentStatusBadge({ agent, compact = false }: { agent: OrgAgent; compact
       <b>{status.icon}</b>
       {status.count ? <em>{status.count}</em> : null}
     </i>
+  );
+}
+
+function canonicalAgentLoad(member: (typeof CANONICAL_TEAM_MAP)[number], agents: OrgAgent[]) {
+  const matched = agents.find((agent) => agent.profile === member.profile || agent.id === member.profile || agent.name.toLowerCase().includes(member.label.toLowerCase().split(" /")[0]));
+  if (!matched) return "Current load not available yet";
+  const queue = matched.queue || { queued: 0, running: 0, blocked: 0, done: 0, failed: 0 };
+  const open = (queue.queued || 0) + (queue.running || 0) + (queue.blocked || 0) + (queue.failed || 0);
+  return `${open} open · ${queue.running || 0} running · ${queue.blocked || 0} blocked · ${(matched.inbox_count ?? matched.inbox.length) || 0} gates`;
+}
+
+function RoutingField({ label, children }: { label: string; children: ReactNode }) {
+  return <div className="routing-field"><span>{label}</span><p>{children}</p></div>;
+}
+
+function DigitalCoworkerCapabilityPanel({ agents }: { agents: OrgAgent[] }) {
+  return (
+    <section className="capability-routing-panel" aria-label="Digital Coworker Capability & Routing Panel">
+      <div className="capability-routing-hero">
+        <span className="stub-tag">ROUTING GOVERNANCE</span>
+        <h2>Digital Coworker Capability & Routing Panel</h2>
+        <p>Choose owners by authority, safe default actions, approval boundaries, evidence expectations, and current load — not by a decorative expert marketplace.</p>
+        <div className="routing-helper-copy">
+          <b>Routing rule:</b> Avoid treating agents as interchangeable: route by domain ownership, approval boundary, and expected evidence.
+          External posts, DMs, emails, publishing, destructive production changes, sensitive data movement, legal/business commitments, and high-impact changes remain approval-gated.
+        </div>
+      </div>
+      <div className="capability-routing-grid">
+        {CANONICAL_TEAM_MAP.map((member) => (
+          <article className="capability-routing-card" key={member.profile}>
+            <div className="capability-routing-card-head">
+              <div>
+                <span className="stub-tag">{member.profile}</span>
+                <h3>{member.label}</h3>
+              </div>
+              <b>{member.role}</b>
+            </div>
+            <div className="routing-field-grid">
+              <RoutingField label="Role">{member.role}</RoutingField>
+              <RoutingField label="Owns">{member.owns}</RoutingField>
+              <RoutingField label="Can do safely/default">{member.safe}</RoutingField>
+              <RoutingField label="Needs approval for">{member.approval} <strong>approval-gated by default</strong></RoutingField>
+              <RoutingField label="Evidence expected">{member.evidence}</RoutingField>
+              <RoutingField label="Escalation/review path">{member.escalation}</RoutingField>
+              <RoutingField label="Current load">{canonicalAgentLoad(member, agents)}</RoutingField>
+              <RoutingField label="Why this owner">{member.why}</RoutingField>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -805,7 +912,7 @@ export function AgentOrg() {
     agents.forEach((agent) => (agent.handoffs || []).forEach((handoff) => byId.set(handoff.id, handoff)));
     return Array.from(byId.values()).sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
   }, [agents]);
-  const tabs: Tab[] = ["org", "agents", "goals", "queues", "handoffs", "flows", "runs", "delegation", "outputs", "permissions", "health"];
+  const tabs: Tab[] = ["org", "capabilities", "agents", "goals", "queues", "handoffs", "flows", "runs", "delegation", "outputs", "permissions", "health"];
 
   const handleAction = async (agent: OrgAgent, action: string, payload?: Record<string, unknown>) => {
     let body: Record<string, unknown> = { action, ...(payload || {}) };
@@ -906,22 +1013,11 @@ export function AgentOrg() {
         {chief && <NodeCard agent={chief} selected={selected?.id === chief.id} onClick={() => setSelectedId(chief.id)} />}
         <div className="org-branch" />
         <div className="org-node-grid">{childNodes.map((agent) => <NodeCard key={agent.id} agent={agent} selected={selected?.id === agent.id} onClick={() => setSelectedId(agent.id)} />)}</div>
-        <section className="ops-card" style={{ width: "100%" }}>
-          <div className="goal-section-head"><h3>Canonical AI Workforce Team Map</h3><small>Melkizac routes work by role; specialists execute in their domains; HMC/Kanban stays the evidence layer.</small></div>
-          <div className="activity-list">
-            {CANONICAL_TEAM_MAP.map((member) => <div className="activity-row info" key={member.profile}>
-              <span className="activity-dot" />
-              <div className="activity-body">
-                <div className="activity-title-line"><b>{member.name}</b><span className="tag active">{member.profile}</span></div>
-                <small>Owns: {member.owns}</small>
-                <p><b>Handoff:</b> {member.handoff}</p>
-                <p><b>Visible in HMC/Kanban:</b> {member.visible}</p>
-              </div>
-            </div>)}
-          </div>
-        </section>
+        <DigitalCoworkerCapabilityPanel agents={agents} />
         <HandoffTimeline handoffs={allHandoffs} compact />
       </section>}
+
+      {!loading && tab === "capabilities" && <DigitalCoworkerCapabilityPanel agents={agents} />}
 
       {!loading && tab === "agents" && <section className="org-table operational"><div className="org-table-head"><span>Agent</span><span>Status</span><span>Runtime</span><span>Queue</span><span>Runs</span><span>Outputs</span><span>Actions</span></div>{agents.map((agent) => <div className="org-table-row" role="button" tabIndex={0} key={agent.id} onClick={() => setSelectedId(agent.id)} onKeyDown={(e) => { if (e.key === "Enter") setSelectedId(agent.id); }}><b>{agent.name}<small>{agent.role}</small></b><span><AgentStatusBadge agent={agent} compact /></span><span>{agent.runtime || "hermes"}<small>{agent.profile || "default"}</small></span><span>{agent.queue.queued}/{agent.queue.running}/{agent.queue.blocked}</span><span>{agent.runs.length}</span><span>{agent.outputs.length}</span><span className="row-actions"><button className="btn dark small" disabled={!agent.automations.length} onClick={(e) => { e.stopPropagation(); setSelectedId(agent.id); if (agent.automations.length === 1) void handleAction(agent, "run_agent"); }}>{agentRunLabel(agent)}</button><button className="btn ghost small" onClick={(e) => { e.stopPropagation(); setSelectedId(agent.id); }}>Details</button></span></div>)}</section>}
 
