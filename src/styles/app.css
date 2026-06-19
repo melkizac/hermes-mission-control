@@ -4456,11 +4456,38 @@ input, select, textarea { font-family: inherit; }
 .workflow-detail-head h2 { font-size: 24px; margin-top: 6px; letter-spacing: -0.035em; }
 .workflow-detail-head p { color: var(--muted); margin-top: 5px; line-height: 1.45; }
 .workflow-detail-section { display: grid; gap: 10px; }
+.workflow-drawer-header { width: 100%; display: grid; gap: 10px; border: 1px solid #e2e8f0; background: linear-gradient(180deg, #fbfdff 0%, #f8fafc 100%); border-radius: 16px; padding: 11px; }
+.workflow-drawer-meta-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.workflow-detail-info { display: grid; gap: 3px; min-width: 0; padding: 8px 9px; border: 1px solid #e5e7eb; border-radius: 12px; background: #fff; }
+.workflow-detail-info span { color: #667085; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .1em; }
+.workflow-detail-info b { color: var(--ink); font-size: 12px; overflow-wrap: anywhere; }
+.workflow-drawer-progress { display: grid; grid-template-columns: auto minmax(120px, 1fr); gap: 10px; align-items: center; color: #0f766e; font-size: 11px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.workflow-detail-tabs { display: flex; align-items: center; gap: 8px; overflow-x: auto; padding: 4px 0 8px; border-bottom: 1px solid var(--line); }
+.workflow-detail-tabs button { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; border: 1px solid #e2e8f0; border-radius: 999px; background: #fff; color: #475569; padding: 8px 11px; font-size: 12px; font-weight: 900; }
+.workflow-detail-tabs button:hover { background: #f8fafc; color: #111827; }
+.workflow-detail-tabs button.on { background: #111827; border-color: #111827; color: #fff; }
+.mc-tab-count { display: inline-flex; align-items: center; justify-content: center; min-width: 19px; height: 19px; padding: 0 6px; border-radius: 999px; background: #eef2f7; color: #475569; font-size: 10px; font-weight: 950; line-height: 1; }
+.workflow-detail-tabs button.on .mc-tab-count { background: #fff; color: #111827; }
+.workflow-detail-empty { border: 1px dashed #d9e2ec; border-radius: 14px; background: #f8fafc; }
+.workflow-rule-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.workflow-detail-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; }
+.workflow-approval-card-list, .workflow-next-actions { display: grid; gap: 10px; }
+.workflow-approval-card { border: 1px solid #fed7aa; background: #fff7ed; color: #9a4b0d; border-radius: 14px; padding: 11px 12px; }
+.workflow-approval-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.workflow-approval-card-head span { color: #9a3412; font-size: 11px; font-weight: 900; text-transform: capitalize; }
+.workflow-next-actions { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+@media (max-width: 760px) { .workflow-drawer-meta-grid, .workflow-rule-grid, .workflow-detail-metrics { grid-template-columns: 1fr; } .workflow-drawer-progress { grid-template-columns: 1fr; } }
 .workflow-detail-section > b { font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
-.workflow-steps { display: grid; gap: 8px; list-style-position: inside; }
-.workflow-steps li { border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; background: #fbfcfd; }
+.workflow-steps { display: grid; gap: 10px; list-style-position: outside; padding-left: 20px; }
+.workflow-steps li { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; background: #fbfcfd; }
+.workflow-action-list,
+.workflow-routines-linked .workflow-steps { gap: 12px; }
+.workflow-action-list li,
+.workflow-routines-linked .workflow-steps li { padding: 14px 16px; line-height: 1.45; }
 .workflow-steps span { font-weight: 850; }
 .workflow-steps small { display: block; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+.workflow-action-list small,
+.workflow-routines-linked .workflow-steps small { margin-top: 6px; line-height: 1.5; }
 .workflow-approval-list { display: grid; gap: 8px; list-style: none; }
 .workflow-approval-list li { border: 1px solid #fed7aa; background: #fff7ed; color: #9a4b0d; border-radius: 12px; padding: 10px 12px; font-size: 12.5px; line-height: 1.4; }
 @media (max-width: 1100px) { .workflow-layout, .workflow-grid, .workflow-metrics, .workflow-filters { grid-template-columns: 1fr; } }
