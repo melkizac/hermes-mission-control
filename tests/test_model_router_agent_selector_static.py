@@ -7,8 +7,8 @@ def test_model_router_is_authorised_model_allow_list_not_assignment_grid():
     page = (ROOT / "src/views/ModelRouter.tsx").read_text()
 
     assert "Models & rate limits" in page
-    assert "Each model card combines the authorised routing fields with provider rate-limit remaining bars" in page
-    assert "Model access & rate limits" in page
+    assert "Hermes Admin Console source of truth" in page
+    assert "Authorised Codex accounts & rate limits" in page
     assert "UsageLimitRow" in page
     assert "Agent runtime switcher" not in page
     assert "agent-runtime-grid" not in page
@@ -30,7 +30,11 @@ def test_agent_detail_drawer_has_authorised_model_selector_assignment_flow():
     store = (ROOT / "src/services/store.tsx").read_text()
     client = (ROOT / "src/services/httpHermesClient.ts").read_text()
 
-    assert "Select authorised model for" in panel
+    assert "Model for" in panel
+    assert "Choose model / quota account" in panel
+    assert "Runtime account / quota bucket" not in panel
+    assert "dedupedByModelAccount" in panel
+    assert "explicitAccountMatch" in panel
     assert "authorizedModels" in panel
     assert "saveAgentRuntime" in panel
     assert "getAgentRuntimes" in store
