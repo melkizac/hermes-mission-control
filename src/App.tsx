@@ -107,7 +107,6 @@ function Shell() {
     <div className="shell">
       <NavRail />
       <div className="top-right-actions">
-        <AdminUserModeToggle />
         <NeedsAttentionBell />
       </div>
       <main className="main">
@@ -148,43 +147,6 @@ function Shell() {
         {canRenderView && view === "approval-policy" && <AdminSetupPage kind="approval-policy" />}
         {canRenderView && view === "quota" && <AdminSetupPage kind="quota" />}
       </main>
-    </div>
-  );
-}
-
-function AdminUserModeToggle() {
-  const { uiMode, setUiMode, setView, permissions } = useStore();
-
-  if (!permissions.accountIsAdmin) return null;
-
-  function switchToUser() {
-    window.history.pushState({}, "", "/app");
-    setUiMode("workspace");
-    setView("mission");
-  }
-
-  function switchToAdmin() {
-    window.history.pushState({}, "", "/admin");
-    setUiMode("admin");
-    setView("settings");
-  }
-
-  return (
-    <div className="top-mode-toggle" aria-label="Admin and user mode toggle">
-      <button
-        className={"mode-button" + (uiMode === "workspace" ? " on" : "")}
-        aria-pressed={uiMode === "workspace"}
-        onClick={switchToUser}
-      >
-        User
-      </button>
-      <button
-        className={"mode-button" + (uiMode === "admin" ? " on" : "")}
-        aria-pressed={uiMode === "admin"}
-        onClick={switchToAdmin}
-      >
-        Admin
-      </button>
     </div>
   );
 }
