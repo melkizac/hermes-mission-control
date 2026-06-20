@@ -41,3 +41,11 @@ def test_agent_cards_support_hover_details_avatar_upload_and_drawer_click():
         '.agent-detail-avatar.image',
     ]:
         assert selector in CSS
+    assert 'grid-template-columns: 1fr auto 1fr' in CSS
+    assert 'border-radius: 50%' in CSS
+    assert '.org-node-grid .org-node::before' in CSS
+    assert '.org-diagram > .org-node::after' in CSS
+    assert '.agent-org-page .org-chart-option-a { order: 2;' in CSS
+    assert '.agent-org-page .org-metrics { order: 3;' in CSS
+    assert 'z-index: 60;' in CSS
+    assert 'pointer-events:none' in CSS.replace(' ', '')

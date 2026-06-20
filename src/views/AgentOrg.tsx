@@ -393,13 +393,13 @@ function NodeCard({ agent, selected, avatarUrl, onClick, onAvatarFile }: { agent
       </div>
       <h3>{agent.name}</h3>
       <p>{agent.role}</p>
-      <div className="chip-row compact"><span>{agent.type || "workflow_agent"}</span><span>{agent.runtime || "hermes"}</span><span>runs as {agent.profile || "default"}</span></div>
-      <div className="org-node-stats"><b>{automationCount}</b><small>routines</small><b>{openWork}</b><small>queue</small><b>{inboxCount}</b><small>gates</small></div>
-      <div className="org-node-foot"><span>{agent.mode}</span><span>{agent.lastActivity ? formatSingaporeShort(agent.lastActivity) : "No recent run"}</span></div>
+      <div className="org-node-foot"><span>{agent.mode}</span><span>{agent.profile || "default"}</span></div>
       <div className="org-node-hover-details" aria-hidden="true">
         <b>More about this agent</b>
         <span>{agent.summary || agent.role}</span>
-        <small>{skillCount} skills · {agent.tools.length} tools · {agent.permissions.length} permissions</small>
+        <div className="chip-row compact"><span>{agent.type || "workflow_agent"}</span><span>{agent.runtime || "hermes"}</span><span>runs as {agent.profile || "default"}</span></div>
+        <div className="org-node-stats"><b>{automationCount}</b><small>routines</small><b>{openWork}</b><small>queue</small><b>{inboxCount}</b><small>gates</small></div>
+        <small>{skillCount} skills · {agent.tools.length} tools · {agent.permissions.length} permissions · last {agent.lastActivity ? formatSingaporeShort(agent.lastActivity) : "no recent run"}</small>
       </div>
     </article>
   );
