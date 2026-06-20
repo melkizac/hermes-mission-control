@@ -8838,3 +8838,6 @@ button.voice-activation {
 .agent-identity-doc b { display:block; color:#182235; font-size:13px; }
 .agent-identity-doc span { display:block; color:#8a99b2; font-size:11px; font-weight:800; margin-top:3px; }
 .agent-identity-doc p { margin: 8px 0 0; color:#536277; font-size:12.5px; line-height:1.45; white-space:pre-wrap; max-height: 104px; overflow:auto; }
+.agent-identity-file-row { margin: 0; cursor: default; }
+.agent-identity-file-row.readonly { opacity: 1; }
+.agent-identity-file-preview { grid-column: 2 / -1; margin: 6px 0 0; color:#536277; font-size:12.5px; line-height:1.45; }
