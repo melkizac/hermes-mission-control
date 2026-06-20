@@ -79,7 +79,10 @@ def test_agent_detail_drawer_is_simplified_into_three_sections():
     assert 'AgentActivityPanel' in AGENT_ORG
     assert 'Chat with agent' in AGENT_ORG
     assert 'Primary responsibility' in AGENT_ORG
-    assert 'Can help with' in AGENT_ORG
+    assert 'Can help with' not in AGENT_ORG
+    assert 'Profile & identity files' in AGENT_ORG
+    assert 'identity_docs' in AGENT_ORG
+    assert 'SOUL.md, identity.md, or USER.md' in AGENT_ORG
     assert 'Current work' in AGENT_ORG
     assert 'Run from Mission Control' not in AGENT_ORG
     assert 'Operational footprint' not in AGENT_ORG
