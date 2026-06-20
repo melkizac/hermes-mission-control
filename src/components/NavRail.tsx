@@ -47,7 +47,7 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
     label: "Operations",
     items: [
       { key: "automations", label: "Routines", icon: "automations" },
-      { key: "workflow-library", label: "Workflows", icon: "skills" },
+      { key: "workflow-library", label: "Workflows", icon: "workflow" },
     ],
   },
   {
@@ -56,10 +56,10 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
       { key: "agents", label: "Agents", icon: "agents" },
       { key: "agent-org", label: "Org Chart", icon: "agentOrg" },
       { key: "skills", label: "Skills", icon: "skills" },
-      { key: "tools", label: "Tools", icon: "setup" },
-      { key: "plugins", label: "Plugins", icon: "setup" },
+      { key: "tools", label: "Tools", icon: "tools" },
+      { key: "plugins", label: "Plugins", icon: "plugins" },
       { key: "memory", label: "Memory", icon: "memory" },
-      { key: "reflections", label: "Reflections", icon: "memory" },
+      { key: "reflections", label: "Reflections", icon: "reflections" },
       { key: "approvals", label: "Approvals", icon: "approvals" },
     ],
   },
