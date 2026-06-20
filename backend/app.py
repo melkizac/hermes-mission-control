@@ -15131,7 +15131,7 @@ def _profile_identity_docs(profile_id):
     docs = []
     for file in read_config_files(profile_id):
         name = str(file.get('name') or '')
-        if name.lower() not in ('soul.md', 'identity.md', 'user.md'):
+        if name.lower() not in ('soul.md', 'identity.md', 'user.md', 'agents.md', 'claude.md'):
             continue
         content = str(file.get('content') or '')
         preview = preview_content(content, 520) if content else ''
@@ -15143,6 +15143,7 @@ def _profile_identity_docs(profile_id):
             'scope': file.get('scope') or 'profile',
             'editable': bool(file.get('editable')),
             'preview': preview,
+            'size_bytes': file.get('sizeBytes') or 0,
         })
     return docs[:6]
 

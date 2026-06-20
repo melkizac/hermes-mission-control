@@ -25,7 +25,7 @@ type ProfileRuntimeDetails = {
   profile_id: string;
   profile_path: string;
   identity?: { name?: string; source?: string };
-  identity_docs?: Array<{ name: string; label?: string; kind?: string; updated_at?: string; scope?: string; editable?: boolean; preview?: string }>;
+  identity_docs?: Array<{ name: string; label?: string; kind?: string; updated_at?: string; scope?: string; editable?: boolean; preview?: string; size_bytes?: number }>;
   model_routing?: { provider?: string; model?: string };
   toolsets?: string[];
   memory?: { entries: number; files: Array<{ name: string; entries: number; updated_at?: string }>; items?: Array<{ id: string; source?: string; file?: string; line_start?: number; title?: string; text: string; updated_at?: string; redacted?: boolean }>; redacted_or_sensitive_mentions?: number };
@@ -411,10 +411,29 @@ function AgentCapabilityRows({ agent }: { agent: OrgAgent }) {
   return <div className="agent-capability-summary">{capabilityRows(agent).map((row) => <article className="agent-capability-row" key={row.label}><div><b>{row.label}</b><span>{row.detail}</span></div><em>{row.value}</em></article>)}</div>;
 }
 
+function agentIdentityFileGlyph(kind?: string) {
+  return kind === "soul" ? "◆" : kind === "memory" ? "☷" : kind === "agents" ? "⌗" : "⚙";
+}
+
+function AgentIdentityFileRow({ doc }: { doc: NonNullable<ProfileRuntimeDetails["identity_docs"]>[number] }) {
+  const kb = Math.round((doc.size_bytes || 0) / 1000);
+  return <div className={"filerow agent-identity-file-row" + (doc.editable ? "" : " readonly")} aria-disabled={!doc.editable}>
+    <div className="fic">{agentIdentityFileGlyph(doc.kind)}</div>
+    <div>
+      <div className="fn">{doc.name}</div>
+      <div className="fd">{doc.label || doc.kind || "identity file"} · {doc.updated_at || "—"} · {kb} KB</div>
+    </div>
+    <div className="acts">
+      {doc.editable && <span title="Edit"><Icon name="edit" size={14} /></span>}
+      <span title="Profile file"><Icon name="download" size={14} /></span>
+    </div>
+  </div>;
+}
+
 function AgentIdentityDocs({ agent }: { agent: OrgAgent }) {
   const docs = agent.profile_details?.identity_docs || [];
   const fallback = `${agent.role}. ${agent.summary || "No registry summary provided yet."}`;
-  return <div className="agent-identity-docs">{docs.map((doc) => <article className="agent-identity-doc" key={`${doc.scope || "profile"}:${doc.name}`}><div><b>{doc.name}</b><span>{doc.label || doc.kind || "identity"} · {doc.updated_at || "—"}</span></div>{doc.preview && <p>{doc.preview}</p>}</article>)}{!docs.length && <article className="agent-identity-doc fallback"><div><b>Registry identity</b><span>No SOUL.md, identity.md, or USER.md file reported for {agent.profile || "default"}</span></div><p>{fallback}</p></article>}</div>;
+  return <div className="agent-identity-docs">{docs.map((doc) => <AgentIdentityFileRow doc={doc} key={`${doc.scope || "profile"}:${doc.name}`} />)}{!docs.length && <div className="filerow agent-identity-file-row readonly fallback" aria-disabled="true"><div className="fic">◆</div><div><div className="fn">Registry identity</div><div className="fd">No SOUL.md, identity.md, USER.md, AGENTS.md, or CLAUDE.md file reported for {agent.profile || "default"}</div><p className="agent-identity-file-preview">{fallback}</p></div><div className="acts"><span title="Read-only"><Icon name="download" size={14} /></span></div></div>}</div>;
 }
 
 function AgentOverviewPanel({ agent, agents, onChat, onAssignTask, onRun }: { agent: OrgAgent; agents: OrgAgent[]; onChat: () => void; onAssignTask: () => void; onRun: () => void }) {
