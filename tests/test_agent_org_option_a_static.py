@@ -58,6 +58,9 @@ def test_agent_cards_support_hover_details_avatar_upload_and_drawer_click():
         assert selector in CSS
     assert 'grid-template-columns: 1fr auto 1fr' in CSS
     assert 'justify-content: center;' in CSS
+    assert 'width: 100%;' in CSS
+    assert 'box-sizing: border-box;' in CSS
+    assert 'padding-inline: 32px;' in CSS
     assert 'flex: 0 1 197px;' in CSS
     assert 'border-radius: 50%' in CSS
     assert '.org-node-grid .org-node::before' in CSS
