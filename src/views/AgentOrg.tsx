@@ -25,6 +25,7 @@ type ProfileRuntimeDetails = {
   profile_id: string;
   profile_path: string;
   identity?: { name?: string; source?: string };
+  identity_docs?: Array<{ name: string; label?: string; kind?: string; updated_at?: string; scope?: string; editable?: boolean; preview?: string }>;
   model_routing?: { provider?: string; model?: string };
   toolsets?: string[];
   memory?: { entries: number; files: Array<{ name: string; entries: number; updated_at?: string }>; items?: Array<{ id: string; source?: string; file?: string; line_start?: number; title?: string; text: string; updated_at?: string; redacted?: boolean }>; redacted_or_sensitive_mentions?: number };
@@ -410,6 +411,12 @@ function AgentCapabilityRows({ agent }: { agent: OrgAgent }) {
   return <div className="agent-capability-summary">{capabilityRows(agent).map((row) => <article className="agent-capability-row" key={row.label}><div><b>{row.label}</b><span>{row.detail}</span></div><em>{row.value}</em></article>)}</div>;
 }
 
+function AgentIdentityDocs({ agent }: { agent: OrgAgent }) {
+  const docs = agent.profile_details?.identity_docs || [];
+  const fallback = `${agent.role}. ${agent.summary || "No registry summary provided yet."}`;
+  return <div className="agent-identity-docs">{docs.map((doc) => <article className="agent-identity-doc" key={`${doc.scope || "profile"}:${doc.name}`}><div><b>{doc.name}</b><span>{doc.label || doc.kind || "identity"} · {doc.updated_at || "—"}</span></div>{doc.preview && <p>{doc.preview}</p>}</article>)}{!docs.length && <article className="agent-identity-doc fallback"><div><b>Registry identity</b><span>No SOUL.md, identity.md, or USER.md file reported for {agent.profile || "default"}</span></div><p>{fallback}</p></article>}</div>;
+}
+
 function AgentOverviewPanel({ agent, agents, onChat, onAssignTask, onRun }: { agent: OrgAgent; agents: OrgAgent[]; onChat: () => void; onAssignTask: () => void; onRun: () => void }) {
   const work = agentCurrentWork(agent);
   return <section className="agent-overview-simple">
@@ -417,9 +424,12 @@ function AgentOverviewPanel({ agent, agents, onChat, onAssignTask, onRun }: { ag
       <div><span>Reports to</span><b>{nodeReportName(agent, agents)}</b></div>
       <div><span>Status</span><b>{agent.status}</b></div>
       <div><span>Mode</span><b>{agent.mode}</b></div>
+      <div><span>Profile</span><b>{agent.profile || "default"}</b></div>
+      <div><span>Identity</span><b>{agent.profile_details?.identity?.name || agent.name}</b></div>
+      <div><span>Role</span><b>{agent.role}</b></div>
     </div>
     <div className="agent-simple-section"><h3>Primary responsibility</h3><p>{agent.summary || agent.role}</p></div>
-    <div className="agent-simple-section"><h3>Can help with</h3><AgentCapabilityRows agent={agent} /></div>
+    <div className="agent-simple-section"><h3>Profile & identity files</h3><AgentIdentityDocs agent={agent} /></div>
     <div className="agent-simple-section"><h3>Current work</h3><div className="org-footprint compact"><span>{work.running} active</span><span>{work.queued} queued</span><span>{work.blocked} blocked</span><span>{work.approvals} approvals</span></div>{work.total === 0 && <p className="muted">No active work needs attention right now.</p>}</div>
     <div className="agent-primary-actions"><button className="btn dark" onClick={onChat}>Chat with agent</button><button className="btn primary" onClick={onAssignTask}>Assign task</button><button className="btn ghost" disabled={!agent.automations.length} onClick={onRun}>{agentRunLabel(agent)}</button></div>
   </section>;

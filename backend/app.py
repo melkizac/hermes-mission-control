@@ -11949,7 +11949,7 @@ def config_kind(name):
     lower = name.lower()
     if lower == 'soul.md':
         return 'soul'
-    if lower == 'user.md':
+    if lower in ('identity.md', 'user.md'):
         return 'soul'
     if lower == 'memory.md':
         return 'memory'
@@ -12043,7 +12043,7 @@ def state_db_for_profile(profile_id='default'):
 def read_config_files(profile_id='default', identity=None, agent_id=None, agent_name=''):
     root = profile_root(profile_id)
     candidates = [
-        root / 'SOUL.md', root / 'USER.md', root / 'MEMORY.md', root / 'AGENTS.md',
+        root / 'SOUL.md', root / 'IDENTITY.md', root / 'identity.md', root / 'USER.md', root / 'MEMORY.md', root / 'AGENTS.md',
         root / 'CLAUDE.md', root / '.cursorrules', root / 'config.yaml'
     ]
     files = []
@@ -12088,6 +12088,8 @@ def read_config_files(profile_id='default', identity=None, agent_id=None, agent_
         st = path.stat()
         labels = {
             'SOUL.md': 'agent identity',
+            'IDENTITY.md': 'agent identity',
+            'identity.md': 'agent identity',
             'USER.md': 'user profile',
             'MEMORY.md': 'persistent memory',
             'AGENTS.md': 'agent/project rules',
@@ -12103,7 +12105,7 @@ def read_config_files(profile_id='default', identity=None, agent_id=None, agent_
             'sizeBytes': st.st_size,
             'updatedAt': rel_time(st.st_mtime),
             'scope': 'profile',
-            'editable': path.name in {'SOUL.md', 'MEMORY.md', 'AGENTS.md'} and not workspace_soul_path,
+            'editable': path.name in {'SOUL.md', 'IDENTITY.md', 'identity.md', 'MEMORY.md', 'AGENTS.md'} and not workspace_soul_path,
         })
     if not files:
         files.append({'name':'config.yaml','label':'runtime config','kind':'config','content':'# No readable config files found for this profile.\n','sizeBytes':0,'updatedAt':'—'})
@@ -15125,6 +15127,26 @@ def _profile_memory_summary(profile_id):
     return {'entries': entries, 'files': files, 'items': items[:40], 'redacted_or_sensitive_mentions': redacted}
 
 
+def _profile_identity_docs(profile_id):
+    docs = []
+    for file in read_config_files(profile_id):
+        name = str(file.get('name') or '')
+        if name.lower() not in ('soul.md', 'identity.md', 'user.md'):
+            continue
+        content = str(file.get('content') or '')
+        preview = preview_content(content, 520) if content else ''
+        docs.append({
+            'name': name,
+            'label': file.get('label') or ('agent identity' if name.lower() != 'user.md' else 'user profile'),
+            'kind': file.get('kind') or 'soul',
+            'updated_at': file.get('updatedAt') or file.get('updated_at') or '—',
+            'scope': file.get('scope') or 'profile',
+            'editable': bool(file.get('editable')),
+            'preview': preview,
+        })
+    return docs[:6]
+
+
 def _profile_gateway_channels(cfg):
     platforms = cfg.get('platforms') if isinstance(cfg.get('platforms'), dict) else {}
     channels = []
@@ -15175,6 +15197,7 @@ def profile_runtime_details(profile_id, automations=None, sessions=None, mapped_
         'profile_id': resolved,
         'profile_path': str(root),
         'identity': agent_identity(resolved),
+        'identity_docs': _profile_identity_docs(resolved),
         'model_routing': _safe_profile_model_config(cfg),
         'toolsets': cfg.get('toolsets') if isinstance(cfg.get('toolsets'), list) else [],
         'memory': _profile_memory_summary(resolved),
