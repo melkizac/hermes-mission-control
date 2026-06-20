@@ -25,16 +25,19 @@ def test_agent_org_option_a_keeps_only_the_org_diagram_on_the_page():
     assert 'const allHandoffs =' not in AGENT_ORG
 
 
-def test_agent_org_header_uses_tooltip_and_five_metrics_below_header():
-    assert '<div className="org-title-row">' in AGENT_ORG
-    assert 'className="org-title-help"' in AGENT_ORG
-    assert 'role="tooltip"' in AGENT_ORG
+def test_agent_org_header_uses_standard_workspace_header_tooltip_and_five_metrics():
+    assert 'import { InfoTooltip }' in AGENT_ORG
+    assert 'className="org-hero projects-hero professional"' in AGENT_ORG
+    assert '<div className="hero-title-with-help">' in AGENT_ORG
+    assert '<InfoTooltip label="About Agent Org">' in AGENT_ORG
+    assert 'className="org-title-help"' not in AGENT_ORG
     assert '<h1>Agent Org</h1>\n          <p>' not in AGENT_ORG
-    assert '<h1>Agent Org</h1>\n          {data.registry_path' not in AGENT_ORG
-    assert 'Registry: {data.registry_path}' not in AGENT_ORG
     assert 'Active Goals' not in AGENT_ORG
     assert AGENT_ORG.count('<Metric label=') == 5
-    assert '.org-title-help span[role="tooltip"]' in CSS
+    assert '/* Agent Org page consistency with standard workspace pages */' in CSS
+    assert '.agent-org-page .org-hero {' in CSS
+    assert 'background: transparent;' in CSS
+    assert 'box-shadow: none;' in CSS
     assert '.agent-org-page .org-metrics { order: 1;' in CSS
     assert '.agent-org-page .org-chart-option-a { order: 4;' in CSS
 

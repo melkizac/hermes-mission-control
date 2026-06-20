@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { formatSingaporeShort } from "../utils/time";
 import { Icon } from "../components/Icon";
+import { InfoTooltip } from "../components/InfoTooltip";
 import { AgentDetailDrawerShell, type AgentDrawerAction, type AgentDrawerTab } from "../components/AgentDetailDrawerShell";
 import { useStore } from "../services/store";
 import type { AgentHandoff, CapabilityMatrixCapability, CapabilityMatrixRow, RunTreePayload, RunTreeRunNode, RunTreeTaskNode } from "../types";
@@ -868,18 +869,15 @@ export function AgentOrg() {
 
   return (
     <div className="agent-org-page scroll">
-      <header className="org-hero">
+      <header className="org-hero projects-hero professional">
         <div>
           <span className="stub-tag">AI WORKFORCE</span>
-          <div className="org-title-row">
+          <div className="hero-title-with-help">
             <h1>Agent Org</h1>
-            <button className="org-title-help" type="button" aria-label="Agent Org page guidance">
-              ?
-              <span role="tooltip">Operational control plane for Melverick's digital coworkers: registry-backed agents, queues, runs, outputs, permissions, handoffs, and safe actions. The diagram shows who owns what; click an agent card for the detail drawer, hover for quick context, and click the avatar area to add or change a profile image.{data.registry_path ? ` Registry: ${data.registry_path} · Generated ${data.health.generated_at}` : ""}</span>
-            </button>
+            <InfoTooltip label="About Agent Org">Operational control plane for Melverick's digital coworkers. The diagram shows who owns what; click an agent card for the detail drawer, hover for quick context, and click the avatar area to add or change a profile image.{data.registry_path ? ` Registry: ${data.registry_path} · Generated ${data.health.generated_at}` : ""}</InfoTooltip>
           </div>
         </div>
-        <div className="org-hero-actions"><span className={`realtime-status ${refreshState.stale ? "stale" : refreshState.refreshing ? "refreshing" : "live"}`}>{refreshState.statusLabel}</span><button className="task-icon-action dark" aria-label="Refresh agent org" title="Refresh agent org" disabled={refreshState.refreshing} onClick={() => void refreshState.refresh("manual")}><Icon name="refresh" size={18} /></button></div>
+        <div className="org-hero-actions projects-control projects-control-refresh-only"><button className="task-icon-action dark" aria-label="Refresh agent org" title="Refresh agent org" disabled={refreshState.refreshing} onClick={() => void refreshState.refresh("manual")}><Icon name="refresh" size={18} /></button></div>
       </header>
 
       <section className="org-metrics">
