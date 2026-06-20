@@ -71,3 +71,19 @@ def test_agent_cards_support_hover_details_avatar_upload_and_drawer_click():
     assert 'min-height: max-content;' in CSS
     assert 'flex: 0 0 auto;' in CSS
     assert 'overflow: visible !important;' in CSS
+
+def test_agent_detail_drawer_is_simplified_into_three_sections():
+    assert 'return ["overview", "capabilities", "activity"];' in AGENT_ORG
+    assert 'AgentOverviewPanel' in AGENT_ORG
+    assert 'AgentCapabilitiesPanel' in AGENT_ORG
+    assert 'AgentActivityPanel' in AGENT_ORG
+    assert 'Chat with agent' in AGENT_ORG
+    assert 'Primary responsibility' in AGENT_ORG
+    assert 'Can help with' in AGENT_ORG
+    assert 'Current work' in AGENT_ORG
+    assert 'Run from Mission Control' not in AGENT_ORG
+    assert 'Operational footprint' not in AGENT_ORG
+    assert 'tab === "profile"' not in AGENT_ORG
+    assert 'tab === "permissions"' not in AGENT_ORG
+    assert '/* Simplified Agent Details drawer */' in CSS
+    assert '.agent-capability-row' in CSS
