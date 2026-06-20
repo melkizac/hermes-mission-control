@@ -1,6 +1,6 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body, #root { height: 100%; }
-:root { --top-chrome-reserve: 72px; }
+:root { --top-chrome-reserve: 0px; }
 body {
   font-family: "Hanken Grotesk", system-ui, sans-serif;
   background: var(--canvas);
@@ -204,12 +204,8 @@ input, select, textarea { font-family: inherit; }
 .rail-collapse-button[data-tooltip]::after { left: calc(100% + 8px); }
 .workspace-pill { max-width: 78px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 1px solid #dce5ee; background: #fff; color: #607086; border-radius: 999px; padding: 2px 7px; font-size: 10px; font-weight: 800; }
 .ws .chev { margin-left: auto; color: var(--faint); }
-/* Keep the User/Admin toggle above normal pages, but below modal/drawer layers. */
+/* Keep top-right transient alerts above normal pages, but below modal/drawer layers. */
 .top-right-actions { position: fixed; top: 14px; right: 22px; z-index: 60; display: flex; align-items: center; gap: 10px; }
-.top-mode-toggle { padding: 4px; display: inline-grid; grid-template-columns: 1fr 1fr; gap: 3px; border: 1px solid #dce5ee; border-radius: 999px; background: rgba(255,255,255,.94); box-shadow: 0 14px 34px rgba(20,26,38,.12); backdrop-filter: blur(16px); }
-.top-mode-toggle .mode-button { min-width: 72px; border: 0; border-radius: 999px; padding: 8px 14px; background: transparent; color: #607086; font-size: 12px; font-weight: 850; text-align: center; }
-.top-mode-toggle .mode-button:hover { background: #f1f3f6; color: var(--ink2); }
-.top-mode-toggle .mode-button.on { background: var(--slate); color: #fff; box-shadow: 0 8px 18px rgba(15, 23, 42, .12); }
 .top-attention-bell { position: relative; width: 40px; height: 40px; border: 1px solid #dce5ee; border-radius: 999px; background: rgba(255,255,255,.96); color: var(--ink2); display: grid; place-items: center; box-shadow: 0 14px 34px rgba(20,26,38,.12); backdrop-filter: blur(16px); }
 .top-attention-bell:hover, .top-attention-bell.has-items { background: #fff7ed; color: #b45309; border-color: #fed7aa; }
 .attention-count { position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--bad); color: #fff; display: grid; place-items: center; font-size: 10px; font-weight: 900; line-height: 1; box-shadow: 0 0 0 2px #fff; }
@@ -284,6 +280,10 @@ input, select, textarea { font-family: inherit; }
 .settings-menu-item.on { background: var(--accent-soft); color: #0b6f66; }
 .nav-caret { margin-left: auto; color: var(--faint); font-size: 13px; }
 .settings-menu { position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); z-index: 90; padding: 8px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255, 255, 255, .98); box-shadow: 0 18px 45px rgba(20, 26, 38, .16); backdrop-filter: blur(14px); max-height: min(70vh, 520px); overflow-y: auto; }
+.settings-mode-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; padding: 4px; margin-bottom: 7px; border: 1px solid #dce5ee; border-radius: 999px; background: rgba(255,255,255,.94); box-shadow: 0 10px 24px rgba(20,26,38,.08); }
+.settings-mode-toggle-button { min-width: 72px; border: 0; border-radius: 999px; padding: 8px 14px; background: transparent; color: #607086; font-size: 12px; font-weight: 850; text-align: center; }
+.settings-mode-toggle-button:hover { background: #f1f3f6; color: var(--ink2); }
+.settings-mode-toggle-button.on { background: var(--slate); color: #fff; box-shadow: 0 8px 18px rgba(15, 23, 42, .12); }
 .settings-menu-divider { height: 1px; background: var(--line); margin: 7px 2px; }
 .settings-parent { font-weight: 800; }
 .settings-submenu { margin: 2px 0 5px 16px; padding-left: 8px; border-left: 1px solid #e6ebf1; display: flex; flex-direction: column; gap: 2px; }
@@ -8217,24 +8217,18 @@ button.voice-activation {
   min-width: 0;
   height: calc(100vh - var(--top-chrome-reserve));
   height: calc(100dvh - var(--top-chrome-reserve));
-  padding: 28px;
-  background: #f5f7fb;
+  padding: 26px 32px 40px;
+  background: linear-gradient(180deg, #fbfcff 0%, #f5f7fb 100%);
 }
 .fs-hero {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
-  padding: 24px;
-  border: 1px solid #dce4ef;
-  border-radius: 24px;
-  background: linear-gradient(135deg, #111827, #2d3748 62%, #8a5a44);
-  color: #fff;
-  box-shadow: 0 18px 50px rgba(15, 23, 42, .12);
+  gap: 20px;
+  margin-bottom: 20px;
 }
-.fs-hero h1 { margin-top: 8px; font-size: 34px; letter-spacing: -.04em; }
-.fs-hero p { max-width: 760px; margin-top: 8px; color: rgba(255,255,255,.74); line-height: 1.5; }
-.fs-hero .btn { background: #fff; color: #111827; border-color: rgba(255,255,255,.35); display: inline-flex; gap: 8px; align-items: center; }
+.fs-hero h1 { font-size: 29px; letter-spacing: -0.7px; margin: 4px 0 6px; }
+.fs-hero p { max-width: 860px; color: var(--muted); font-size: 13.5px; line-height: 1.55; margin: 0; }
 .fs-root-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin: 18px 0; }
 .fs-root-card {
   text-align: left;
