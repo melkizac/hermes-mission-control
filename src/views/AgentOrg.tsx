@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { formatSingaporeShort } from "../utils/time";
 import { Icon } from "../components/Icon";
 import { AgentDetailDrawerShell, type AgentDrawerAction, type AgentDrawerTab } from "../components/AgentDetailDrawerShell";
@@ -7,7 +7,6 @@ import type { AgentHandoff, CapabilityMatrixCapability, CapabilityMatrixRow, Run
 import { useRealtimeRefresh, type RefreshMode } from "../hooks/useRealtimeRefresh";
 import { cachedJsonRequest, invalidateQueryCache } from "../services/queryCache";
 
-type Tab = "org" | "capabilities" | "agents" | "goals" | "queues" | "handoffs" | "flows" | "runs" | "delegation" | "outputs" | "permissions" | "health";
 type DrawerTab = "overview" | "goals" | "queue" | "handoffs" | "approvals" | "runs" | "run-tree" | "outputs" | "activity" | "tools" | "memory" | "skills" | "permissions" | "profile" | "config";
 type AgentStatus = "active" | "idle" | "blocked" | "failed" | "attention";
 
@@ -72,6 +71,7 @@ type OrgAgent = {
   profile_details?: ProfileRuntimeDetails;
   detailLoaded?: boolean;
   detailEndpoint?: string;
+  avatar_url?: string;
   automation_count?: number;
   task_count?: number;
   inbox_count?: number;
@@ -350,19 +350,58 @@ function DigitalCoworkerCapabilityPanel({ agents }: { agents: OrgAgent[] }) {
   );
 }
 
-function NodeCard({ agent, selected, onClick }: { agent: OrgAgent; selected: boolean; onClick: () => void }) {
+function NodeCard({ agent, selected, avatarUrl, onClick, onAvatarFile }: { agent: OrgAgent; selected: boolean; avatarUrl?: string; onClick: () => void; onAvatarFile: (file: File) => void }) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const openWork = (agent.queue?.queued || 0) + (agent.queue?.running || 0) + (agent.queue?.blocked || 0) + (agent.queue?.failed || 0);
   const automationCount = agent.automation_count ?? agent.automations.length;
   const inboxCount = agent.inbox_count ?? agent.inbox.length;
+  const skillCount = agent.skills_detail.length || agent.skills.length;
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onClick();
+    }
+  };
   return (
-    <button className={`org-node ${agent.status} ${selected ? "selected" : ""}`} onClick={onClick}>
-      <div className="org-node-head"><span>{initials(agent.name)}</span><AgentStatusBadge agent={agent} /></div>
+    <article className={`org-node ${agent.status} ${selected ? "selected" : ""}`} role="button" tabIndex={0} onClick={onClick} onKeyDown={handleKeyDown} aria-label={`Open ${agent.name} details`}>
+      <div className="org-node-head">
+        <button
+          className="org-node-avatar-button"
+          type="button"
+          aria-label={`Add or change profile picture for ${agent.name}`}
+          title="Add/change profile picture"
+          onClick={(event) => {
+            event.stopPropagation();
+            inputRef.current?.click();
+          }}
+        >
+          {avatarUrl ? <img src={avatarUrl} alt="" /> : <span>{initials(agent.name)}</span>}
+        </button>
+        <input
+          ref={inputRef}
+          className="sr-only"
+          type="file"
+          accept="image/*"
+          onClick={(event) => event.stopPropagation()}
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0];
+            if (file) onAvatarFile(file);
+            event.currentTarget.value = "";
+          }}
+        />
+        <AgentStatusBadge agent={agent} />
+      </div>
       <h3>{agent.name}</h3>
       <p>{agent.role}</p>
       <div className="chip-row compact"><span>{agent.type || "workflow_agent"}</span><span>{agent.runtime || "hermes"}</span><span>runs as {agent.profile || "default"}</span></div>
       <div className="org-node-stats"><b>{automationCount}</b><small>routines</small><b>{openWork}</b><small>queue</small><b>{inboxCount}</b><small>gates</small></div>
       <div className="org-node-foot"><span>{agent.mode}</span><span>{agent.lastActivity ? formatSingaporeShort(agent.lastActivity) : "No recent run"}</span></div>
-    </button>
+      <div className="org-node-hover-details" aria-hidden="true">
+        <b>More about this agent</b>
+        <span>{agent.summary || agent.role}</span>
+        <small>{skillCount} skills · {agent.tools.length} tools · {agent.permissions.length} permissions</small>
+      </div>
+    </article>
   );
 }
 
@@ -720,7 +759,7 @@ function ProfileRuntimePanel({ agent, capabilityRow, capabilityLoading, capabili
   </section>;
 }
 
-function DetailDrawer({ agent, agents, onClose, onAction, onCreateGoal, onApproveReview, onGoalAction, approvingId, actionFeedback }: { agent: OrgAgent; agents: OrgAgent[]; onClose: () => void; onAction: (agent: OrgAgent, action: string, payload?: Record<string, unknown>) => void; onCreateGoal: (agent: OrgAgent) => void; onApproveReview: (agent: OrgAgent, review: Review) => void; onGoalAction: (agent: OrgAgent, goal: Goal, action: GoalAction, status: string, execute?: boolean) => void; approvingId?: string | null; actionFeedback?: ActionFeedback }) {
+function DetailDrawer({ agent, agents, avatarUrl, onClose, onAction, onCreateGoal, onApproveReview, onGoalAction, approvingId, actionFeedback }: { agent: OrgAgent; agents: OrgAgent[]; avatarUrl?: string; onClose: () => void; onAction: (agent: OrgAgent, action: string, payload?: Record<string, unknown>) => void; onCreateGoal: (agent: OrgAgent) => void; onApproveReview: (agent: OrgAgent, review: Review) => void; onGoalAction: (agent: OrgAgent, goal: Goal, action: GoalAction, status: string, execute?: boolean) => void; approvingId?: string | null; actionFeedback?: ActionFeedback }) {
   const [tab, setTab] = useState<DrawerTab>("overview");
   const [capabilityRow, setCapabilityRow] = useState<CapabilityMatrixRow | null>(null);
   const [capabilityLoading, setCapabilityLoading] = useState(false);
@@ -792,7 +831,7 @@ function DetailDrawer({ agent, agents, onClose, onAction, onCreateGoal, onApprov
       <AgentDetailDrawerShell
         className="org-drawer wide"
         title={agent.name}
-        avatar={<span className={`agent-detail-avatar org-agent-avatar ${agent.status}`}>{initials(agent.name)}</span>}
+        avatar={avatarUrl ? <img className={`agent-detail-avatar org-agent-avatar image ${agent.status}`} src={avatarUrl} alt="" /> : <span className={`agent-detail-avatar org-agent-avatar ${agent.status}`}>{initials(agent.name)}</span>}
         eyebrow="Selected agent"
         statusTag={<AgentStatusBadge agent={agent} compact />}
         subtitle={`${agent.role} · ${agent.profile || "default"}`}
@@ -853,12 +892,18 @@ function DetailDrawer({ agent, agents, onClose, onAction, onCreateGoal, onApprov
 
 export function AgentOrg() {
   const [data, setData] = useState<AgentOrgResponse>(emptyOrg);
-  const [tab, setTab] = useState<Tab>("org");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<ActionFeedback>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [goalAgent, setGoalAgent] = useState<OrgAgent | null>(null);
+  const [agentAvatars, setAgentAvatars] = useState<Record<string, string>>(() => {
+    try {
+      return JSON.parse(window.localStorage.getItem("hmc-agent-org-avatars") || "{}");
+    } catch {
+      return {};
+    }
+  });
   const detailCache = useRef(new Map<string, OrgAgent>());
 
   const load = useCallback(async (mode: RefreshMode = "manual") => {
@@ -912,7 +957,20 @@ export function AgentOrg() {
     agents.forEach((agent) => (agent.handoffs || []).forEach((handoff) => byId.set(handoff.id, handoff)));
     return Array.from(byId.values()).sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
   }, [agents]);
-  const tabs: Tab[] = ["org", "capabilities", "agents", "goals", "queues", "handoffs", "flows", "runs", "delegation", "outputs", "permissions", "health"];
+
+  function handleAvatarFile(agent: OrgAgent, file: File) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const value = typeof reader.result === "string" ? reader.result : "";
+      if (!value) return;
+      setAgentAvatars((current) => {
+        const next = { ...current, [agent.id]: value };
+        window.localStorage.setItem("hmc-agent-org-avatars", JSON.stringify(next));
+        return next;
+      });
+    };
+    reader.readAsDataURL(file);
+  }
 
   const handleAction = async (agent: OrgAgent, action: string, payload?: Record<string, unknown>) => {
     let body: Record<string, unknown> = { action, ...(payload || {}) };
@@ -1003,44 +1061,23 @@ export function AgentOrg() {
 
       {(notice || refreshState.error || data.health.errors.length > 0) && <div className="org-warning">{notice || refreshState.error || `Partial data loaded: ${data.health.errors.join(" · ")}`}</div>}
 
-      <nav className="org-tabs">{tabs.map((item) => <button key={item} className={tab === item ? "on" : ""} onClick={() => setTab(item)}>{item}</button>)}</nav>
-
       {loading && <div className="empty">Loading registry-backed Agent Org from tasks, routines, approvals, audit runs, skills, costs, projects, and outputs…</div>}
 
-      {!loading && tab === "org" && <section className="org-chart">
-        <div className="human-card"><span>Human Operator</span><b>Melverick Ng</b><small>Approves risk, defines operating model, owns business judgment</small></div>
-        <div className="org-line" />
-        {chief && <NodeCard agent={chief} selected={selected?.id === chief.id} onClick={() => setSelectedId(chief.id)} />}
-        <div className="org-branch" />
-        <div className="org-node-grid">{childNodes.map((agent) => <NodeCard key={agent.id} agent={agent} selected={selected?.id === agent.id} onClick={() => setSelectedId(agent.id)} />)}</div>
+      {!loading && <section className="org-chart org-chart-option-a" aria-label="Agent organization chart">
+        <div className="org-chart-intro"><h2>Who owns what</h2><p>Click an agent card to open the detail drawer. Hover a card for quick responsibilities, load, skills, tools, and approval context. Click the profile picture area to add or change that agent image.</p></div>
+        <div className="org-diagram" aria-label="Melverick agent org diagram">
+          <div className="human-card"><span>Human Operator</span><b>Melverick Ng</b><small>Approves risk, defines operating model, owns business judgment</small></div>
+          <div className="org-line" />
+          {chief && <NodeCard agent={chief} selected={selected?.id === chief.id} avatarUrl={agentAvatars[chief.id] || chief.avatar_url} onAvatarFile={(file) => handleAvatarFile(chief, file)} onClick={() => setSelectedId(chief.id)} />}
+          <div className="org-branch" />
+          <div className="org-node-grid">{childNodes.map((agent) => <NodeCard key={agent.id} agent={agent} selected={selected?.id === agent.id} avatarUrl={agentAvatars[agent.id] || agent.avatar_url} onAvatarFile={(file) => handleAvatarFile(agent, file)} onClick={() => setSelectedId(agent.id)} />)}</div>
+        </div>
         <DigitalCoworkerCapabilityPanel agents={agents} />
         <HandoffTimeline handoffs={allHandoffs} compact />
       </section>}
 
-      {!loading && tab === "capabilities" && <DigitalCoworkerCapabilityPanel agents={agents} />}
-
-      {!loading && tab === "agents" && <section className="org-table operational"><div className="org-table-head"><span>Agent</span><span>Status</span><span>Runtime</span><span>Queue</span><span>Runs</span><span>Outputs</span><span>Actions</span></div>{agents.map((agent) => <div className="org-table-row" role="button" tabIndex={0} key={agent.id} onClick={() => setSelectedId(agent.id)} onKeyDown={(e) => { if (e.key === "Enter") setSelectedId(agent.id); }}><b>{agent.name}<small>{agent.role}</small></b><span><AgentStatusBadge agent={agent} compact /></span><span>{agent.runtime || "hermes"}<small>{agent.profile || "default"}</small></span><span>{agent.queue.queued}/{agent.queue.running}/{agent.queue.blocked}</span><span>{agent.runs.length}</span><span>{agent.outputs.length}</span><span className="row-actions"><button className="btn dark small" disabled={!agent.automations.length} onClick={(e) => { e.stopPropagation(); setSelectedId(agent.id); if (agent.automations.length === 1) void handleAction(agent, "run_agent"); }}>{agentRunLabel(agent)}</button><button className="btn ghost small" onClick={(e) => { e.stopPropagation(); setSelectedId(agent.id); }}>Details</button></span></div>)}</section>}
-
-      {!loading && tab === "goals" && <section className="goals-board"><div className="goals-board-head"><div><h2>Current goals</h2><p className="muted">A goal is the outcome. The first thing shown is Required Actions: the real work agents or humans must perform. Progress is calculated from completed required actions. Tools/access/data and planning steps are supporting analysis.</p></div></div><div className="ops-grid">{agents.filter((agent) => (agent.goals || []).length).map((agent) => <article className="ops-card goal-agent-card" key={agent.id}><div className="goal-agent-head"><h3>{agent.name}</h3><button className="btn ghost small" onClick={() => setGoalAgent(agent)}>Add goal</button></div>{(agent.goals || []).map((goal) => <GoalCard key={goal.id} goal={goal} onRunAction={(g, a) => handleGoalAction(agent, g, a, 'running', true)} onDoneAction={(g, a) => handleGoalAction(agent, g, a, 'done')} />)}</article>)}{!agents.some((agent) => (agent.goals || []).length) && <div className="empty">No active goals yet. Create one to make agent work measurable and visible.</div>}</div></section>}
-
-      {!loading && tab === "queues" && <section className="ops-grid">{agents.map((agent) => <article className="ops-card" key={agent.id} onClick={() => setSelectedId(agent.id)}><div><AgentStatusBadge agent={agent} compact /><h3>{agent.name}</h3></div><div className="queue-pills"><span>Queued {agent.queue.queued}</span><span>Running {agent.queue.running}</span><span>Blocked {agent.queue.blocked}</span><span>Done {agent.queue.done}</span><span>Failed {agent.queue.failed}</span></div>{agent.tasks.slice(0, 3).map((t) => <MiniRow key={t.id} title={t.title} meta={`${t.status} · ${t.updated_at || "—"}`} />)}{!agent.tasks.length && <p className="muted">No assigned work yet.</p>}</article>)}</section>}
-
-      {!loading && tab === "handoffs" && <HandoffTimeline handoffs={allHandoffs} />}
-
-      {!loading && tab === "flows" && <section className="flow-grid">{data.flows.map((flow) => <article className="flow-card" key={flow.id}><span className={`tag ${flow.status}`}>{flow.status}</span><h3>{flow.name}</h3><small className="muted">Trigger: {flow.trigger || "configured"}</small><div className="flow-steps">{flow.steps.map((step, i) => <div key={`${flow.id}-${i}`} className="flow-step"><b>{step.label}<small>{step.agent ? agents.find((a) => a.id === step.agent)?.name || step.agent : `Approval: ${step.approval}`}</small></b><span>{i < flow.steps.length - 1 ? "↓" : step.status}</span></div>)}</div><p>{flow.gate}</p></article>)}</section>}
-
-      {!loading && tab === "runs" && <section className="ops-grid">{agents.map((agent) => <article className="ops-card" key={agent.id}><h3>{agent.name}</h3>{agent.runs.slice(0, 4).map((r) => <MiniRow key={r.id} title={r.title || r.automation_name || r.id} meta={`${r.status} · ${r.started_at || "—"} · ${fmtNum(r.tokens || 0)} tokens`} />)}{!agent.runs.length && <p className="muted">No runs mapped.</p>}</article>)}</section>}
-
-      {!loading && tab === "delegation" && <section className="ops-grid delegation-grid">{agents.map((agent) => <article className="ops-card" key={agent.id}><h3>{agent.name}</h3><AgentRunTreePanel trees={agent.run_trees} /></article>)}</section>}
-
-      {!loading && tab === "outputs" && <section className="ops-grid">{agents.map((agent) => <article className="ops-card" key={agent.id}><h3>{agent.name}</h3>{agent.outputs.slice(0, 4).map((o, i) => <MiniRow key={o.id || o.path || i} title={o.name} meta={`${o.status || o.type || "output"} · ${o.updated_at || "—"}`} body={o.preview} />)}{!agent.outputs.length && <p className="muted">No outputs mapped.</p>}</article>)}</section>}
-
-      {!loading && tab === "permissions" && <section className="permission-grid">{agents.map((agent) => <article key={agent.id}><h3>{agent.name}</h3><span className={`tag ${agent.mode}`}>{agent.mode}</span><div className="chip-row">{agent.tools.map((tool) => <span key={tool}>{tool}</span>)}</div>{agent.permissions.map((permission) => <p key={permission}>• {permission}</p>)}</article>)}</section>}
-
-      {!loading && tab === "health" && <section className="health-grid">{agents.map((agent) => <article key={agent.id} className={`health-card ${agent.status}`}><div><AgentStatusBadge agent={agent} compact /><b>{agent.name}</b></div><p>{agentIssueCount(agent) > 0 ? `${agentIssueCount(agent)} issue${agentIssueCount(agent) === 1 ? "" : "s"} ${agentIssueCount(agent) === 1 ? "needs" : "need"} attention across failed, blocked, review, or error work.` : agent.status === "active" ? "Active and healthy." : "Idle / no active work."}</p><small>Last activity: {agent.lastActivity ? formatSingaporeShort(agent.lastActivity) : "No recent activity"}</small><div className="org-action-row"><button className="btn ghost" onClick={() => void handleAction(agent, "run_health_check")}>Check</button><button className="btn ghost" onClick={() => setSelectedId(agent.id)}>Details</button></div></article>)}</section>}
-
-      {selected && <DetailDrawer agent={selected} agents={agents} onClose={() => setSelectedId(null)} onAction={handleAction} onCreateGoal={setGoalAgent} onApproveReview={handleApproveReview} onGoalAction={handleGoalAction} approvingId={approvingId} actionFeedback={actionFeedback} />}
-      {goalAgent && <GoalModal agent={goalAgent} onClose={() => setGoalAgent(null)} onCreated={() => { invalidateAgentOrgCache(goalAgent.id); detailCache.current.delete(goalAgent.id); setGoalAgent(null); void refreshState.refresh("manual"); setTab("goals"); }} />}
+      {selected && <DetailDrawer agent={selected} agents={agents} avatarUrl={agentAvatars[selected.id] || selected.avatar_url} onClose={() => setSelectedId(null)} onAction={handleAction} onCreateGoal={setGoalAgent} onApproveReview={handleApproveReview} onGoalAction={handleGoalAction} approvingId={approvingId} actionFeedback={actionFeedback} />}
+      {goalAgent && <GoalModal agent={goalAgent} onClose={() => setGoalAgent(null)} onCreated={() => { invalidateAgentOrgCache(goalAgent.id); detailCache.current.delete(goalAgent.id); setSelectedId(goalAgent.id); setGoalAgent(null); void refreshState.refresh("manual"); }} />}
     </div>
   );
 }
