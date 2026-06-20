@@ -2310,6 +2310,12 @@ input, select, textarea { font-family: inherit; }
 .org-hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; background: #fff; border: 1px solid #e8ebf2; border-radius: 22px; padding: 24px; box-shadow: 0 20px 60px rgba(15,23,42,.06); }
 .org-hero h1 { margin: 10px 0 8px; font-size: 29px; letter-spacing: -.03em; }
 .org-hero p { margin: 0; max-width: 760px; color: #667085; line-height: 1.55; }
+.org-title-row { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+.org-title-row h1 { margin: 4px 0 6px; }
+.org-title-help { position:relative; width:24px; height:24px; border:1px solid #d8e1ee; border-radius:999px; background:#fff; color:#475467; display:inline-grid; place-items:center; font-weight:950; font-size:13px; cursor:help; }
+.org-title-help:hover, .org-title-help:focus-visible { border-color:#2f6fed; color:#2f6fed; outline:none; box-shadow:0 0 0 3px rgba(47,111,237,.12); }
+.org-title-help span[role="tooltip"] { position:absolute; left:0; top:calc(100% + 10px); z-index:90; width:min(420px, calc(100vw - 48px)); padding:12px 14px; border:1px solid #dbeafe; border-radius:14px; background:#fff; color:#344054; box-shadow:0 18px 50px rgba(15,23,42,.18); font-size:12.5px; font-weight:700; line-height:1.45; text-align:left; opacity:0; transform:translateY(-4px); pointer-events:none; transition:.16s ease; }
+.org-title-help:hover span[role="tooltip"], .org-title-help:focus-visible span[role="tooltip"] { opacity:1; transform:translateY(0); }
 .org-metrics { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 14px; margin: 18px 0; }
 .org-metric { background: #fff; border: 1px solid #e8ebf2; border-radius: 20px; padding: 18px; min-height: 112px; }
 .org-metric span { display:block; color:#667085; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
@@ -8775,8 +8781,8 @@ button.voice-activation {
   flex-direction: column;
 }
 .agent-org-page .org-hero { order: 0; }
-.agent-org-page .org-warning { order: 1; }
-.agent-org-page .empty { order: 2; }
-.agent-org-page .org-chart-option-a { order: 2; }
-.agent-org-page .org-metrics { order: 3; margin-top: 18px; }
+.agent-org-page .org-metrics { order: 1; margin-top: 0; margin-bottom: 18px; }
+.agent-org-page .org-warning { order: 2; }
+.agent-org-page .empty { order: 3; }
+.agent-org-page .org-chart-option-a { order: 4; }
 

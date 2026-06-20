@@ -24,6 +24,20 @@ def test_agent_org_option_a_keeps_single_org_diagram_with_routing_sections():
     assert '<HandoffTimeline handoffs={allHandoffs} compact />' in AGENT_ORG
 
 
+def test_agent_org_header_uses_tooltip_and_five_metrics_below_header():
+    assert '<div className="org-title-row">' in AGENT_ORG
+    assert 'className="org-title-help"' in AGENT_ORG
+    assert 'role="tooltip"' in AGENT_ORG
+    assert '<h1>Agent Org</h1>\n          <p>' not in AGENT_ORG
+    assert '<h1>Agent Org</h1>\n          {data.registry_path' not in AGENT_ORG
+    assert 'Registry: {data.registry_path}' not in AGENT_ORG
+    assert 'Active Goals' not in AGENT_ORG
+    assert AGENT_ORG.count('<Metric label=') == 5
+    assert '.org-title-help span[role="tooltip"]' in CSS
+    assert '.agent-org-page .org-metrics { order: 1;' in CSS
+    assert '.agent-org-page .org-chart-option-a { order: 4;' in CSS
+
+
 def test_agent_cards_support_hover_details_avatar_upload_and_drawer_click():
     assert 'className="org-node-hover-details"' in AGENT_ORG
     assert 'className="org-node-avatar-button"' in AGENT_ORG
@@ -45,8 +59,6 @@ def test_agent_cards_support_hover_details_avatar_upload_and_drawer_click():
     assert 'border-radius: 50%' in CSS
     assert '.org-node-grid .org-node::before' in CSS
     assert '.org-diagram > .org-node::after' in CSS
-    assert '.agent-org-page .org-chart-option-a { order: 2;' in CSS
-    assert '.agent-org-page .org-metrics { order: 3;' in CSS
     assert 'min-height: max-content;' in CSS
     assert 'flex: 0 0 auto;' in CSS
     assert 'overflow: visible !important;' in CSS

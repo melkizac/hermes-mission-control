@@ -1043,9 +1043,13 @@ export function AgentOrg() {
       <header className="org-hero">
         <div>
           <span className="stub-tag">AI WORKFORCE</span>
-          <h1>Agent Org</h1>
-          <p>Operational control plane for Melverick's digital coworkers: registry-backed agents, queues, runs, outputs, permissions, handoffs, and safe actions.</p>
-          {data.registry_path && <small className="muted">Registry: {data.registry_path} · Generated {data.health.generated_at}</small>}
+          <div className="org-title-row">
+            <h1>Agent Org</h1>
+            <button className="org-title-help" type="button" aria-label="Agent Org page guidance">
+              ?
+              <span role="tooltip">Operational control plane for Melverick's digital coworkers: registry-backed agents, queues, runs, outputs, permissions, handoffs, and safe actions. The diagram shows who owns what; click an agent card for the detail drawer, hover for quick context, and click the avatar area to add or change a profile image.{data.registry_path ? ` Registry: ${data.registry_path} · Generated ${data.health.generated_at}` : ""}</span>
+            </button>
+          </div>
         </div>
         <div className="org-hero-actions"><span className={`realtime-status ${refreshState.stale ? "stale" : refreshState.refreshing ? "refreshing" : "live"}`}>{refreshState.statusLabel}</span><button className="task-icon-action dark" aria-label="Refresh agent org" title="Refresh agent org" disabled={refreshState.refreshing} onClick={() => void refreshState.refresh("manual")}><Icon name="refresh" size={18} /></button></div>
       </header>
@@ -1056,7 +1060,6 @@ export function AgentOrg() {
         <Metric label="Queued Work" value={data.summary.queued_work ?? 0} sub="assigned tasks waiting" />
         <Metric label="Approval Gates" value={data.summary.approvals_needed ?? 0} sub="human gates pending" tone={(data.summary.approvals_needed ?? 0) ? "warn" : "good"} />
         <Metric label="Open Handoffs" value={data.summary.open_handoffs ?? 0} sub={`${data.summary.blocked_handoffs ?? 0} blocked`} tone={(data.summary.blocked_handoffs ?? 0) ? "warn" : (data.summary.open_handoffs ?? 0) ? "good" : ""} />
-        <Metric label="Active Goals" value={data.summary.active_goals ?? agents.reduce((n, a) => n + (a.goals?.length || 0), 0)} sub={`${data.summary.goal_progress_avg ?? 0}% avg progress`} tone={(data.summary.active_goals ?? 0) ? "good" : ""} />
       </section>
 
       {(notice || refreshState.error || data.health.errors.length > 0) && <div className="org-warning">{notice || refreshState.error || `Partial data loaded: ${data.health.errors.join(" · ")}`}</div>}
@@ -1064,7 +1067,7 @@ export function AgentOrg() {
       {loading && <div className="empty">Loading registry-backed Agent Org from tasks, routines, approvals, audit runs, skills, costs, projects, and outputs…</div>}
 
       {!loading && <section className="org-chart org-chart-option-a" aria-label="Agent organization chart">
-        <div className="org-chart-intro"><h2>Who owns what</h2><p>Click an agent card to open the detail drawer. Hover a card for quick responsibilities, load, skills, tools, and approval context. Click the profile picture area to add or change that agent image.</p></div>
+        <div className="org-chart-intro"><h2>Who owns what</h2></div>
         <div className="org-diagram" aria-label="Melverick agent org diagram">
           <div className="human-card"><span>Human Operator</span><b>Melverick Ng</b><small>Approves risk, defines operating model, owns business judgment</small></div>
           <div className="org-line" />
