@@ -232,6 +232,7 @@ export function NavRail() {
     .find((group) => group.label === "Workforce")
     ?.items.filter((item): item is NavRouteItem => isRouteItem(item) && workforceSelectorKeys.includes(item.key)) ?? [];
   const workforceSelectorActive = workforceSelectorKeys.includes(view);
+  const workforceMenuExpanded = !collapsed && (workforceMenuOpen || workforceSelectorActive);
 
   async function handleLogout() {
     try {
@@ -308,17 +309,17 @@ export function NavRail() {
                       className={"nitem workforce-selector-trigger" + (workforceSelectorActive ? " on" : "")}
                       onClick={() => setWorkforceMenuOpen((open) => !open)}
                       aria-haspopup="menu"
-                      aria-expanded={workforceMenuOpen}
+                      aria-expanded={workforceMenuExpanded}
                       data-tooltip="Capabilities"
                       title={collapsed ? "Capabilities" : undefined}
                     >
                       <Icon name="setup" size={17} />
                       <span className="nav-text">Capabilities</span>
-                      <span className={"nav-right-icon workforce-chevron" + (workforceMenuOpen ? " open" : "")}>
+                      <span className={"nav-right-icon workforce-chevron" + (workforceMenuExpanded ? " open" : "")}>
                         <Icon name="chevronDown" size={15} />
                       </span>
                     </button>
-                    {workforceMenuOpen && !collapsed && (
+                    {workforceMenuExpanded && (
                       <div className="workforce-menu" role="menu" aria-label="Capabilities">
                         {workforceSelectorItems.map((item) => {
                           const active = view === item.key;
@@ -328,7 +329,7 @@ export function NavRail() {
                               className={"workforce-menu-item" + (active ? " on" : "")}
                               onClick={() => {
                                 setView(item.key);
-                                setWorkforceMenuOpen(false);
+                                setWorkforceMenuOpen(true);
                               }}
                               role="menuitem"
                             >

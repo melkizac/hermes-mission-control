@@ -30,3 +30,13 @@ def test_capabilities_submenu_items_are_ordered_as_requested():
     ]
     positions = [workforce_block.index(label) for label in expected_order]
     assert positions == sorted(positions)
+
+
+def test_capabilities_submenu_stays_expanded_when_child_route_is_active():
+    nav = NAV.read_text()
+
+    assert 'const workforceMenuExpanded = !collapsed && (workforceMenuOpen || workforceSelectorActive);' in nav
+    assert 'aria-expanded={workforceMenuExpanded}' in nav
+    assert 'workforceMenuExpanded && (' in nav
+    assert 'className={"nav-right-icon workforce-chevron" + (workforceMenuExpanded ? " open" : "")}' in nav
+    assert 'setWorkforceMenuOpen(false);' not in nav[nav.index('role="menu" aria-label="Capabilities"'):nav.index('const active = isRouteItem(it) && view === it.key;', nav.index('role="menu" aria-label="Capabilities"'))]
