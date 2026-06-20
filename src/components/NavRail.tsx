@@ -76,6 +76,57 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
   },
 ];
 
+const expertWorkspaceGroups: NavGroup[] = [
+  {
+    label: "",
+    items: [
+      { key: "mission", label: "Chat", icon: "chat" },
+      { key: "models", label: "Models & limits", icon: "modelRouter" },
+    ],
+  },
+  {
+    label: "Build",
+    items: [
+      { key: "agents", label: "Agents", icon: "agents" },
+      { key: "agent-org", label: "Capabilities", icon: "agentOrg" },
+      { key: "tools", label: "Tools", icon: "setup" },
+      { key: "plugins", label: "Plugins", icon: "setup" },
+      { key: "skills", label: "Skills", icon: "skills" },
+      { key: "memory", label: "Memory", icon: "memory" },
+    ],
+  },
+  {
+    label: "Operate",
+    items: [
+      { key: "projects", label: "Projects", icon: "projects" },
+      { key: "board", label: "Task Board", icon: "board" },
+      { key: "workflow-library", label: "Workflows", icon: "skills" },
+      { key: "automations", label: "Routines", icon: "automations" },
+      { key: "approvals", label: "Approvals", icon: "approvals" },
+    ],
+  },
+  {
+    label: "Inspect",
+    items: [
+      { key: "audit", label: "Audit / Evidence", icon: "audit" },
+      { key: "research-runs", label: "Research Runs", icon: "audit" },
+      { key: "browser-ops", label: "Browser Activity", icon: "dashboard" },
+      { key: "usage", label: "Usage remaining", icon: "costs" },
+      { key: "files", label: "Files", icon: "folder" },
+      { key: "second-brain", label: "Knowledge", icon: "memory" },
+    ],
+  },
+  {
+    label: "System",
+    system: true,
+    items: [
+      { key: "profile", label: "Profile", icon: "profile" },
+      { href: "/docs#daily-flow", label: "Docs", icon: "file" },
+      { action: "logout", label: "Log out", icon: "logout" },
+    ],
+  },
+];
+
 const adminConsoleGroups: NavGroup[] = [
   {
     label: "Platform",
@@ -224,8 +275,8 @@ export function NavRail() {
   }, [collapsed]);
 
   const gatewayOnline = status?.gateway?.running ?? true;
-  const visibleGroups = uiMode === "admin" ? adminConsoleGroups : simplifiedWorkspaceGroups;
-  const workspaceSystemGroup = simplifiedWorkspaceGroups.find((group) => group.system);
+  const visibleGroups = uiMode === "admin" ? adminConsoleGroups : uiMode === "expert" ? expertWorkspaceGroups : simplifiedWorkspaceGroups;
+  const workspaceSystemGroup = (uiMode === "expert" ? expertWorkspaceGroups : simplifiedWorkspaceGroups).find((group) => group.system);
   const workspaceSystemItems = workspaceSystemGroup?.items ?? [];
   const settingsActive = view === "profile" || view === "settings" || view === "models" || view === "usage";
   const workforceSelectorItems = simplifiedWorkspaceGroups

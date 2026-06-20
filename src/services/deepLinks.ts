@@ -1,6 +1,7 @@
 import type { ViewKey } from "../types";
 
 export type MissionControlDeepLinkTarget = {
+  mode?: "workspace" | "expert" | "admin";
   view?: ViewKey;
   taskId?: string;
   approvalId?: string;
@@ -49,6 +50,9 @@ export function parseMissionControlDeepLink(input: string | URL | Location = win
   const target: MissionControlDeepLinkTarget = {};
   if (rawView && allowedViews.has(rawView)) target.view = rawView;
   const normalizedPath = url.pathname.replace(/\/$/, "") || "/";
+  if (normalizedPath === "/admin") target.mode = "admin";
+  if (normalizedPath === "/expert") target.mode = "expert";
+  if (normalizedPath === "/app" || normalizedPath.startsWith("/app/")) target.mode = "workspace";
   if (!target.view) {
     const appPathView = normalizedPath.startsWith("/app/") ? normalizedPath.slice("/app/".length) as ViewKey : null;
     if (appPathView && allowedViews.has(appPathView)) target.view = appPathView;
@@ -58,6 +62,7 @@ export function parseMissionControlDeepLink(input: string | URL | Location = win
     if (topLevelView && allowedViews.has(topLevelView)) target.view = topLevelView;
   }
   if (!target.view && normalizedPath === "/admin") target.view = "settings";
+  if (!target.view && normalizedPath === "/expert") target.view = "models";
   const taskId = params.get("task") || params.get("task_id");
   const approvalId = params.get("approval") || params.get("approval_id");
   const agentId = params.get("agent") || params.get("agent_id");
@@ -81,8 +86,12 @@ export function buildMissionControlUrl(target: MissionControlDeepLinkTarget, ori
   if (target.agentId) params.set("agent", target.agentId);
   const query = params.toString();
   // Keep these examples literal for regression docs/tests: view=approvals&approval=, view=board&task=, view=agents&agent=
-  const adminViews = new Set<ViewKey>(["settings", "agent-platform-admin", "users-workspaces", "workspace-runtime-console", "shared-agent-templates", "runtimes", "desktop-gateway", "models", "capabilities", "costs", "approval-policy", "quota"]);
-  const basePath = adminViews.has(view) ? "/admin" : "/app";
+  const adminViews = new Set<ViewKey>(["settings", "agent-platform-admin", "users-workspaces", "workspace-runtime-console", "shared-agent-templates", "runtimes", "desktop-gateway", "capabilities", "costs", "approval-policy", "quota"]);
+  const basePath = target.mode === "admin"
+    ? "/admin"
+    : target.mode === "expert" || view === "models"
+      ? "/expert"
+      : adminViews.has(view) ? "/admin" : "/app";
   return `${origin.replace(/\/$/, "")}${basePath}?${query}`;
 }
 

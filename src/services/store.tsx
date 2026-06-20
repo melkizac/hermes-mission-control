@@ -16,8 +16,12 @@ import { HttpHermesClient } from "./httpHermesClient";
 import { initialDeepLinkTarget, parseMissionControlDeepLink, type MissionControlDeepLinkTarget } from "./deepLinks";
 import { cachedJsonRequest } from "./queryCache";
 
-type UiMode = "workspace" | "admin";
-const defaultViewForUiMode = (mode: UiMode): ViewKey => mode === "admin" ? "settings" : "mission";
+type UiMode = "workspace" | "expert" | "admin";
+const defaultViewForUiMode = (mode: UiMode): ViewKey => {
+  if (mode === "admin") return "settings";
+  if (mode === "expert") return "models";
+  return "mission";
+};
 
 // Production Mission Control talks to the same authenticated origin.
 const client: HermesClient = new HttpHermesClient();
@@ -73,11 +77,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const startingDeepLink = initialDeepLinkTarget();
   const startingPath = window.location.pathname.replace(/\/$/, "") || "/";
   const startsInAdmin = startingPath === "/admin";
+  const startsInExpert = startingPath === "/expert";
   const [agents, setAgents] = useState<Agent[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [view, setRawView] = useState<ViewKey>(startingDeepLink.view ?? (startsInAdmin ? "settings" : "mission"));
-  const [uiMode, setRawUiMode] = useState<UiMode>(startsInAdmin || (startingDeepLink.view && adminOnlyViews.has(startingDeepLink.view)) ? "admin" : "workspace");
+  const [view, setRawView] = useState<ViewKey>(startingDeepLink.view ?? (startsInAdmin ? "settings" : startsInExpert ? "models" : "mission"));
+  const [uiMode, setRawUiMode] = useState<UiMode>(startingDeepLink.mode ?? (startsInAdmin || (startingDeepLink.view && adminOnlyViews.has(startingDeepLink.view)) ? "admin" : startsInExpert ? "expert" : "workspace"));
   const [me, setMe] = useState<MissionControlMe | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -155,6 +160,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [agents, selectedId]);
 
   const applyDeepLinkTarget = useCallback((target: MissionControlDeepLinkTarget) => {
+    if (target.mode) setRawUiMode(target.mode);
     if (target.view) setView(target.view);
     if (target.agentId) setSelectedId(target.agentId);
   }, [setView]);

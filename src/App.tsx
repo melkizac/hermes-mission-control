@@ -163,6 +163,12 @@ function AdminUserModeToggle() {
     setView("mission");
   }
 
+  function switchToExpert() {
+    window.history.pushState({}, "", "/expert");
+    setUiMode("expert");
+    setView("models");
+  }
+
   function switchToAdmin() {
     window.history.pushState({}, "", "/admin");
     setUiMode("admin");
@@ -170,13 +176,20 @@ function AdminUserModeToggle() {
   }
 
   return (
-    <div className="top-mode-toggle" aria-label="Admin and user mode toggle">
+    <div className="top-mode-toggle" aria-label="User, expert, and admin mode toggle">
       <button
         className={"mode-button" + (uiMode === "workspace" ? " on" : "")}
         aria-pressed={uiMode === "workspace"}
         onClick={switchToUser}
       >
         User
+      </button>
+      <button
+        className={"mode-button" + (uiMode === "expert" ? " on" : "")}
+        aria-pressed={uiMode === "expert"}
+        onClick={switchToExpert}
+      >
+        Expert
       </button>
       <button
         className={"mode-button" + (uiMode === "admin" ? " on" : "")}
