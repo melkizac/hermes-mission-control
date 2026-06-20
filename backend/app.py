@@ -12105,7 +12105,7 @@ def read_config_files(profile_id='default', identity=None, agent_id=None, agent_
             'sizeBytes': st.st_size,
             'updatedAt': rel_time(st.st_mtime),
             'scope': 'profile',
-            'editable': path.name in {'SOUL.md', 'IDENTITY.md', 'identity.md', 'MEMORY.md', 'AGENTS.md'} and not workspace_soul_path,
+            'editable': path.name in {'SOUL.md', 'IDENTITY.md', 'identity.md', 'USER.md', 'MEMORY.md', 'AGENTS.md', 'CLAUDE.md'} and not workspace_soul_path,
         })
     if not files:
         files.append({'name':'config.yaml','label':'runtime config','kind':'config','content':'# No readable config files found for this profile.\n','sizeBytes':0,'updatedAt':'—'})
@@ -20223,7 +20223,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({'error': 'bad file route'}, 400)
             agent_id = safe_id(parts[2]) or 'default'
             name = unquote(parts[4])
-            allowed = {'SOUL.md', 'MEMORY.md', 'AGENTS.md', 'config.yaml'}
+            allowed = {'SOUL.md', 'IDENTITY.md', 'identity.md', 'USER.md', 'MEMORY.md', 'AGENTS.md', 'CLAUDE.md', 'config.yaml'}
             if name not in allowed:
                 return self.send_json({'error': 'file is not editable from web UI'}, 403)
             if name == 'config.yaml':
