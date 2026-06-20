@@ -8639,11 +8639,17 @@ button.voice-activation {
   transform: translateX(-50%);
 }
 .org-node-grid {
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   max-width: 1060px;
   margin: 0 auto;
   gap: 26px 18px;
   align-items: start;
+}
+.org-node-grid .org-node {
+  flex: 0 1 197px;
+  max-width: 220px;
 }
 .org-node-grid .org-node::before {
   content: "";
@@ -8770,7 +8776,8 @@ button.voice-activation {
 }
 @media (max-width: 900px) {
   .org-diagram { padding-inline: 10px; }
-  .org-node-grid { grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 22px 12px; }
+  .org-node-grid { gap: 22px 12px; }
+  .org-node-grid .org-node { flex-basis: 168px; }
   .org-node { min-height: 208px; padding-inline: 12px; }
   .org-node-avatar-button { width: 62px; height: 62px; }
 }
