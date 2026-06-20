@@ -15,13 +15,14 @@ def test_agent_org_option_a_removes_redundant_top_level_tabs():
     assert '!loading && tab === "permissions"' not in AGENT_ORG
 
 
-def test_agent_org_option_a_keeps_single_org_diagram_with_routing_sections():
+def test_agent_org_option_a_keeps_only_the_org_diagram_on_the_page():
     assert 'className="org-chart org-chart-option-a"' in AGENT_ORG
     assert 'aria-label="Agent organization chart"' in AGENT_ORG
     assert 'className="org-diagram"' in AGENT_ORG
     assert 'Who owns what' in AGENT_ORG
-    assert '<DigitalCoworkerCapabilityPanel agents={agents} />' in AGENT_ORG
-    assert '<HandoffTimeline handoffs={allHandoffs} compact />' in AGENT_ORG
+    assert '<DigitalCoworkerCapabilityPanel agents={agents} />' not in AGENT_ORG
+    assert '<HandoffTimeline handoffs={allHandoffs} compact />' not in AGENT_ORG
+    assert 'const allHandoffs =' not in AGENT_ORG
 
 
 def test_agent_org_header_uses_tooltip_and_five_metrics_below_header():
