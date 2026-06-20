@@ -8795,4 +8795,23 @@ button.voice-activation {
 .agent-org-page .org-warning { order: 2; }
 .agent-org-page .empty { order: 3; }
 .agent-org-page .org-chart-option-a { order: 4; }
-
+/* Agent Org page consistency with standard workspace pages */
+.agent-org-page {
+  flex: 1;
+  min-width: 0;
+  background: linear-gradient(180deg, #fbfcff 0%, #f5f7fb 100%);
+}
+.agent-org-page .org-hero {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+  margin-bottom: 20px;
+}
+.agent-org-page .org-hero h1 { font-size: 29px; letter-spacing: -0.7px; margin: 4px 0 6px; }
+.agent-org-page .org-hero-actions.projects-control-refresh-only { min-width: 0; width: auto; padding: 0; background: transparent; border: 0; box-shadow: none; }
+.agent-org-page .org-metrics { gap: 14px; margin: 0 0 16px; }
+.agent-org-page .org-metric { border-color: #e1e7ef; border-radius: 18px; padding: 16px 18px; min-height: 104px; box-shadow: 0 14px 40px rgba(20,26,38,.05); }
+.agent-org-page .org-metric span { color: #8a99b2; letter-spacing: .18em; }
+.agent-org-page .org-chart-option-a { border-color: #e1e7ef; border-radius: 22px; box-shadow: 0 14px 40px rgba(20,26,38,.045); }
