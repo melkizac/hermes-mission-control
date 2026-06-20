@@ -8564,7 +8564,10 @@ button.voice-activation {
 /* Agent Org diagram v2: visual org-chart profile nodes */
 .org-chart-option-a {
   background: #fff;
-  overflow: visible;
+  height: auto;
+  min-height: max-content;
+  flex: 0 0 auto;
+  overflow: visible !important;
 }
 .org-chart-option-a .org-chart-intro {
   max-width: 820px;

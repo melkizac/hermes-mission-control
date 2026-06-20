@@ -47,5 +47,6 @@ def test_agent_cards_support_hover_details_avatar_upload_and_drawer_click():
     assert '.org-diagram > .org-node::after' in CSS
     assert '.agent-org-page .org-chart-option-a { order: 2;' in CSS
     assert '.agent-org-page .org-metrics { order: 3;' in CSS
-    assert 'z-index: 60;' in CSS
-    assert 'pointer-events:none' in CSS.replace(' ', '')
+    assert 'min-height: max-content;' in CSS
+    assert 'flex: 0 0 auto;' in CSS
+    assert 'overflow: visible !important;' in CSS
