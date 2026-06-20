@@ -9,8 +9,12 @@ type Name =
   | "agents"
   | "projects"
   | "board"
+  | "workflow"
   | "skills"
+  | "tools"
+  | "plugins"
   | "memory"
+  | "reflections"
   | "approvals"
   | "bell"
   | "automations"
@@ -57,10 +61,14 @@ const paths: Record<Name, string> = {
   mission: "M4 5h16v12H4zM8 21h8M12 17v4M8 9h3M14 9h3M8 13h8",
   chat: "M5 6.5A3.5 3.5 0 018.5 3h7A3.5 3.5 0 0119 6.5v4A3.5 3.5 0 0115.5 14H11l-4.2 3.4A.5.5 0 016 17v-3.2A3.5 3.5 0 015 10.5zM9 8h6M9 11h4",
   agents: "M9 11a4 4 0 118 0v2a4 4 0 11-8 0zM6 21a6 6 0 0112 0M7 8H5a3 3 0 00-3 3v1M19 8h-2a3 3 0 013 3v1",
-  projects: "M3 7h7l2 2h9v10a2 2 0 01-2 2H5a2 2 0 01-2-2zM3 7V5a2 2 0 012-2h4l2 2h8a2 2 0 012 2v2",
+  projects: "M5 6h14v13a2 2 0 01-2 2H7a2 2 0 01-2-2zM8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M9 11h6M9 15h4",
   board: "M4 5h16M6 9h4v5H6zM14 9h4v9h-4zM6 18h4",
+  workflow: "M5 5h5v5H5zM14 5h5v5h-5zM5 14h5v5H5zM10 7.5h4M16.5 10v4M10 16.5h4",
   skills: "M12 3l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.2 6.8 19l1-5.8L3.6 9.1l5.8-.8z",
+  tools: "M14.7 6.3a4 4 0 00-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 005.4-5.4L15 12l-3-3z",
+  plugins: "M9 3v5M15 3v5M7 8h10v3a5 5 0 01-10 0zM12 16v5M8 21h8",
   memory: "M8 4a3 3 0 00-3 3v1.2A3.8 3.8 0 003 12a3.8 3.8 0 002 3.4V17a3 3 0 003 3h1M16 4a3 3 0 013 3v1.2a3.8 3.8 0 012 3.8 3.8 3.8 0 01-2 3.4V17a3 3 0 01-3 3h-1M12 5v14M8 10h3M13 14h3",
+  reflections: "M12 3v18M7 6h5M7 18h5M15 7l3 3-3 3M18 10h-6M15 13l3 3-3 3",
   approvals: "M9 12l2 2 4-4M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
   bell: "M18 8a6 6 0 10-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4",
   automations: "M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2M15 12a3 3 0 11-6 0 3 3 0 016 0z",
