@@ -4,7 +4,8 @@ import { Icon } from "../components/Icon";
 import { InfoTooltip } from "../components/InfoTooltip";
 import { AgentDetailDrawerShell, type AgentDrawerAction, type AgentDrawerTab } from "../components/AgentDetailDrawerShell";
 import { useStore } from "../services/store";
-import type { AgentHandoff, CapabilityMatrixCapability, CapabilityMatrixRow, RunTreePayload, RunTreeRunNode, RunTreeTaskNode } from "../types";
+import { FileEditorDrawer } from "../components/FileEditorDrawer";
+import type { AgentHandoff, CapabilityMatrixCapability, CapabilityMatrixRow, ConfigFile, RunTreePayload, RunTreeRunNode, RunTreeTaskNode } from "../types";
 import { useRealtimeRefresh, type RefreshMode } from "../hooks/useRealtimeRefresh";
 import { cachedJsonRequest, invalidateQueryCache } from "../services/queryCache";
 
@@ -25,7 +26,7 @@ type ProfileRuntimeDetails = {
   profile_id: string;
   profile_path: string;
   identity?: { name?: string; source?: string };
-  identity_docs?: Array<{ name: string; label?: string; kind?: string; updated_at?: string; scope?: string; editable?: boolean; preview?: string; size_bytes?: number }>;
+  identity_docs?: Array<{ name: string; label?: string; kind?: string; updated_at?: string; scope?: string; editable?: boolean; preview?: string; content?: string; size_bytes?: number }>;
   model_routing?: { provider?: string; model?: string };
   toolsets?: string[];
   memory?: { entries: number; files: Array<{ name: string; entries: number; updated_at?: string }>; items?: Array<{ id: string; source?: string; file?: string; line_start?: number; title?: string; text: string; updated_at?: string; redacted?: boolean }>; redacted_or_sensitive_mentions?: number };
@@ -415,28 +416,54 @@ function agentIdentityFileGlyph(kind?: string) {
   return kind === "soul" ? "◆" : kind === "memory" ? "☷" : kind === "agents" ? "⌗" : "⚙";
 }
 
-function AgentIdentityFileRow({ doc }: { doc: NonNullable<ProfileRuntimeDetails["identity_docs"]>[number] }) {
+function AgentIdentityFileRow({ doc, onEdit, onDownload }: { doc: NonNullable<ProfileRuntimeDetails["identity_docs"]>[number]; onEdit: () => void; onDownload: () => void }) {
   const kb = Math.round((doc.size_bytes || 0) / 1000);
-  return <div className={"filerow agent-identity-file-row" + (doc.editable ? "" : " readonly")} aria-disabled={!doc.editable}>
+  return <div className={"filerow agent-identity-file-row" + (doc.editable ? "" : " readonly")} onClick={doc.editable ? onEdit : undefined} aria-disabled={!doc.editable}>
     <div className="fic">{agentIdentityFileGlyph(doc.kind)}</div>
     <div>
       <div className="fn">{doc.name}</div>
       <div className="fd">{doc.label || doc.kind || "identity file"} · {doc.updated_at || "—"} · {kb} KB</div>
     </div>
     <div className="acts">
-      {doc.editable && <span title="Edit"><Icon name="edit" size={14} /></span>}
-      <span title="Profile file"><Icon name="download" size={14} /></span>
+      {doc.editable && <button type="button" title="Edit" aria-label={`Edit ${doc.name}`} onClick={(event) => { event.stopPropagation(); onEdit(); }}><Icon name="edit" size={14} /></button>}
+      <button type="button" title="Download" aria-label={`Download ${doc.name}`} onClick={(event) => { event.stopPropagation(); onDownload(); }}><Icon name="download" size={14} /></button>
     </div>
   </div>;
 }
 
-function AgentIdentityDocs({ agent }: { agent: OrgAgent }) {
-  const docs = agent.profile_details?.identity_docs || [];
-  const fallback = `${agent.role}. ${agent.summary || "No registry summary provided yet."}`;
-  return <div className="agent-identity-docs">{docs.map((doc) => <AgentIdentityFileRow doc={doc} key={`${doc.scope || "profile"}:${doc.name}`} />)}{!docs.length && <div className="filerow agent-identity-file-row readonly fallback" aria-disabled="true"><div className="fic">◆</div><div><div className="fn">Registry identity</div><div className="fd">No SOUL.md, identity.md, USER.md, AGENTS.md, or CLAUDE.md file reported for {agent.profile || "default"}</div><p className="agent-identity-file-preview">{fallback}</p></div><div className="acts"><span title="Read-only"><Icon name="download" size={14} /></span></div></div>}</div>;
+function downloadMarkdownDoc(doc: NonNullable<ProfileRuntimeDetails["identity_docs"]>[number]) {
+  const content = doc.content ?? doc.preview ?? "";
+  const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = doc.name || "agent-profile.md";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
 }
 
-function AgentOverviewPanel({ agent, agents, onChat, onAssignTask, onRun }: { agent: OrgAgent; agents: OrgAgent[]; onChat: () => void; onAssignTask: () => void; onRun: () => void }) {
+function identityDocToConfigFile(doc: NonNullable<ProfileRuntimeDetails["identity_docs"]>[number]) {
+  return {
+    name: doc.name,
+    label: doc.label || doc.kind || "identity file",
+    kind: (doc.kind === "memory" || doc.kind === "agents" || doc.kind === "config" || doc.kind === "soul" ? doc.kind : "other") as "soul" | "memory" | "agents" | "config" | "other",
+    content: doc.content ?? doc.preview ?? "",
+    sizeBytes: doc.size_bytes || new Blob([doc.content ?? doc.preview ?? ""]).size,
+    updatedAt: doc.updated_at || "—",
+    scope: doc.scope || "profile",
+    editable: doc.editable,
+  };
+}
+
+function AgentIdentityDocs({ agent, onEdit }: { agent: OrgAgent; onEdit: (doc: NonNullable<ProfileRuntimeDetails["identity_docs"]>[number]) => void }) {
+  const docs = agent.profile_details?.identity_docs || [];
+  const fallback = `${agent.role}. ${agent.summary || "No registry summary provided yet."}`;
+  return <div className="agent-identity-docs">{docs.map((doc) => <AgentIdentityFileRow doc={doc} onEdit={() => onEdit(doc)} onDownload={() => downloadMarkdownDoc(doc)} key={`${doc.scope || "profile"}:${doc.name}`} />)}{!docs.length && <div className="filerow agent-identity-file-row readonly fallback" aria-disabled="true"><div className="fic">◆</div><div><div className="fn">Registry identity</div><div className="fd">No SOUL.md, identity.md, USER.md, AGENTS.md, or CLAUDE.md file reported for {agent.profile || "default"}</div><p className="agent-identity-file-preview">{fallback}</p></div><div className="acts"><button type="button" title="Download" aria-label="Download Registry identity" onClick={() => downloadMarkdownDoc({ name: "Registry identity.md", label: "read-only fallback", kind: "soul", preview: fallback, content: fallback, editable: false, size_bytes: fallback.length })}><Icon name="download" size={14} /></button></div></div>}</div>;
+}
+
+function AgentOverviewPanel({ agent, agents, onChat, onAssignTask, onRun, onEditIdentityDoc }: { agent: OrgAgent; agents: OrgAgent[]; onChat: () => void; onAssignTask: () => void; onRun: () => void; onEditIdentityDoc: (doc: NonNullable<ProfileRuntimeDetails["identity_docs"]>[number]) => void }) {
   const work = agentCurrentWork(agent);
   return <section className="agent-overview-simple">
     <div className="agent-profile-card">
@@ -448,7 +475,7 @@ function AgentOverviewPanel({ agent, agents, onChat, onAssignTask, onRun }: { ag
       <div><span>Role</span><b>{agent.role}</b></div>
     </div>
     <div className="agent-simple-section"><h3>Primary responsibility</h3><p>{agent.summary || agent.role}</p></div>
-    <div className="agent-simple-section"><h3>Profile & identity files</h3><AgentIdentityDocs agent={agent} /></div>
+    <div className="agent-simple-section"><h3>Profile & identity files</h3><AgentIdentityDocs agent={agent} onEdit={onEditIdentityDoc} /></div>
     <div className="agent-simple-section"><h3>Current work</h3><div className="org-footprint compact"><span>{work.running} active</span><span>{work.queued} queued</span><span>{work.blocked} blocked</span><span>{work.approvals} approvals</span></div>{work.total === 0 && <p className="muted">No active work needs attention right now.</p>}</div>
     <div className="agent-primary-actions"><button className="btn dark" onClick={onChat}>Chat with agent</button><button className="btn primary" onClick={onAssignTask}>Assign task</button><button className="btn ghost" disabled={!agent.automations.length} onClick={onRun}>{agentRunLabel(agent)}</button></div>
   </section>;
@@ -537,6 +564,7 @@ function AgentToolsPanel({ agent }: { agent: OrgAgent }) {
 
 function DetailDrawer({ agent, agents, avatarUrl, onClose, onAction, onCreateGoal, onApproveReview, approvingId, actionFeedback }: { agent: OrgAgent; agents: OrgAgent[]; avatarUrl?: string; onClose: () => void; onAction: (agent: OrgAgent, action: string, payload?: Record<string, unknown>) => void; onCreateGoal: (agent: OrgAgent) => void; onApproveReview: (agent: OrgAgent, review: Review) => void; approvingId?: string | null; actionFeedback?: ActionFeedback }) {
   const [tab, setTab] = useState<DrawerTab>("overview");
+  const [editingIdentityDoc, setEditingIdentityDoc] = useState<ReturnType<typeof identityDocToConfigFile> | null>(null);
   const [capabilityRow, setCapabilityRow] = useState<CapabilityMatrixRow | null>(null);
   const [capabilityLoading, setCapabilityLoading] = useState(false);
   const [capabilityMessage, setCapabilityMessage] = useState<string | null>(null);
@@ -602,6 +630,14 @@ function DetailDrawer({ agent, agents, avatarUrl, onClose, onAction, onCreateGoa
       setCapabilityBusyId(null);
     }
   };
+  const saveIdentityDoc = async (file: ConfigFile) => {
+    const profileId = agent.profile || agent.id || "default";
+    await request<{ ok: boolean }>(`/api/agents/${encodeURIComponent(profileId)}/files/${encodeURIComponent(file.name)}`, {
+      method: "PUT",
+      body: JSON.stringify({ content: file.content, scope: file.scope }),
+    });
+    invalidateAgentOrgCache(agent.id);
+  };
   return (
     <div className="drawer-backdrop" onClick={onClose}>
       <AgentDetailDrawerShell
@@ -620,12 +656,13 @@ function DetailDrawer({ agent, agents, avatarUrl, onClose, onAction, onCreateGoa
       >
         {feedback && <div className={`drawer-action-notice ${feedback.tone}`} role="status" aria-live="polite"><b>{feedback.title}</b>{feedback.detail && <small>{feedback.detail}</small>}</div>}
 
-        {tab === "overview" && <AgentOverviewPanel agent={agent} agents={agents} onChat={() => { select(agent.id); setView("mission"); onClose(); }} onAssignTask={() => onAction(agent, "create_task")} onRun={() => onAction(agent, "run_agent")} />}
+        {tab === "overview" && <AgentOverviewPanel agent={agent} agents={agents} onChat={() => { select(agent.id); setView("mission"); onClose(); }} onAssignTask={() => onAction(agent, "create_task")} onRun={() => onAction(agent, "run_agent")} onEditIdentityDoc={(doc) => setEditingIdentityDoc(identityDocToConfigFile(doc))} />}
 
         {tab === "capabilities" && <AgentCapabilitiesPanel agent={agent} uiMode={uiMode} capabilityRow={capabilityRow} capabilityLoading={capabilityLoading} capabilityError={capabilityError} capabilityMessage={capabilityMessage} canEditCapabilities={canEditCapabilities} capabilityBusyId={capabilityBusyId} onCapabilityAction={handleCapabilityAction} />}
 
         {tab === "activity" && <AgentActivityPanel agent={agent} uiMode={uiMode} approvalForActivity={approvalForActivity} approvingId={approvingId} onApproveReview={(review) => onApproveReview(agent, review)} />}
 
+        {editingIdentityDoc && <FileEditorDrawer file={editingIdentityDoc} onClose={() => setEditingIdentityDoc(null)} onSave={saveIdentityDoc} />}
       </AgentDetailDrawerShell>
     </div>
   );
