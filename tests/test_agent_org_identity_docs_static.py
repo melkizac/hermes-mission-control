@@ -18,14 +18,18 @@ def test_agent_org_profile_runtime_exposes_identity_docs():
     assert "'size_bytes': file.get('sizeBytes') or 0" in helper
 
 
-def test_agent_org_identity_role_markdown_files_are_editable_and_downloadable():
+def test_agent_org_uses_agent_page_drawer_for_identity_files():
     src = (ROOT / "src/views/AgentOrg.tsx").read_text(encoding="utf-8")
+    context_panel = (ROOT / "src/components/ContextPanel.tsx").read_text(encoding="utf-8")
     css = (ROOT / "src/styles/app.css").read_text(encoding="utf-8")
-    assert "downloadMarkdownDoc" in src
-    assert "FileEditorDrawer" in src
-    assert "identityDocToConfigFile" in src
-    assert "aria-label={`Edit ${doc.name}`}" in src
-    assert "aria-label={`Download ${doc.name}`}" in src
+    assert 'import { ContextPanel } from "../components/ContextPanel"' in src
+    assert "orgAgentToContextAgent" in src
+    assert "orgIdentityDocsToFiles" in src
+    assert '<ContextPanel agent={contextAgent} drawer onClose={onClose} />' in src
+    assert 'className="agent-drawer-layer org-agent-drawer-layer"' in src
+    assert "downloadConfigFile" in context_panel
+    assert "aria-label={`Edit ${file.name}`}" in context_panel
+    assert "aria-label={`Download ${file.name}`}" in context_panel
     assert ".filerow .acts span, .filerow .acts button" in css
     assert "'CLAUDE.md'" in APP
     assert "'USER.md'" in APP

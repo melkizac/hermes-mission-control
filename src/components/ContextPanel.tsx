@@ -524,6 +524,18 @@ function CapabilityMatrixCard({ capability, canEdit, onAction }: { capability: C
   );
 }
 
+function downloadConfigFile(file: ConfigFile) {
+  const blob = new Blob([file.content ?? ""], { type: file.name.toLowerCase().endsWith(".md") ? "text/markdown;charset=utf-8" : "text/plain;charset=utf-8" });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = file.name || "agent-profile.txt";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
 function FileRow({ file, onOpen, disabled }: { file: ConfigFile; onOpen: () => void; disabled?: boolean }) {
   return (
     <div className={"filerow" + (disabled ? " readonly" : "")} onClick={disabled ? undefined : onOpen} aria-disabled={disabled}>
@@ -535,12 +547,12 @@ function FileRow({ file, onOpen, disabled }: { file: ConfigFile; onOpen: () => v
         </div>
       </div>
       <div className="acts">
-        <span title="Edit">
+        {!disabled && <button type="button" title="Edit" aria-label={`Edit ${file.name}`} onClick={(event) => { event.stopPropagation(); onOpen(); }}>
           <Icon name="edit" size={14} />
-        </span>
-        <span title="Download">
+        </button>}
+        <button type="button" title="Download" aria-label={`Download ${file.name}`} onClick={(event) => { event.stopPropagation(); downloadConfigFile(file); }}>
           <Icon name="download" size={14} />
-        </span>
+        </button>
       </div>
     </div>
   );

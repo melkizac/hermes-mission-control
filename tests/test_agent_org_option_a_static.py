@@ -49,14 +49,12 @@ def test_agent_cards_support_hover_details_avatar_upload_and_drawer_click():
     assert 'window.localStorage.setItem("hmc-agent-org-avatars"' in AGENT_ORG
     assert 'role="button" tabIndex={0}' in AGENT_ORG
     assert 'onClick={() => setSelectedId(agent.id)}' in AGENT_ORG
-    assert 'avatarUrl ? <img className={`agent-detail-avatar org-agent-avatar image ${agent.status}`}' in AGENT_ORG
 
     for selector in [
         '.org-chart-intro',
         '.org-diagram',
         '.org-node-avatar-button',
         '.org-node-hover-details',
-        '.agent-detail-avatar.image',
     ]:
         assert selector in CSS
     assert 'grid-template-columns: 1fr auto 1fr' in CSS
@@ -72,25 +70,16 @@ def test_agent_cards_support_hover_details_avatar_upload_and_drawer_click():
     assert 'flex: 0 0 auto;' in CSS
     assert 'overflow: visible !important;' in CSS
 
-def test_agent_detail_drawer_is_simplified_into_three_sections():
-    assert 'return ["overview", "capabilities", "activity"];' in AGENT_ORG
-    assert 'AgentOverviewPanel' in AGENT_ORG
-    assert 'AgentCapabilitiesPanel' in AGENT_ORG
-    assert 'AgentActivityPanel' in AGENT_ORG
-    assert 'Chat with agent' in AGENT_ORG
-    assert 'Primary responsibility' in AGENT_ORG
-    assert 'Can help with' not in AGENT_ORG
-    assert 'Profile & identity files' in AGENT_ORG
-    assert 'identity_docs' in AGENT_ORG
-    assert 'AgentIdentityFileRow' in AGENT_ORG
-    assert 'className="fic"' in AGENT_ORG
-    assert 'className="fn"' in AGENT_ORG
-    assert 'className="fd"' in AGENT_ORG
-    assert 'SOUL.md, identity.md, USER.md, AGENTS.md, or CLAUDE.md' in AGENT_ORG
-    assert 'Current work' in AGENT_ORG
-    assert 'Run from Mission Control' not in AGENT_ORG
-    assert 'Operational footprint' not in AGENT_ORG
+def test_agent_detail_drawer_reuses_agent_page_drawer():
+    assert 'import { ContextPanel } from "../components/ContextPanel"' in AGENT_ORG
+    assert 'orgAgentToContextAgent' in AGENT_ORG
+    assert 'orgIdentityDocsToFiles' in AGENT_ORG
+    assert '<ContextPanel agent={contextAgent} drawer onClose={onClose} />' in AGENT_ORG
+    assert 'className="agent-drawer-layer org-agent-drawer-layer"' in AGENT_ORG
+    assert 'AgentOverviewPanel' not in AGENT_ORG
+    assert 'AgentCapabilitiesPanel' not in AGENT_ORG
+    assert 'AgentActivityPanel' not in AGENT_ORG
     assert 'tab === "profile"' not in AGENT_ORG
     assert 'tab === "permissions"' not in AGENT_ORG
-    assert '/* Simplified Agent Details drawer */' in CSS
+    assert 'SOUL.md, identity.md, USER.md, AGENTS.md, or CLAUDE.md' in AGENT_ORG
     assert '.agent-capability-row' in CSS
