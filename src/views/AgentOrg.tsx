@@ -163,12 +163,36 @@ function AgentStatusBadge({ agent, compact = false }: { agent: OrgAgent; compact
   );
 }
 
+function agentContactEmail(agent: OrgAgent) {
+  const profile = (agent.profile || agent.id || "agent").toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-|-$/g, "");
+  return `${profile || "agent"}@mission-control.local`;
+}
+
+function agentHealthScore(agent: OrgAgent) {
+  const issues = agentIssueCount(agent);
+  if (agent.status === "failed") return 45;
+  if (agent.status === "blocked") return 62;
+  if (agent.status === "attention") return 74;
+  return Math.max(82, 98 - issues * 6);
+}
+
+function agentJoinedLine(agent: OrgAgent) {
+  const activity = agent.lastActivity ? formatSingaporeShort(agent.lastActivity) : "no recent run";
+  return `Last active ${activity} · ${agentHealthScore(agent)}%`;
+}
+
+function AgentHoverIcon({ label, children }: { label: string; children: string }) {
+  return <span className="org-hover-icon" aria-label={label} title={label}>{children}</span>;
+}
+
 function NodeCard({ agent, selected, avatarUrl, onClick, onAvatarFile }: { agent: OrgAgent; selected: boolean; avatarUrl?: string; onClick: () => void; onAvatarFile: (file: File) => void }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const openWork = (agent.queue?.queued || 0) + (agent.queue?.running || 0) + (agent.queue?.blocked || 0) + (agent.queue?.failed || 0);
   const automationCount = agent.automation_count ?? agent.automations.length;
   const inboxCount = agent.inbox_count ?? agent.inbox.length;
   const skillCount = agent.skills_detail.length || agent.skills.length;
+  const email = agentContactEmail(agent);
+  const peopleCount = Math.max(1, automationCount + openWork + inboxCount);
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -207,12 +231,25 @@ function NodeCard({ agent, selected, avatarUrl, onClick, onAvatarFile }: { agent
       <h3>{agent.name}</h3>
       <p>{agent.role}</p>
       <div className="org-node-foot"><span>{agent.mode}</span><span>{agent.profile || "default"}</span></div>
-      <div className="org-node-hover-details" aria-hidden="true">
-        <b>More about this agent</b>
-        <span>{agent.summary || agent.role}</span>
-        <div className="chip-row compact"><span>{agent.type || "workflow_agent"}</span><span>{agent.runtime || "hermes"}</span><span>runs as {agent.profile || "default"}</span></div>
-        <div className="org-node-stats"><b>{automationCount}</b><small>routines</small><b>{openWork}</b><small>queue</small><b>{inboxCount}</b><small>gates</small></div>
-        <small>{skillCount} skills · {agent.tools.length} tools · {agent.permissions.length} permissions · last {agent.lastActivity ? formatSingaporeShort(agent.lastActivity) : "no recent run"}</small>
+      <div className="org-node-hover-details org-hover-profile-card" aria-hidden="true">
+        <div className="org-hover-banner" />
+        <div className="org-hover-body">
+          <div className="org-hover-avatar">{avatarUrl ? <img src={avatarUrl} alt="" /> : <span>{initials(agent.name)}</span>}</div>
+          <button className="org-hover-menu" type="button" tabIndex={-1} aria-label="More actions">⋮</button>
+          <div className="org-hover-title-row"><b>{agent.name}</b><span aria-label={`${peopleCount} active signals`}>♧ {peopleCount}</span></div>
+          <p className="org-hover-role">{agent.role}</p>
+          <p className="org-hover-joined">{agentJoinedLine(agent)}</p>
+          <p className="org-hover-email">{email}</p>
+          <div className="org-hover-icons" aria-label="Agent capability shortcuts">
+            <AgentHoverIcon label={`${automationCount} routines`}>☘</AgentHoverIcon>
+            <AgentHoverIcon label={`${skillCount} skills`}>✦</AgentHoverIcon>
+            <AgentHoverIcon label={`${agent.tools.length} tools`}>⌘</AgentHoverIcon>
+            <AgentHoverIcon label={`${openWork} queued or running items`}>▣</AgentHoverIcon>
+            <AgentHoverIcon label={`${inboxCount} approval gates`}>◆</AgentHoverIcon>
+            <AgentHoverIcon label={agent.runtime || "Hermes runtime"}>↗</AgentHoverIcon>
+          </div>
+        </div>
+        <div className="org-hover-teams"><b>Teams</b><span>{agent.profile || "default"}, {agent.type || "workflow_agent"}</span></div>
       </div>
     </article>
   );
