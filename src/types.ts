@@ -797,6 +797,7 @@ export interface Agent {
   squad: string;
   initials: string;
   color: string;
+  avatarUrl?: string;
   model: string;
   status: AgentStatus;
   availability?: "online" | "degraded" | "offline" | string;

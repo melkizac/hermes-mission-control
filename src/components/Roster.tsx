@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { formatSingaporeShort } from "../utils/time";
 import { useStore } from "../services/store";
+import { AgentAvatar } from "./AgentAvatar";
 import type { Agent, AgentStatus, ProjectChatResponse, ProjectChatSession } from "../types";
 
 const statusMeta: Record<AgentStatus, { label: string; cls: string; dot: string }> = {
@@ -189,9 +190,7 @@ function AgentRow({ agent, active, onClick }: { agent: Agent; active: boolean; o
   const m = statusMeta[agent.status];
   return (
     <button className={"agent" + (active ? " on" : "")} onClick={onClick}>
-      <span className="av" style={{ background: agent.color }}>
-        {agent.initials}
-      </span>
+      <AgentAvatar agent={agent} />
       <span className="a-main">
         <span className="a-top">
           <span className="a-name">{agent.name}</span>

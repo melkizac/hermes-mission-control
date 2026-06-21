@@ -309,6 +309,7 @@ function orgAgentToContextAgent(agent: OrgAgent): Agent {
     squad: agent.role,
     initials: initials(agent.name),
     color: "var(--accent, #111827)",
+    avatarUrl: agent.avatar_url,
     model: agent.profile_details?.model_routing?.model || agent.runtime || "runtime default",
     status: orgStatusToAgentStatus(agent.status),
     availability: agent.status === "active" ? "online" : "offline",
