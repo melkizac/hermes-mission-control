@@ -43,7 +43,7 @@ def test_agent_org_header_uses_standard_workspace_header_tooltip_and_five_metric
 
 
 def test_agent_cards_support_hover_details_avatar_upload_and_drawer_click():
-    assert 'className="org-node-hover-details"' in AGENT_ORG
+    assert 'org-node-hover-details org-hover-profile-card' in AGENT_ORG
     assert 'className="org-node-avatar-button"' in AGENT_ORG
     assert 'accept="image/*"' in AGENT_ORG
     assert 'window.localStorage.setItem("hmc-agent-org-avatars"' in AGENT_ORG
@@ -69,6 +69,36 @@ def test_agent_cards_support_hover_details_avatar_upload_and_drawer_click():
     assert 'min-height: max-content;' in CSS
     assert 'flex: 0 0 auto;' in CSS
     assert 'overflow: visible !important;' in CSS
+
+
+def test_agent_hover_card_uses_reference_profile_card_ui():
+    for marker in [
+        'org-hover-profile-card',
+        'org-hover-banner',
+        'org-hover-avatar',
+        'org-hover-title-row',
+        'org-hover-email',
+        'org-hover-icons',
+        'org-hover-teams',
+        'agentContactEmail',
+        'agentJoinedLine',
+    ]:
+        assert marker in AGENT_ORG
+
+    for selector in [
+        '.org-hover-profile-card',
+        '.org-hover-banner',
+        '.org-hover-avatar',
+        '.org-hover-title-row',
+        '.org-hover-email',
+        '.org-hover-icons',
+        '.org-hover-teams',
+    ]:
+        assert selector in CSS
+    assert 'linear-gradient(135deg, #3544f4 0%, #342deb 56%, #5b45ff 100%)' in CSS
+    assert 'border-radius: 18px;' in CSS
+    assert 'width: min(342px, calc(100vw - 48px));' in CSS
+
 
 def test_agent_detail_drawer_reuses_agent_page_drawer():
     assert 'import { ContextPanel } from "../components/ContextPanel"' in AGENT_ORG
