@@ -47,6 +47,7 @@ MODEL_USAGE_REMAINING_FILE = Path(os.environ.get('HMC_MODEL_USAGE_REMAINING_FILE
 UPLOAD_DIR = Path(os.environ.get('HMC_UPLOAD_DIR', APP_ROOT / 'uploads'))
 GENERATED_OUTPUT_DIR = Path(os.environ.get('HMC_GENERATED_OUTPUT_DIR', HOME / '.hermes' / 'output'))
 MAX_ATTACHMENT_BYTES = int(os.environ.get('HMC_MAX_ATTACHMENT_BYTES', str(50 * 1024 * 1024)))
+MAX_AGENT_AVATAR_BYTES = int(os.environ.get('HMC_MAX_AGENT_AVATAR_BYTES', str(3 * 1024 * 1024)))
 APPROVALS_DB = Path(os.environ.get('HMC_APPROVALS_DB', APP_ROOT / 'approvals.db'))
 RUNTIME_CONNECTORS_DB = Path(os.environ.get('HMC_RUNTIME_CONNECTORS_DB', APP_ROOT / 'runtime_connectors.db'))
 BROWSER_EVENTS_FILE = Path(os.environ.get('HMC_BROWSER_EVENTS_FILE', APP_ROOT / 'browser_runtime_events.json'))
@@ -14528,6 +14529,70 @@ def save_agent_registry(registry):
         pass
 
 
+def save_agent_org_avatar(agent_id, payload):
+    aid = safe_id(agent_id)
+    if not aid:
+        return {'ok': False, 'error': 'invalid agent id'}, 400
+    registry = load_agent_registry()
+    agents = registry.get('agents') or []
+    agent = next((a for a in agents if safe_id(a.get('id') or '') == aid), None)
+    if not agent:
+        return {'ok': False, 'error': 'agent not found'}, 404
+
+    filename = sanitize_filename(payload.get('filename') or 'avatar.png')
+    ext = Path(filename).suffix.lower()
+    mime = str(payload.get('mime') or mimetypes.guess_type(filename)[0] or '').lower()[:160]
+    allowed = {
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.webp': 'image/webp',
+        '.gif': 'image/gif',
+    }
+    if ext not in allowed:
+        return {'ok': False, 'error': 'Profile pictures must be .png, .jpg, .jpeg, .webp, or .gif images.'}, 400
+    if mime and not mime.startswith('image/'):
+        return {'ok': False, 'error': 'Profile picture upload must be an image.'}, 400
+
+    try:
+        declared_size = int(payload.get('sizeBytes') or payload.get('size') or 0)
+    except Exception:
+        return {'ok': False, 'error': 'profile picture size must be numeric'}, 400
+    if declared_size and declared_size > MAX_AGENT_AVATAR_BYTES:
+        return {'ok': False, 'error': f'profile picture exceeds {MAX_AGENT_AVATAR_BYTES // (1024 * 1024)} MB limit'}, 413
+
+    data = str(payload.get('data') or '')
+    if ',' in data and data[:40].startswith('data:'):
+        data = data.split(',', 1)[1]
+    try:
+        content = base64.b64decode(data, validate=True)
+    except Exception:
+        return {'ok': False, 'error': 'profile picture data must be base64'}, 400
+    if not content:
+        return {'ok': False, 'error': 'empty profile picture'}, 400
+    if len(content) > MAX_AGENT_AVATAR_BYTES:
+        return {'ok': False, 'error': f'profile picture exceeds {MAX_AGENT_AVATAR_BYTES // (1024 * 1024)} MB limit'}, 413
+
+    avatar_channel = f'agent-avatar-{aid}'
+    avatar_root = (UPLOAD_DIR / avatar_channel).resolve()
+    avatar_root.mkdir(parents=True, exist_ok=True)
+    stored_name = f'avatar{ext}'
+    path = (avatar_root / stored_name).resolve()
+    if not str(path).startswith(str(avatar_root)):
+        return {'ok': False, 'error': 'invalid avatar path'}, 400
+    path.write_bytes(content)
+    try:
+        path.chmod(0o600)
+    except Exception:
+        pass
+
+    avatar_url = attachment_public_url(avatar_channel, stored_name)
+    agent['avatar_url'] = avatar_url
+    agent['avatar_updated_at'] = datetime.now(SGT).strftime('%Y-%m-%d %H:%M SGT')
+    save_agent_registry(registry)
+    return {'ok': True, 'agent_id': aid, 'avatar_url': avatar_url, 'sizeBytes': len(content), 'mime': allowed[ext]}, 200
+
+
 def goal_slug(text, prefix='goal'):
     base = safe_id(text or prefix).lower() if 'safe_id' in globals() else re.sub(r'[^a-zA-Z0-9_.-]+', '-', (text or prefix)).strip('-').lower()[:80]
     return (base or prefix)[:64]
@@ -19999,6 +20064,11 @@ class Handler(BaseHTTPRequestHandler):
             goal_id = safe_id(parts[5]) if len(parts) >= 8 else ''
             action_id = safe_id(parts[7]) if len(parts) >= 8 else ''
             result, status = update_goal_action(agent_id, goal_id, action_id, payload)
+            self.send_json(result, status)
+        elif parsed.path.startswith('/api/agent-org/agents/') and parsed.path.endswith('/avatar'):
+            parts = parsed.path.strip('/').split('/')
+            agent_id = safe_id(parts[3]) if len(parts) >= 5 else ''
+            result, status = save_agent_org_avatar(agent_id, payload)
             self.send_json(result, status)
         elif parsed.path.startswith('/api/agent-org/agents/') and parsed.path.endswith('/action'):
             parts = parsed.path.strip('/').split('/')

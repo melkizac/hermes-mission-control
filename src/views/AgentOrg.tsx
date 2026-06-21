@@ -355,13 +355,7 @@ export function AgentOrg() {
   const [data, setData] = useState<AgentOrgResponse>(emptyOrg);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [agentAvatars, setAgentAvatars] = useState<Record<string, string>>(() => {
-    try {
-      return JSON.parse(window.localStorage.getItem("hmc-agent-org-avatars") || "{}");
-    } catch {
-      return {};
-    }
-  });
+  const [agentAvatars, setAgentAvatars] = useState<Record<string, string>>({});
   const detailCache = useRef(new Map<string, OrgAgent>());
 
   const load = useCallback(async (mode: RefreshMode = "manual") => {
@@ -410,18 +404,40 @@ export function AgentOrg() {
 
   const chief = agents.find((a) => a.id === "chief-operator") || agents[0];
   const childNodes = useMemo(() => agents.filter((n) => (n.reportsTo ?? n.reports_to) === (chief?.id || "chief-operator")), [agents, chief]);
-  function handleAvatarFile(agent: OrgAgent, file: File) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const value = typeof reader.result === "string" ? reader.result : "";
-      if (!value) return;
-      setAgentAvatars((current) => {
-        const next = { ...current, [agent.id]: value };
-        window.localStorage.setItem("hmc-agent-org-avatars", JSON.stringify(next));
-        return next;
+  function readFileAsDataUrl(file: File) {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.onerror = () => reject(new Error("Could not read profile picture"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function handleAvatarFile(agent: OrgAgent, file: File) {
+    if (!file.type.startsWith("image/")) {
+      setNotice("Profile pictures must be image files.");
+      return;
+    }
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      if (!dataUrl) throw new Error("Could not read profile picture");
+      const result = await request<{ ok?: boolean; avatar_url?: string; error?: string }>(`/api/agent-org/agents/${encodeURIComponent(agent.id)}/avatar`, {
+        method: "POST",
+        body: JSON.stringify({ filename: file.name, mime: file.type, sizeBytes: file.size, data: dataUrl }),
       });
-    };
-    reader.readAsDataURL(file);
+      const avatarUrl = result.avatar_url;
+      if (!avatarUrl) throw new Error(result.error || "Profile picture save did not return a URL");
+      setAgentAvatars((current) => ({ ...current, [agent.id]: avatarUrl }));
+      setData((current) => ({
+        ...current,
+        agents: current.agents.map((item) => (item.id === agent.id ? { ...item, avatar_url: avatarUrl } : item)),
+      }));
+      const cachedDetail = detailCache.current.get(agent.id);
+      if (cachedDetail) detailCache.current.set(agent.id, { ...cachedDetail, avatar_url: avatarUrl });
+      setNotice(`Saved profile picture for ${agent.name}.`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Could not save profile picture");
+    }
   }
 
   return (

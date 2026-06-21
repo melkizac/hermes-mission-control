@@ -46,7 +46,9 @@ def test_agent_cards_support_hover_details_avatar_upload_and_drawer_click():
     assert 'org-node-hover-details org-hover-profile-card' in AGENT_ORG
     assert 'className="org-node-avatar-button"' in AGENT_ORG
     assert 'accept="image/*"' in AGENT_ORG
-    assert 'window.localStorage.setItem("hmc-agent-org-avatars"' in AGENT_ORG
+    assert 'api/agent-org/agents/${encodeURIComponent(agent.id)}/avatar' in AGENT_ORG
+    assert 'window.localStorage.setItem("hmc-agent-org-avatars"' not in AGENT_ORG
+    assert 'Saved profile picture for ${agent.name}.' in AGENT_ORG
     assert 'role="button" tabIndex={0}' in AGENT_ORG
     assert 'onClick={() => setSelectedId(agent.id)}' in AGENT_ORG
 
