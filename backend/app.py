@@ -14100,9 +14100,44 @@ def agent_list_status_payload():
     }
 
 
+def safe_agent_avatar_url(value):
+    url = str(value or '').strip()
+    if not url:
+        return None
+    if re.fullmatch(r'/api/attachments/agent-avatar-[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.%-]+', url):
+        return url
+    return None
+
+
+def agent_registry_avatar_url(profile_id):
+    pid = safe_id(profile_id)
+    if not pid:
+        return None
+    try:
+        registry = load_agent_registry()
+        matches = []
+        for agent in registry.get('agents') or []:
+            if not isinstance(agent, dict):
+                continue
+            agent_id = safe_id(agent.get('id') or '')
+            agent_profile = safe_id(agent.get('profile') or '')
+            avatar_url = safe_agent_avatar_url(agent.get('avatar_url'))
+            if pid in (agent_id, agent_profile) and avatar_url:
+                matches.append({**agent, 'avatar_url': avatar_url})
+        if not matches:
+            return None
+        exact = next((agent for agent in matches if safe_id(agent.get('id') or '') == pid), None)
+        runtime = next((agent for agent in matches if (agent.get('type') or '') == 'runtime_agent'), None)
+        selected = exact or runtime or matches[0]
+        return str(selected.get('avatar_url') or '') or None
+    except Exception:
+        return None
+
+
 def base_agent_identity_fields(profile_id, st=None):
     st = st or agent_list_status_payload()
     api_ok = bool(st['api']['health'].get('ok'))
+    avatar_url = agent_registry_avatar_url(profile_id)
     if profile_id in ('terminal', 'cli'):
         name, squad, initials, color = 'Terminal Chat', 'CLI', 'TC', '#3b6fe0'
     elif profile_id in ('telegram', 'telegram-bot'):
@@ -14115,7 +14150,7 @@ def base_agent_identity_fields(profile_id, st=None):
         identity_cfg = agent_identity(profile_id)
         identity_name = identity_cfg.get('name') or 'Hermes Agent'
         name, squad, initials, color = identity_name, 'All Channels', initials_for_name(identity_name, 'HA'), '#0e8f84'
-    return {'name': name, 'squad': squad, 'initials': initials, 'color': color if api_ok else '#dc4040', 'api_ok': api_ok}
+    return {'name': name, 'squad': squad, 'initials': initials, 'color': color if api_ok else '#dc4040', 'api_ok': api_ok, 'avatarUrl': avatar_url}
 
 
 def agent_summary_payload(profile_id='default', st=None, chat_channel_id=None, identity=None, route=None):
@@ -14140,6 +14175,7 @@ def agent_summary_payload(profile_id='default', st=None, chat_channel_id=None, i
         'squad': fields['squad'],
         'initials': fields['initials'],
         'color': fields['color'],
+        'avatarUrl': fields.get('avatarUrl'),
         'model': profile_config_model(profile_id, ', '.join(st['api']['models']) or 'hermes-agent'),
         'status': status,
         'availability': resolution['availability'],
@@ -14196,6 +14232,7 @@ def agent_payload(profile_id='default', st=None, include_artifacts=True, chat_ch
         'squad': squad,
         'initials': initials,
         'color': color if api_ok else '#dc4040',
+        'avatarUrl': fields.get('avatarUrl'),
         'model': profile_config_model(profile_id, ', '.join(st['api']['models']) or 'hermes-agent'),
         'status': status,
         'availability': resolution['availability'],

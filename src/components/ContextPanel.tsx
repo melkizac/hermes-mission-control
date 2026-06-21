@@ -4,6 +4,7 @@ import { Icon } from "./Icon";
 import type { Agent, AgentRuntimeAccount, AgentRuntimeAssignment, AgentRuntimeSwitcher, CapabilityMatrixCapability, CapabilityMatrixRow, ConfigFile, RouterModel } from "../types";
 import { FileEditorDrawer } from "./FileEditorDrawer";
 import { AgentDetailDrawerShell, type AgentDrawerTab } from "./AgentDetailDrawerShell";
+import { AgentAvatar } from "./AgentAvatar";
 
 type Tab = "overview" | "profile" | "identity" | "tools" | "skills" | "output" | "tasks";
 
@@ -165,9 +166,7 @@ export function ContextPanel({
         <button className="ctx-toggle vertical" onClick={onToggle} title="Expand selected agent details">
           ⟨
         </button>
-        <div className="ctx-mini-av" style={{ background: agent.color }}>
-          {agent.initials}
-        </div>
+        <AgentAvatar agent={agent} className="ctx-mini-av" />
         <div className="ctx-mini-label">Agent details</div>
       </aside>
     );
@@ -190,7 +189,7 @@ export function ContextPanel({
     <AgentDetailDrawerShell
       className={"ctx" + (drawer ? " agent-detail-drawer" : "")}
       title={agent.name}
-      avatar={<span className="agent-detail-avatar" style={{ background: agent.color }}>{agent.initials}</span>}
+      avatar={<AgentAvatar agent={agent} className="agent-detail-avatar" />}
       eyebrow="Selected agent"
       subtitle={`${agentGroupLabel(agent.squad)} · ${agent.id}`}
       tabs={panelTabs}

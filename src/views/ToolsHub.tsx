@@ -4,6 +4,7 @@ import { useStore } from "../services/store";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
 import { Icon } from "../components/Icon";
 import { InfoTooltip } from "../components/InfoTooltip";
+import { AgentAvatar } from "../components/AgentAvatar";
 
 type ToolRecord = ToolCapability & {
   agents: Agent[];
@@ -380,7 +381,7 @@ function ToolDrawer({ tool, tab, setTab, onClose }: { tool: ToolRecord; tab: Too
         <div className="drawer-section-list">
           {tool.agents.map((agent) => (
             <div className="filerow" key={agent.id}>
-              <div className="fic" style={{ background: agent.color }}>{agent.initials}</div>
+              <AgentAvatar agent={agent} className="fic" />
               <div>
                 <div className="fn">{agent.name}</div>
                 <div className="fd">{agent.squad} · {agent.profilePath}</div>

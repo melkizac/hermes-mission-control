@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent } from "react";
 import { useStore } from "../services/store";
 import { Icon } from "./Icon";
+import { AgentAvatar } from "./AgentAvatar";
 import type { Agent, Attachment, Message, ModelRoutingSelection, ProjectChatResponse, ReplyContext, RouterConfig } from "../types";
 import { formatSingaporeTime } from "../utils/time";
 
@@ -479,9 +480,7 @@ export function ChatThread({
   return (
     <div className="center" onPaste={handlePasteIntoChat}>
       <div className="chead">
-        <span className="av" style={{ background: agent.color }}>
-          {agent.initials}
-        </span>
+        <AgentAvatar agent={agent} />
         <div className="nm">
           {agent.name} — {agentGroupLabel(agent.squad)} Agent
         </div>
@@ -850,9 +849,7 @@ function MessageView({ m, agent, onReply }: { m: Message; agent: Agent; onReply?
     const a = m.artifact;
     return (
       <div className="msg">
-        <span className="av" style={{ background: agent.color }}>
-          {agent.initials}
-        </span>
+        <AgentAvatar agent={agent} />
         <div>
           <div className="who message-meta">
             {agent.name} <span className="t">{messageTimestampLabel(m)}</span>
@@ -926,9 +923,7 @@ function MessageView({ m, agent, onReply }: { m: Message; agent: Agent; onReply?
   const visibleText = visibleChatText(m.text);
   return (
     <div className={"msg" + (isUser ? " me" : "")}>
-      <span className="av" style={{ background: isUser ? "#1e2633" : agent.color }}>
-        {isUser ? "M" : agent.initials}
-      </span>
+      <AgentAvatar agent={agent} user={isUser} />
       <div>
         <div className="who message-meta">
           <span>
