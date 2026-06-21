@@ -15143,6 +15143,7 @@ def _profile_identity_docs(profile_id):
             'scope': file.get('scope') or 'profile',
             'editable': bool(file.get('editable')),
             'preview': preview,
+            'content': content,
             'size_bytes': file.get('sizeBytes') or 0,
         })
     return docs[:6]
