@@ -688,7 +688,7 @@ def global_mutation_permission(identity, method='POST', path=''):
         path == '/api/windows-gateway/config' or
         path == '/api/browser-sessions/events' or
         (path.startswith('/api/browser-sessions/') and (path.endswith('/stop') or path.endswith('/takeover'))) or
-        (path.startswith('/api/agent-org/agents/') and ('/goals' in path or path.endswith('/action'))) or
+        (path.startswith('/api/agent-org/agents/') and ('/goals' in path or path.endswith('/action') or path.endswith('/avatar'))) or
         path == '/api/model-router' or
         (path.startswith('/api/agents/') and path.endswith('/attachments'))
     )
