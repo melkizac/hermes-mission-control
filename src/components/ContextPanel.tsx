@@ -81,34 +81,48 @@ export function ContextPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent.id, collapsed]);
 
-  const saveRuntimeAccountAssignment = async (accountId: string) => {
+  const saveRuntimeAssignment = async (changes: Partial<Pick<AgentRuntimeAssignment, "account_id" | "model_id">>) => {
     if (!runtimeSwitcher) return;
     const current = runtimeSwitcher.assignments?.[agent.id];
     if (!current) {
       setRuntimeStatus("This agent is not present in the runtime assignment registry yet.");
       return;
     }
-    const selectedAccount = runtimeSwitcher.accounts.find((account) => account.id === accountId);
+    const requestedModel = runtimeSwitcher.models.find((model) => model.id === (changes.model_id || current.model_id));
+    const fallbackModel = runtimeSwitcher.models.find((model) => model.enabled && model.authorized && model.id === current.model_id)
+      ?? runtimeSwitcher.models.find((model) => model.enabled && model.authorized)
+      ?? runtimeSwitcher.models.find((model) => model.enabled);
+    const selectedModel = requestedModel ?? fallbackModel;
+    if (!selectedModel) {
+      setRuntimeStatus("No authorised Hermes Admin Console model is available for this agent.");
+      return;
+    }
+    const requestedAccount = runtimeSwitcher.accounts.find((account) => account.id === (changes.account_id || current.account_id));
+    const selectedAccount = requestedAccount && (!selectedModel.provider || requestedAccount.provider === selectedModel.provider)
+      ? requestedAccount
+      : runtimeSwitcher.accounts.find((account) => account.provider === selectedModel.provider && account.configured)
+        ?? runtimeSwitcher.accounts.find((account) => account.provider === selectedModel.provider)
+        ?? runtimeSwitcher.accounts.find((account) => account.configured)
+        ?? runtimeSwitcher.accounts[0];
     if (!selectedAccount) {
-      setRuntimeStatus("Choose an admin console runtime account.");
+      setRuntimeStatus("Choose an admin console runtime account before assigning a model.");
       return;
     }
-    const authorizedModel = runtimeSwitcher.models.find((model) => model.enabled && model.authorized && model.id === current.model_id)
-      ?? runtimeSwitcher.models.find((model) => model.enabled && model.authorized && model.provider === selectedAccount.provider)
-      ?? runtimeSwitcher.models.find((model) => model.enabled && model.authorized);
-    if (!authorizedModel) {
-      setRuntimeStatus("No authorised Hermes Admin Console model is available for this runtime account.");
-      return;
-    }
-    const next: AgentRuntimeAssignment = { ...current, account_id: accountId, model_id: authorizedModel.id, apply_mode: current.apply_mode || "next_session", reasoning: current.reasoning || "balanced" };
+    const next: AgentRuntimeAssignment = {
+      ...current,
+      account_id: selectedAccount.id,
+      model_id: selectedModel.id,
+      apply_mode: current.apply_mode || "next_session",
+      reasoning: current.reasoning || "balanced",
+    };
     setRuntimeSaving(true);
-    setRuntimeStatus(`Saving ${selectedAccount.label || selectedAccount.id} for ${agent.name}…`);
+    setRuntimeStatus(`Saving ${selectedModel.label || selectedModel.model} for ${agent.name}…`);
     try {
       const data = await saveAgentRuntime(agent.id, next);
       setRuntimeSwitcher(data);
-      setRuntimeStatus(`Assigned ${selectedAccount.label || selectedAccount.id}. New sessions use this admin console runtime account; active runs keep their existing runtime.`);
+      setRuntimeStatus(`Assigned ${selectedModel.label || selectedModel.model} via ${selectedAccount.label || selectedAccount.id}. New sessions use this model; active runs keep their existing runtime.`);
     } catch (err) {
-      setRuntimeStatus(err instanceof Error ? err.message : "Runtime account assignment failed");
+      setRuntimeStatus(err instanceof Error ? err.message : "Runtime model assignment failed");
     } finally {
       setRuntimeSaving(false);
     }
@@ -198,7 +212,7 @@ export function ContextPanel({
               authorizedModels={authorizedModels}
               saving={runtimeSaving}
               status={runtimeStatus}
-              onChange={(accountId) => void saveRuntimeAccountAssignment(accountId)}
+              onChange={(next) => void saveRuntimeAssignment(next)}
             />
             <Info k="Profile" v={<span className="mono">{agent.profilePath}</span>} />
             <Info k="Status" v={<span className={agent.status === "active" || agent.status === "working" ? "hi" : ""}>{agent.statusLabel || cap(agent.status)}</span>} />
@@ -532,10 +546,26 @@ function FileRow({ file, onOpen, disabled }: { file: ConfigFile; onOpen: () => v
   );
 }
 
-function runtimeAccountOptionLabel(account: AgentRuntimeAccount) {
-  const parts = [account.label || account.id, account.provider];
-  if (account.billing_owner) parts.push(account.billing_owner);
-  return parts.join(" · ");
+function modelAccountOptionLabel(model: RouterModel, account: AgentRuntimeAccount) {
+  const modelName = model.label || model.model;
+  const accountName = account.label || account.id;
+  return `${modelName} · ${accountName}`;
+}
+
+type RuntimeModelOption = {
+  value: string;
+  model: RouterModel;
+  account: AgentRuntimeAccount;
+  explicitAccountMatch: boolean;
+};
+
+function modelMatchesAccount(model: RouterModel, account: AgentRuntimeAccount) {
+  const modelKey = `${model.id} ${model.label || ""} ${model.notes || ""}`.toLowerCase();
+  const authLabel = (account as AgentRuntimeAccount & { auth_label?: string }).auth_label;
+  const accountKeys = [account.id, account.label, authLabel]
+    .map((value) => String(value || "").toLowerCase())
+    .filter(Boolean);
+  return accountKeys.some((key) => modelKey.includes(key));
 }
 
 function AgentRuntimeAccountControl({
@@ -557,22 +587,61 @@ function AgentRuntimeAccountControl({
   authorizedModels: RouterModel[];
   saving: boolean;
   status: string;
-  onChange: (accountId: string) => void;
+  onChange: (changes: Partial<Pick<AgentRuntimeAssignment, "account_id" | "model_id">>) => void;
 }) {
-  const selectedValue = assignment?.account_id && accounts.some((account) => account.id === assignment.account_id) ? assignment.account_id : "";
-  const modelLabel = assignedModel ? `${assignedModel.provider}/${assignedModel.model}` : authorizedModels[0] ? `${authorizedModels[0].provider}/${authorizedModels[0].model}` : "Hermes Admin Console model";
+  const configuredAccounts = accounts.filter((account) => account.configured !== false);
+  const accountPool = configuredAccounts.length ? configuredAccounts : accounts;
+  const rawOptions: RuntimeModelOption[] = authorizedModels.flatMap((model) => {
+    const matchingAccounts = accountPool.filter((account) => !model.provider || account.provider === model.provider);
+    const providerAccounts = matchingAccounts.length ? matchingAccounts : accountPool;
+    const explicitlyMatchedAccounts = providerAccounts.filter((account) => modelMatchesAccount(model, account));
+    const compatibleAccounts = explicitlyMatchedAccounts.length ? explicitlyMatchedAccounts : providerAccounts;
+    return compatibleAccounts.map((account) => ({
+      value: `${model.id}::${account.id}`,
+      model,
+      account,
+      explicitAccountMatch: modelMatchesAccount(model, account),
+    }));
+  });
+  const dedupedByModelAccount = new Map<string, RuntimeModelOption>();
+  for (const option of rawOptions) {
+    const key = `${option.model.provider || ""}::${option.model.model || option.model.id}::${option.account.id}`;
+    const existing = dedupedByModelAccount.get(key);
+    if (!existing || (!existing.explicitAccountMatch && option.explicitAccountMatch)) {
+      dedupedByModelAccount.set(key, option);
+    }
+  }
+  const options = Array.from(dedupedByModelAccount.values());
+  const selectedValue = assignment?.model_id && assignment?.account_id
+    ? `${assignment.model_id}::${assignment.account_id}`
+    : "";
+  const hasSelectedOption = options.some((option) => option.value === selectedValue);
+  const selectedOption = options.find((option) => option.value === selectedValue);
+  const providerLabel = selectedOption?.model.provider || assignedModel?.provider || assignedAccount?.provider || "runtime provider";
+  const modelLabel = selectedOption?.model.model || assignedModel?.model || "model";
+  const accountLabel = selectedOption?.account.label || assignedAccount?.label || assignedAccount?.id || "default account";
   return (
     <div className="agent-model-assignment">
       <label className="agent-model-selector">
-        <span>Select runtime account for {agent.name}</span>
-        <select value={selectedValue} disabled={saving || accounts.length === 0 || authorizedModels.length === 0} onChange={(event) => onChange(event.target.value)}>
-          <option value="">Choose admin console runtime account</option>
-          {accounts.map((account) => <option key={account.id} value={account.id}>{runtimeAccountOptionLabel(account)}</option>)}
+        <span>Model for {agent.name}</span>
+        <select
+          value={hasSelectedOption ? selectedValue : ""}
+          disabled={saving || options.length === 0}
+          onChange={(event) => {
+            const option = options.find((item) => item.value === event.target.value);
+            if (option) onChange({ model_id: option.model.id, account_id: option.account.id });
+          }}
+        >
+          <option value="">Choose model / quota account</option>
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {modelAccountOptionLabel(option.model, option.account)}
+            </option>
+          ))}
         </select>
       </label>
       <p className="mini-note">
-        {assignedAccount ? `Current account: ${assignedAccount.label || assignedAccount.id}.` : "Current account: runtime default."}
-        {" "}Model source: {modelLabel}. Only Hermes Admin Console runtime accounts are shown here; legacy router-only models are hidden.
+        Current route: {providerLabel}/{modelLabel} via {accountLabel}. Changes apply per agent to new sessions; active runs keep their existing runtime.
       </p>
       {status && <div className="mini-note runtime-status-note">{status}</div>}
     </div>

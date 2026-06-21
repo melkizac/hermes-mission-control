@@ -44,10 +44,11 @@ function ModelRateLimitCard({ usage }: { usage: NonNullable<CostsResponse["model
     <article className={`usage-card usage-model-card ${available ? "" : "usage-unavailable"}`}>
       <div className="usage-card-head">
         <div>
-          <span>{usage.selected ? "Selected model" : "Model"}</span>
-          <b>{usage.selected_model || "—"}</b>
+          <span>{usage.account_label ? "Codex account" : usage.selected ? "Selected model" : "Model"}</span>
+          <b>{usage.account_label || usage.selected_model || "—"}</b>
+          {usage.account_label && <em>{usage.selected_model || "—"}</em>}
         </div>
-        <small>{usage.source || "Provider rate-limit snapshot"}</small>
+        <small>{usage.source || "Provider rate-limit snapshot"}{usage.plan ? ` · ${usage.plan}` : ""}</small>
       </div>
       {available ? (
         <div className="usage-limit-list">

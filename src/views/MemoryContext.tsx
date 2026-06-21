@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Icon } from "../components/Icon";
 import { SlideOverDrawer } from "../components/SlideOverDrawer";
 import { HttpHermesClient } from "../services/httpHermesClient";
-import type { MemoryContextEntry, MemoryContextResponse, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainItem, SecondBrainNoteResponse } from "../types";
+import type { MemoryContextEntry, MemoryContextResponse, OkfMetadata, SecondBrainGraphResponse, SecondBrainHealthResponse, SecondBrainIndexResponse, SecondBrainItem, SecondBrainNoteResponse } from "../types";
 import { InfoTooltip } from "../components/InfoTooltip";
 
 const client = new HttpHermesClient();
@@ -25,6 +25,30 @@ function categoryLabel(value: string) {
 
 function notePath(item: SecondBrainItem) {
   return `${item.layer}/${item.relative_path}`;
+}
+
+const OKF_LABELS: Array<[keyof OkfMetadata, string]> = [
+  ["type", "Type"],
+  ["status", "Status"],
+  ["owner", "Owner"],
+  ["primary_agent", "Primary agent"],
+  ["engineering_owner", "Engineering owner"],
+  ["updated", "Updated"],
+  ["source_url", "Source URL"],
+  ["publisher", "Publisher"],
+  ["published", "Published"],
+  ["retrieved", "Retrieved"],
+  ["raw_path", "Raw path"],
+  ["sha256", "SHA-256"],
+];
+
+function okfValue(value: OkfMetadata[keyof OkfMetadata]) {
+  return Array.isArray(value) ? value.join(", ") : String(value ?? "");
+}
+
+function OkfMetadataCard({ metadata, sourcePath }: { metadata?: OkfMetadata; sourcePath?: string }) {
+  if (!metadata || Object.keys(metadata).length === 0) return null;
+  return <section className="skill-section okf-metadata-card"><h3>OKF metadata</h3><p>Read-only frontmatter from the selected KB markdown page.</p><div className="skill-kv">{OKF_LABELS.filter(([key]) => metadata[key]).map(([key, label]) => <Info key={key} label={label} value={okfValue(metadata[key])} />)}</div>{metadata.tags?.length ? <div className="skill-chip-cloud">{metadata.tags.map((tag) => <span key={tag}>{tag}</span>)}</div> : null}{sourcePath && <code>{sourcePath}</code>}</section>;
 }
 
 export function MemoryContext() {
@@ -235,7 +259,7 @@ function MemoryRow({ entry, active, onSelect }: { entry: MemoryContextEntry; act
 }
 
 function KnowledgeRow({ item, onSelect }: { item: SecondBrainItem; onSelect: () => void }) {
-  return <button className="memory-row knowledge-row" onClick={onSelect}><div className="memory-row-main"><div className="memory-row-top"><span className={`memory-scope-pill ${item.layer === "raw" ? "memory" : "user"}`}>{item.layer === "raw" ? "Evidence" : "Wiki"}</span><span className="memory-category-pill good">{categoryLabel(item.section)}</span>{item.links.length > 0 && <span className="memory-redacted-pill">{item.links.length} links</span>}</div><b>{item.title}</b><p>{item.summary || item.preview}</p></div><div className="memory-row-meta"><span>{item.updated_at}</span><small>{notePath(item)}</small></div></button>;
+  return <button className="memory-row knowledge-row" onClick={onSelect}><div className="memory-row-main"><div className="memory-row-top"><span className={`memory-scope-pill ${item.layer === "raw" ? "memory" : "user"}`}>{item.layer === "raw" ? "Evidence" : "Wiki"}</span><span className="memory-category-pill good">{categoryLabel(item.section)}</span>{item.okf_metadata?.type && <span className="memory-redacted-pill">OKF {item.okf_metadata.type}</span>}{item.links.length > 0 && <span className="memory-redacted-pill">{item.links.length} links</span>}</div><b>{item.okf_metadata?.title || item.title}</b><p>{item.summary || item.preview}</p></div><div className="memory-row-meta"><span>{item.okf_metadata?.updated || item.updated_at}</span><small>{notePath(item)}</small></div></button>;
 }
 
 function MemorySummary({ entry }: { entry: MemoryContextEntry }) {
@@ -251,7 +275,7 @@ function MemoryGovernance({ entry, policy }: { entry: MemoryContextEntry; policy
 }
 
 function NoteSummary({ note }: { note: SecondBrainNoteResponse }) {
-  return <div className="memory-drawer-stack"><div className="skill-kv"><Info label="Section" value={categoryLabel(note.note.section)} /><Info label="Updated" value={note.note.updated_at} /><Info label="Backlinks" value={String(note.note.health.backlinks)} /><Info label="Outbound" value={String(note.note.health.outbound_links)} /></div><section className="skill-section"><h3>Summary</h3><p>{note.note.summary || note.note.preview}</p></section><section className="skill-section"><h3>Context actions</h3><div className="drawer-section-list">{note.context_actions.map((action) => <div className="skill-route" key={action.id}><b>{action.label}</b><span>{action.status}</span></div>)}</div></section></div>;
+  return <div className="memory-drawer-stack"><div className="skill-kv"><Info label="Section" value={categoryLabel(note.note.section)} /><Info label="Updated" value={note.note.updated_at} /><Info label="Backlinks" value={String(note.note.health.backlinks)} /><Info label="Outbound" value={String(note.note.health.outbound_links)} /></div><OkfMetadataCard metadata={note.note.okf_metadata} sourcePath={note.note.okf_source_path || note.note.relative_path} /><section className="skill-section"><h3>Summary</h3><p>{note.note.summary || note.note.preview}</p></section><section className="skill-section"><h3>Context actions</h3><div className="drawer-section-list">{note.context_actions.map((action) => <div className="skill-route" key={action.id}><b>{action.label}</b><span>{action.status}</span></div>)}</div></section></div>;
 }
 
 function NoteSource({ note }: { note: SecondBrainNoteResponse }) {

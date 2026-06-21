@@ -3,7 +3,7 @@ import { useStore } from "../services/store";
 import { Icon } from "./Icon";
 import type { ConfigFile } from "../types";
 
-export function FileEditorDrawer({ file, onClose }: { file: ConfigFile; onClose: () => void }) {
+export function FileEditorDrawer({ file, onClose, onSave }: { file: ConfigFile; onClose: () => void; onSave?: (file: ConfigFile) => Promise<void> }) {
   const { saveFile } = useStore();
   const [content, setContent] = useState(file.content);
   const [saving, setSaving] = useState(false);
@@ -11,7 +11,7 @@ export function FileEditorDrawer({ file, onClose }: { file: ConfigFile; onClose:
 
   const save = async () => {
     setSaving(true);
-    await saveFile({ ...file, content });
+    await (onSave ? onSave({ ...file, content }) : saveFile({ ...file, content }));
     setSaving(false);
     onClose();
   };

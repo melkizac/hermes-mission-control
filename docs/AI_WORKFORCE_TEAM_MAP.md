@@ -71,6 +71,7 @@ Melkizac is the front-door and governance layer, not the default executor for ev
 - HMC/Kanban visibility:
   - Use a DevOps-owned task with repo/path, desired behavior, test command, evidence gate, and deployment status.
   - Completion must include real command output or browser/API verification.
+  - For large multi-agent development, Andrej approves architecture before parallel execution, owns integration-branch merge order, resolves conflicts, performs final technical review, and controls high-impact `main` merges/deploys.
 
 ### Content Ops / Enrico
 
@@ -183,6 +184,7 @@ Melkizac is the front-door and governance layer, not the default executor for ev
   - Use when work needs persistent tracking, multiple steps, visible state, or blocked-work supervision.
 - HMC/Kanban visibility:
   - This is the visibility layer: tasks, goals, runs, handoffs, approvals, outputs, and evidence must be linked here.
+  - Large development tasks must additionally carry repo/path, base branch, worker branch, target integration branch, spec/issue link, dependencies, allowed/avoid paths, test commands, evidence requirements, current state, and approval gate.
 
 ### Email Attention Ops
 
@@ -225,6 +227,7 @@ Melkizac is the front-door and governance layer, not the default executor for ev
 Melkizac should hand off by default when a specialist role clearly owns the work:
 
 - Build/fix/test/deploy/HMC code: Andrej / DevOps Builder.
+- Large multi-agent builds: use `MULTI_AGENT_BIG_DEVELOPMENT_OPERATING_MODEL.md`; Melkizac/HMC orchestrates, Project & Task Coordinator tracks task state, worker agents implement isolated specs, and Andrej approves architecture/final merge.
 - Marketing drafts, campaign assets, blog/article/post copy: Content Ops.
 - LinkedIn engagement, ICP warming, DMs, comments, scheduling: LinkedIn Growth.
 - Nexius leads, course signups, SkillsFuture/class lead monitoring: Nexius Lead Agent.

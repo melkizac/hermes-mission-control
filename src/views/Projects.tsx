@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { GuardPolicy, ProjectOperatingLink, ProjectRecord, ProjectRiskItem, ProjectSessionItem } from "../types";
+import type { GuardPolicy, ProjectKnowledgeItem, ProjectOperatingLink, ProjectRecord, ProjectRiskItem, ProjectSessionItem } from "../types";
 import { HttpHermesClient } from "../services/httpHermesClient";
 import { queryCacheEventName } from "../services/queryCache";
 import { formatSingaporeTime } from "../utils/time";
@@ -38,8 +38,12 @@ function primaryNextAction(project: ProjectRecord) {
 
 function recency(project: ProjectRecord) {
   if (project.activity?.[0]?.at) return `Latest: ${formatSingaporeTime(project.activity[0].at)}`;
-  if (project.updated_at) return `Updated: ${formatSingaporeTime(project.updated_at)}`;
+  if (project.updated_at && project.updated_at !== "—") return `Updated ${formatSingaporeTime(project.updated_at)}`;
   return "No recent signal";
+}
+
+function ProjectKnowledgeRow({ item }: { item: ProjectKnowledgeItem }) {
+  return <div key={item.path} className="project-knowledge-row"><b>{item.okf_metadata?.title || item.title}</b><span>{item.type} · {formatSingaporeTime(item.updated_at)}</span>{item.okf_metadata && <div className="skill-chip-cloud" aria-label="OKF metadata"><span>OKF metadata</span>{item.okf_metadata.type && <span>type: {item.okf_metadata.type}</span>}{item.okf_metadata.status && <span>status: {item.okf_metadata.status}</span>}{item.okf_metadata.owner && <span>owner: {item.okf_metadata.owner}</span>}{item.okf_metadata.primary_agent && <span>primary: {item.okf_metadata.primary_agent}</span>}{item.okf_metadata.engineering_owner && <span>engineering: {item.okf_metadata.engineering_owner}</span>}{item.okf_metadata.updated && <span>updated: {item.okf_metadata.updated}</span>}{item.okf_metadata.tags?.map((tag) => <span key={tag}>#{tag}</span>)}</div>}{item.okf_source_path && <small>Read-only frontmatter · {item.okf_source_path}</small>}<code>{item.path}</code></div>;
 }
 
 function chatLinkLabel(item: ProjectSessionItem) {
@@ -503,7 +507,7 @@ export function Projects() {
             </div>}
 
             {tab === "knowledge" && <div className="project-tab-panel listy">
-              {selected.knowledge.map((item) => <div key={item.path}><b>{item.title}</b><span>{item.type} · {formatSingaporeTime(item.updated_at)}</span><code>{item.path}</code></div>)}
+              {selected.knowledge.map((item) => <ProjectKnowledgeRow key={item.path} item={item} />)}
               {selected.artifacts.map((item) => <div key={item.path}><b>{item.name}</b><span>{item.kind} · {formatSingaporeTime(item.updated_at)}</span><code>{item.path}</code></div>)}
               {!selected.knowledge.length && !selected.artifacts.length && <p>No linked notes or artifacts yet.</p>}
             </div>}

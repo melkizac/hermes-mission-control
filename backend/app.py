@@ -2921,6 +2921,26 @@ def model_usage_all_payload(con, selected_model=''):
                 additional_by_model[alias] = item
     rows = []
     seen = set()
+    # Show provider quota per Codex OAuth account, not just per model, because
+    # Codex-Nexius and Codex-Melverick have independent ChatGPT/Codex windows.
+    codex_account_labels = ['Codex-Nexius', 'Codex-Melverick', 'codex-Melverick']
+    codex_seen_labels = set()
+    for label in codex_account_labels:
+        canonical_label = 'Codex-Melverick' if label.lower() == 'codex-melverick' else label
+        if canonical_label.lower() in codex_seen_labels:
+            continue
+        account_payload = codex_usage_snapshot_payload('default', selected or default_rate_limit_model(), account_label=label)
+        if not account_payload:
+            continue
+        codex_seen_labels.add(canonical_label.lower())
+        rows.append({
+            **account_payload,
+            'selected': False,
+            'available': account_payload.get('available', True) is not False and not account_payload.get('error'),
+        })
+        for value in [account_payload.get('selected_model'), *(account_payload.get('aliases') or [])]:
+            if value:
+                seen.add(str(value).strip())
     for model in model_ids:
         model = str(model).strip()
         if not model or model in seen:
@@ -3027,7 +3047,7 @@ CODEX_RATE_LIMIT_ALIASES = {
 _CODEX_USAGE_CACHE = {}
 
 
-def codex_usage_snapshot_payload(profile_id, selected_model):
+def codex_usage_snapshot_payload(profile_id, selected_model, account_label=''):
     """Fetch real ChatGPT/Codex account quota windows for the selected profile/model.
 
     This is provider account telemetry from chatgpt.com/backend-api/wham/usage,
@@ -3042,7 +3062,7 @@ def codex_usage_snapshot_payload(profile_id, selected_model):
     if not model:
         return None
     now = time.time()
-    cache_key = (profile_id, provider, model)
+    cache_key = (profile_id, provider, model, str(account_label or '').strip().lower())
     cached = _CODEX_USAGE_CACHE.get(cache_key)
     if cached and (now - cached.get('fetched_at', 0)) < 60:
         return cached.get('payload')
@@ -3052,9 +3072,15 @@ def codex_usage_snapshot_payload(profile_id, selected_model):
     try:
         auth = json.loads(auth_path.read_text())
         pool = ((auth.get('credential_pool') or {}).get('openai-codex') or []) if isinstance(auth, dict) else []
-        entry = next((item for item in pool if isinstance(item, dict) and str(item.get('access_token') or '').strip()), None)
+        requested_label = str(account_label or '').strip()
+        entry = None
+        if requested_label:
+            entry = next((item for item in pool if isinstance(item, dict) and str(item.get('label') or '').strip().lower() == requested_label.lower() and str(item.get('access_token') or '').strip()), None)
+        if entry is None:
+            entry = next((item for item in pool if isinstance(item, dict) and str(item.get('access_token') or '').strip()), None)
         token = str((entry or {}).get('access_token') or '').strip()
-        account_id = str((((auth.get('providers') or {}).get('openai-codex') or {}).get('tokens') or {}).get('account_id') or '').strip()
+        selected_account_label = str((entry or {}).get('label') or requested_label or '').strip()
+        account_id = str(((entry or {}).get('account_id') or (((auth.get('providers') or {}).get('openai-codex') or {}).get('tokens') or {}).get('account_id') or '')).strip()
         if not token:
             return None
         base_url = (cfg.get('base_url') or 'https://chatgpt.com/backend-api/codex').strip().rstrip('/')
@@ -3120,6 +3146,8 @@ def codex_usage_snapshot_payload(profile_id, selected_model):
             'source': source,
             'provider': 'openai-codex',
             'plan': str(data.get('plan_type') or '').strip(),
+            'account_label': selected_account_label,
+            'account_id': account_id,
             'fetched_at': datetime.now(timezone.utc).isoformat(),
         }
 
@@ -3168,9 +3196,11 @@ def agent_rate_limits_payload(identity, agent_id):
         'model': model,
     }
     try:
-        live_usage = codex_usage_snapshot_payload(profile_id, model)
+        assignment, account, _runtime_model = agent_runtime_assignment(aid, identity)
+        account_label = account.get('auth_label') or account.get('label') or ''
+        live_usage = codex_usage_snapshot_payload(profile_id, model, account_label=account_label)
         if live_usage:
-            return {'ok': True, 'agent': {**agent_info, 'model': live_usage.get('selected_model') or model}, 'model_usage': live_usage}, 200
+            return {'ok': True, 'agent': {**agent_info, 'model': live_usage.get('selected_model') or model, 'account': live_usage.get('account_label') or account_label}, 'model_usage': live_usage}, 200
         if profile_id != 'default':
             # Non-default agents must not inherit the flat/default snapshot. Only
             # show saved provider quotas when an explicit per-model snapshot exists.
@@ -7156,10 +7186,7 @@ def second_brain_project():
             categories[category] = categories.get(category, 0) + 1
             title, summary = md_title_and_summary(md)
             pages.append({
-                'title': title,
-                'path': str(md),
-                'type': f'wiki/{category}',
-                'updated_at': iso(md.stat().st_mtime),
+                **second_brain_knowledge_item(md, title=title, item_type=f'wiki/{category}', updated_at=iso(md.stat().st_mtime)),
                 'summary': summary,
             })
         except Exception:
@@ -7208,6 +7235,95 @@ def second_brain_read_markdown(path, max_chars=5000):
         return ''
 
 
+OKF_METADATA_FIELDS = {
+    'type', 'title', 'status', 'owner', 'primary_agent', 'engineering_owner', 'updated', 'tags',
+    'source_url', 'publisher', 'published', 'retrieved', 'raw_path', 'sha256',
+}
+
+
+def okf_scalar(value):
+    if value is None:
+        return ''
+    if isinstance(value, (str, int, float, bool)):
+        return str(value).strip()
+    # PyYAML may return date/datetime objects for ISO dates. Keep the public
+    # payload JSON-safe without exposing arbitrary object structure.
+    if hasattr(value, 'isoformat'):
+        return str(value.isoformat()).strip()
+    return str(value).strip()
+
+
+def okf_frontmatter_from_text(text):
+    if not text.startswith('---'):
+        return {}
+    end = text.find('\n---', 3)
+    if end == -1:
+        return {}
+    block = text[3:end].strip()
+    raw_meta = {}
+    if yaml:
+        try:
+            parsed = yaml.safe_load(block)
+            if isinstance(parsed, dict):
+                raw_meta = parsed
+        except Exception:
+            raw_meta = {}
+    if not raw_meta:
+        raw_meta = parse_frontmatter(text)
+    metadata = {}
+    for key in OKF_METADATA_FIELDS:
+        if key not in raw_meta:
+            continue
+        value = raw_meta.get(key)
+        if key == 'tags':
+            if isinstance(value, (list, tuple, set)):
+                tags = [okf_scalar(item) for item in value]
+            elif isinstance(value, str):
+                tags = parse_inline_list(value) if value.strip().startswith('[') else [value.strip()]
+            else:
+                tags = [okf_scalar(value)]
+            tags = [tag for tag in tags if tag]
+            if tags:
+                metadata[key] = tags[:24]
+            continue
+        scalar = okf_scalar(value)
+        if scalar:
+            metadata[key] = scalar
+    return metadata
+
+
+def second_brain_okf_metadata(path):
+    try:
+        content = path.read_text(errors='replace')
+    except Exception:
+        return {}
+    return okf_frontmatter_from_text(content)
+
+
+def second_brain_okf_source_path(path, layer='wiki'):
+    try:
+        if layer == 'wiki':
+            return f"wiki/{path.resolve().relative_to(SECOND_BRAIN_WIKI.resolve())}"
+        return f"{layer}/{path.resolve().relative_to((SECOND_BRAIN_ROOT / layer).resolve())}"
+    except Exception:
+        return second_brain_relative(path)
+
+
+def second_brain_knowledge_item(path, title=None, item_type=None, updated_at=None):
+    title = title or md_title_and_summary(path)[0]
+    metadata = second_brain_okf_metadata(path)
+    item = {
+        'title': metadata.get('title') or title,
+        'path': str(path),
+        'type': item_type or metadata.get('type') or 'wiki',
+        'updated_at': updated_at or iso(path.stat().st_mtime),
+    }
+    if metadata:
+        item['okf_metadata'] = metadata
+        item['okf_source_path'] = second_brain_okf_source_path(path, 'wiki')
+    return item
+
+
 SECOND_BRAIN_TEXT_SUFFIXES = {'.md', '.markdown', '.txt', '.csv', '.tsv', '.json', '.jsonl', '.yaml', '.yml', '.xml', '.html', '.htm', '.log'}
 
 
@@ -7238,7 +7354,7 @@ def second_brain_file_item(path, root, layer='wiki'):
         summary = f'Raw {mime} evidence file. Binary content is indexed by path and metadata only.'
         content = ''
     links = sorted(set(re.findall(r'\[\[([^\]|#]+)', content)))[:20]
-    return {
+    item = {
         'id': hashlib.sha1(str(path).encode()).hexdigest()[:16],
         'title': title,
         'summary': summary,
@@ -7254,6 +7370,12 @@ def second_brain_file_item(path, root, layer='wiki'):
         'preview': preview_content(content, 5000) if is_text else '',
         'immutable': layer == 'raw',
     }
+    if layer == 'wiki' and is_text and path.suffix.lower() in ('.md', '.markdown'):
+        metadata = okf_frontmatter_from_text(content)
+        if metadata:
+            item['okf_metadata'] = metadata
+            item['okf_source_path'] = second_brain_okf_source_path(path, layer)
+    return item
 
 
 def second_brain_log_entries(limit=12):
@@ -9436,10 +9558,10 @@ def list_projects(filters=None, identity=None):
     kb_projects = SECOND_BRAIN_WIKI / 'projects'
     if kb_projects.exists():
         for md in sorted(kb_projects.glob('*.md'), key=lambda x: x.stat().st_mtime, reverse=True)[:80]:
-            title, summary = md_title_and_summary(md); slug = project_slug(md.stem)
+            title, summary = md_title_and_summary(md); slug = canonical_task_project_slug(md.stem) or project_slug(md.stem)
             proj = empty_project(slug, title, 'knowledge', str(md), 'second-brain')
             proj['summary'] = summary; proj['updated_at'] = iso(md.stat().st_mtime)
-            proj['knowledge'] = [{'title': title, 'path': str(md), 'type': 'wiki project', 'updated_at': iso(md.stat().st_mtime)}]
+            proj['knowledge'] = [second_brain_knowledge_item(md, title=title, item_type='wiki project', updated_at=iso(md.stat().st_mtime))]
             proj['tags'] = ['second-brain']; add_project(projects, proj)
     workspace_roots = [HERMES_HOME / 'workspace', HOME / '.openclaw' / 'workspace', APP_ROOT]
     for root in workspace_roots:
@@ -9803,24 +9925,51 @@ def write_model_router_config(payload):
 def default_ai_runtime_accounts():
     return [
         {
-            'id': 'openai_company',
-            'label': 'OpenAI Company',
-            'email_hint': 'nexiuslabs@gmail.com',
-            'provider': 'openai',
-            'credential_env': 'OPENAI_COMPANY_API_KEY',
+            'id': 'codex-nexius',
+            'label': 'Codex-Nexius',
+            'email_hint': 'Nexius Codex OAuth',
+            'provider': 'openai-codex',
+            'credential_env': '',
             'billing_owner': 'Nexius Labs',
-            'notes': 'Company runtime identity. Secrets stay server-side.',
+            'notes': 'Hermes OpenAI Codex OAuth credential. Secrets stay server-side in Hermes auth.json.',
         },
         {
-            'id': 'openai_personal',
-            'label': 'OpenAI Personal',
-            'email_hint': 'melverick@gmail.com',
-            'provider': 'openai',
-            'credential_env': 'OPENAI_PERSONAL_API_KEY',
+            'id': 'codex-melverick',
+            'label': 'Codex-Melverick',
+            'email_hint': 'Melverick Codex OAuth',
+            'provider': 'openai-codex',
+            'credential_env': '',
             'billing_owner': 'Melverick Ng',
-            'notes': 'Personal runtime identity. Use only when the operator intentionally selects it.',
+            'notes': 'Hermes OpenAI Codex OAuth credential. Use only when the operator intentionally selects it.',
         },
     ]
+
+
+def codex_account_id_from_label(label):
+    text = str(label or '').strip()
+    lower = text.lower()
+    if lower in ('codex-nexius', 'nexius'):
+        return 'codex-nexius'
+    if lower in ('codex-melverick', 'melverick'):
+        return 'codex-melverick'
+    return safe_id(text) or ''
+
+
+def runtime_account_from_codex_credential(credential):
+    label = str((credential or {}).get('label') or '').strip()
+    account_id = codex_account_id_from_label(label)
+    if not account_id or not label.lower().startswith('codex-'):
+        return None
+    owner = 'Nexius Labs' if account_id == 'codex-nexius' else 'Melverick Ng' if account_id == 'codex-melverick' else ''
+    return {
+        'id': account_id,
+        'label': 'Codex-Nexius' if account_id == 'codex-nexius' else 'Codex-Melverick' if account_id == 'codex-melverick' else label,
+        'email_hint': f'{label} OAuth',
+        'provider': 'openai-codex',
+        'credential_env': '',
+        'billing_owner': owner,
+        'notes': 'Hermes OpenAI Codex OAuth credential. Secrets stay server-side in Hermes auth.json.',
+    }
 
 
 def sanitize_runtime_account(item, idx=0):
@@ -9893,12 +10042,23 @@ def read_agent_runtime_switcher(identity=None):
     accounts = []
     seen = set()
     auth_credentials = hermes_auth_credentials()
-    for idx, item in enumerate(raw_accounts):
+    # Always expose live Hermes Codex OAuth labels as switchable runtime
+    # accounts. The stored switcher file can lag behind auth.json; this keeps
+    # Codex-Nexius/Codex-Melverick visible immediately after `hermes auth add`.
+    codex_accounts = []
+    for credential in auth_credentials:
+        if credential.get('provider') != 'openai-codex':
+            continue
+        account = runtime_account_from_codex_credential(credential)
+        if account:
+            codex_accounts.append(account)
+    merged_raw_accounts = [*codex_accounts, *raw_accounts]
+    for idx, item in enumerate(merged_raw_accounts):
         if not isinstance(item, dict):
             continue
         account = sanitize_runtime_account(item, idx)
         if account['id'] in seen:
-            account['id'] = f"{account['id']}-{idx}"
+            continue
         seen.add(account['id'])
         accounts.append(account_with_status(account, auth_credentials=auth_credentials))
     try:
@@ -9954,6 +10114,51 @@ def read_agent_runtime_switcher(identity=None):
     }
 
 
+def apply_codex_account_to_profile(profile_id, account_label):
+    """Make the selected Codex OAuth label first in a Hermes profile pool.
+
+    HMC stores per-agent account assignments in agent_runtime_switcher.json,
+    while Hermes itself selects openai-codex credentials from each profile's
+    auth.json pool. Reordering the selected label to priority 0 makes new HMC
+    sessions use the operator-selected Codex account without exposing tokens.
+    """
+    label = str(account_label or '').strip()
+    if not label:
+        return False, 'no account label'
+    root = rate_limit_profile_root(profile_id or 'default')
+    auth_path = root / 'auth.json'
+    if not auth_path.exists():
+        return False, f'auth.json not found for profile {profile_id}'
+    try:
+        auth = json.loads(auth_path.read_text(errors='replace') or '{}')
+    except Exception as exc:
+        return False, f'could not read auth.json: {exc}'
+    pool = ((auth.get('credential_pool') or {}).get('openai-codex') or []) if isinstance(auth, dict) else []
+    if not isinstance(pool, list) or not pool:
+        return False, 'openai-codex credential pool is empty'
+    match = None
+    rest = []
+    for entry in pool:
+        if isinstance(entry, dict) and str(entry.get('label') or '').strip().lower() == label.lower() and match is None:
+            match = dict(entry)
+        else:
+            rest.append(entry)
+    if match is None:
+        return False, f'Codex credential label {label} not found in profile {profile_id}'
+    reordered = [match, *[dict(item) if isinstance(item, dict) else item for item in rest]]
+    for idx, entry in enumerate(reordered):
+        if isinstance(entry, dict):
+            entry['priority'] = idx
+    auth.setdefault('credential_pool', {})['openai-codex'] = reordered
+    auth_path.write_text(json.dumps(auth, indent=2) + '\n', encoding='utf-8')
+    try:
+        os.chmod(auth_path, 0o600)
+    except Exception:
+        pass
+    _CODEX_USAGE_CACHE.clear()
+    return True, f'{label} selected for profile {profile_id}'
+
+
 def write_agent_runtime_assignment(identity, agent_id, payload):
     agent_id = safe_id(agent_id or payload.get('agent_id') or payload.get('agentId') or '')
     if not agent_id:
@@ -9994,6 +10199,21 @@ def write_agent_runtime_assignment(identity, agent_id, payload):
     raw['updated_at'] = now
     account = next((a for a in current.get('accounts', []) if a.get('id') == account_id), {})
     model = next((m for m in current.get('models', []) if m.get('id') == model_id), {})
+    apply_note = ''
+    if account.get('provider') == 'openai-codex':
+        try:
+            route, route_status = resolve_agent_runtime_route(identity, agent_id, provision_runtime=True)
+            if route_status == 200:
+                profile_id = safe_id((route or {}).get('shared_agent_ref') or (route or {}).get('profile_name') or agent_id) or agent_id
+                ok, message = apply_codex_account_to_profile(profile_id, account.get('auth_label') or account.get('label') or account_id)
+                apply_note = message
+                if ok:
+                    next_assignment['note'] = (next_assignment.get('note') or 'Runtime switch saved from Mission Control.') + f' Applied to Hermes profile credential order: {message}.'
+                    assignments[agent_id] = next_assignment
+            else:
+                apply_note = str((route or {}).get('error') or 'runtime route unavailable')
+        except Exception as exc:
+            apply_note = f'profile credential order not updated: {exc}'
     audit = raw.get('audit') if isinstance(raw.get('audit'), list) else []
     audit.append({
         'id': f"runtime-switch-{int(time.time()*1000)}",
@@ -10004,6 +10224,7 @@ def write_agent_runtime_assignment(identity, agent_id, payload):
         'to_model': model_id,
         'account_label': account.get('label') or account_id,
         'model_label': model.get('label') or model.get('model') or model_id,
+        'profile_apply_note': apply_note,
         'apply_mode': next_assignment['apply_mode'],
         'reasoning': next_assignment['reasoning'],
         'changed_by': actor,
@@ -11949,7 +12170,7 @@ def config_kind(name):
     lower = name.lower()
     if lower == 'soul.md':
         return 'soul'
-    if lower == 'user.md':
+    if lower in ('identity.md', 'user.md'):
         return 'soul'
     if lower == 'memory.md':
         return 'memory'
@@ -12043,7 +12264,7 @@ def state_db_for_profile(profile_id='default'):
 def read_config_files(profile_id='default', identity=None, agent_id=None, agent_name=''):
     root = profile_root(profile_id)
     candidates = [
-        root / 'SOUL.md', root / 'USER.md', root / 'MEMORY.md', root / 'AGENTS.md',
+        root / 'SOUL.md', root / 'IDENTITY.md', root / 'identity.md', root / 'USER.md', root / 'MEMORY.md', root / 'AGENTS.md',
         root / 'CLAUDE.md', root / '.cursorrules', root / 'config.yaml'
     ]
     files = []
@@ -12088,6 +12309,8 @@ def read_config_files(profile_id='default', identity=None, agent_id=None, agent_
         st = path.stat()
         labels = {
             'SOUL.md': 'agent identity',
+            'IDENTITY.md': 'agent identity',
+            'identity.md': 'agent identity',
             'USER.md': 'user profile',
             'MEMORY.md': 'persistent memory',
             'AGENTS.md': 'agent/project rules',
@@ -12103,7 +12326,7 @@ def read_config_files(profile_id='default', identity=None, agent_id=None, agent_
             'sizeBytes': st.st_size,
             'updatedAt': rel_time(st.st_mtime),
             'scope': 'profile',
-            'editable': path.name in {'SOUL.md', 'MEMORY.md', 'AGENTS.md'} and not workspace_soul_path,
+            'editable': path.name in {'SOUL.md', 'IDENTITY.md', 'identity.md', 'USER.md', 'MEMORY.md', 'AGENTS.md', 'CLAUDE.md'} and not workspace_soul_path,
         })
     if not files:
         files.append({'name':'config.yaml','label':'runtime config','kind':'config','content':'# No readable config files found for this profile.\n','sizeBytes':0,'updatedAt':'—'})
@@ -15125,6 +15348,28 @@ def _profile_memory_summary(profile_id):
     return {'entries': entries, 'files': files, 'items': items[:40], 'redacted_or_sensitive_mentions': redacted}
 
 
+def _profile_identity_docs(profile_id):
+    docs = []
+    for file in read_config_files(profile_id):
+        name = str(file.get('name') or '')
+        if name.lower() not in ('soul.md', 'identity.md', 'user.md', 'agents.md', 'claude.md'):
+            continue
+        content = str(file.get('content') or '')
+        preview = preview_content(content, 520) if content else ''
+        docs.append({
+            'name': name,
+            'label': file.get('label') or ('agent identity' if name.lower() != 'user.md' else 'user profile'),
+            'kind': file.get('kind') or 'soul',
+            'updated_at': file.get('updatedAt') or file.get('updated_at') or '—',
+            'scope': file.get('scope') or 'profile',
+            'editable': bool(file.get('editable')),
+            'preview': preview,
+            'content': content,
+            'size_bytes': file.get('sizeBytes') or 0,
+        })
+    return docs[:6]
+
+
 def _profile_gateway_channels(cfg):
     platforms = cfg.get('platforms') if isinstance(cfg.get('platforms'), dict) else {}
     channels = []
@@ -15175,6 +15420,7 @@ def profile_runtime_details(profile_id, automations=None, sessions=None, mapped_
         'profile_id': resolved,
         'profile_path': str(root),
         'identity': agent_identity(resolved),
+        'identity_docs': _profile_identity_docs(resolved),
         'model_routing': _safe_profile_model_config(cfg),
         'toolsets': cfg.get('toolsets') if isinstance(cfg.get('toolsets'), list) else [],
         'memory': _profile_memory_summary(resolved),
@@ -20199,7 +20445,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({'error': 'bad file route'}, 400)
             agent_id = safe_id(parts[2]) or 'default'
             name = unquote(parts[4])
-            allowed = {'SOUL.md', 'MEMORY.md', 'AGENTS.md', 'config.yaml'}
+            allowed = {'SOUL.md', 'IDENTITY.md', 'identity.md', 'USER.md', 'MEMORY.md', 'AGENTS.md', 'CLAUDE.md', 'config.yaml'}
             if name not in allowed:
                 return self.send_json({'error': 'file is not editable from web UI'}, 403)
             if name == 'config.yaml':

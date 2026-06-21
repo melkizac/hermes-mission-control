@@ -610,6 +610,11 @@ export interface AgentRuntimeAccount {
   notes?: string;
   configured?: boolean;
   secret_status?: string;
+  auth_label?: string;
+  auth_type?: string;
+  auth_source?: string;
+  auth_active?: boolean;
+  auth_status?: string;
 }
 
 export interface AgentRuntimeAssignment {
@@ -1600,6 +1605,9 @@ export interface ModelUsageLimitSummary {
   selected?: boolean;
   aliases?: string[];
   metered_feature?: string;
+  account_label?: string;
+  account_id?: string;
+  plan?: string;
   additional_model_usages?: ModelUsageLimitSummary[];
 }
 
@@ -1637,11 +1645,30 @@ export interface ProjectActionsSummary {
   done: number;
 }
 
+export interface OkfMetadata {
+  type?: string;
+  title?: string;
+  status?: string;
+  owner?: string;
+  primary_agent?: string;
+  engineering_owner?: string;
+  updated?: string;
+  tags?: string[];
+  source_url?: string;
+  publisher?: string;
+  published?: string;
+  retrieved?: string;
+  raw_path?: string;
+  sha256?: string;
+}
+
 export interface ProjectKnowledgeItem {
   title: string;
   path: string;
   type: string;
   updated_at: string;
+  okf_metadata?: OkfMetadata;
+  okf_source_path?: string;
 }
 
 export interface ProjectArtifactItem {
@@ -1831,6 +1858,8 @@ export interface SecondBrainItem {
   links: string[];
   preview: string;
   immutable: boolean;
+  okf_metadata?: OkfMetadata;
+  okf_source_path?: string;
 }
 
 export interface SecondBrainResponse {

@@ -7,6 +7,7 @@ Related artifacts:
 - `docs/plans/2026-06-11-hmc-governed-software-factory.md`
 - `docs/HERMES_MISSION_CONTROL.md`
 - `docs/RESEARCH_TO_DELIVERABLE_PROJECT_CONTRACT.md`
+- `docs/MULTI_AGENT_BIG_DEVELOPMENT_OPERATING_MODEL.md`
 
 ## Product boundary
 
@@ -19,6 +20,8 @@ Project → Tasks → Evidence
 The HMC software-factory workflow is a specialized workflow overlay on a Mission Control Project and its Task Board cards. It must not expose Kanban Board/source selection as normal operator complexity. Board/source remains storage plumbing and an advanced/admin reconciliation concept.
 
 This contract does not require a backend status-enum migration. The first implementation slice should preserve existing Task Board lanes and map workflow phases onto existing task statuses, metadata, comments, and evidence records.
+
+For large development with multiple coding agents, concurrent branches, or 3+ implementation workstreams, apply `docs/MULTI_AGENT_BIG_DEVELOPMENT_OPERATING_MODEL.md` as the governing overlay. That overlay adds mandatory spec packs, Andrej architecture approval before parallel execution, isolated worker branches/worktrees, pre-Andrej review gates, an integration branch before `main`, and explicit branch/PR evidence tracking.
 
 ## Workflow commands and operator-facing phases
 

@@ -11,7 +11,7 @@ type NavItem = NavRouteItem | NavActionItem | NavLinkItem;
 
 type NavGroup = { label: string; items: NavItem[]; system?: boolean };
 
-const workforceSelectorKeys: ViewKey[] = ["skills", "memory", "tools", "plugins"];
+const workforceSelectorKeys: ViewKey[] = ["skills", "tools", "plugins", "memory", "reflections"];
 
 function isRouteItem(item: NavItem): item is NavRouteItem {
   return "key" in item;
@@ -47,7 +47,7 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
     label: "Operations",
     items: [
       { key: "automations", label: "Routines", icon: "automations" },
-      { key: "workflow-library", label: "Workflows", icon: "skills" },
+      { key: "workflow-library", label: "Workflows", icon: "workflow" },
     ],
   },
   {
@@ -56,10 +56,10 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
       { key: "agents", label: "Agents", icon: "agents" },
       { key: "agent-org", label: "Org Chart", icon: "agentOrg" },
       { key: "skills", label: "Skills", icon: "skills" },
+      { key: "tools", label: "Tools", icon: "tools" },
+      { key: "plugins", label: "Plugins", icon: "plugins" },
       { key: "memory", label: "Memory", icon: "memory" },
-      { key: "reflections", label: "Reflections", icon: "memory" },
-      { key: "tools", label: "Tools", icon: "setup" },
-      { key: "plugins", label: "Plugins", icon: "setup" },
+      { key: "reflections", label: "Reflections", icon: "reflections" },
       { key: "approvals", label: "Approvals", icon: "approvals" },
     ],
   },
@@ -172,7 +172,7 @@ function UsageRemainingPeek({ usage }: { usage: UsageRemainingSummary | null }) 
 }
 
 export function NavRail() {
-  const { view, setView, uiMode } = useStore();
+  const { view, setView, uiMode, setUiMode, permissions } = useStore();
   const [status, setStatus] = useState<RailStatus | null>(null);
   const [usageRemaining, setUsageRemaining] = useState<UsageRemainingSummary | null>(null);
   const [workforceMenuOpen, setWorkforceMenuOpen] = useState(false);
@@ -232,6 +232,7 @@ export function NavRail() {
     .find((group) => group.label === "Workforce")
     ?.items.filter((item): item is NavRouteItem => isRouteItem(item) && workforceSelectorKeys.includes(item.key)) ?? [];
   const workforceSelectorActive = workforceSelectorKeys.includes(view);
+  const workforceMenuExpanded = !collapsed && (workforceMenuOpen || workforceSelectorActive);
 
   async function handleLogout() {
     try {
@@ -243,6 +244,27 @@ export function NavRail() {
     } finally {
       window.location.href = "/login";
     }
+  }
+
+  function switchToUserMode() {
+    window.history.pushState({}, "", "/app");
+    setUiMode("workspace");
+    setView("mission");
+    setSettingsOpen(false);
+  }
+
+  function switchToExpertMode() {
+    window.history.pushState({}, "", "/app?mode=expert");
+    setUiMode("expert");
+    setView("agent-org");
+    setSettingsOpen(false);
+  }
+
+  function switchToAdminMode() {
+    window.history.pushState({}, "", "/admin");
+    setUiMode("admin");
+    setView("settings");
+    setSettingsOpen(false);
   }
 
   return (
@@ -288,25 +310,24 @@ export function NavRail() {
             {group.items.map((it) => {
               if (uiMode !== "admin" && group.label === "Workforce" && isRouteItem(it) && workforceSelectorKeys.includes(it.key)) {
                 if (it.key !== workforceSelectorKeys[0]) return null;
-                const selectedItem = workforceSelectorItems.find((item) => item.key === view) ?? workforceSelectorItems[0];
                 return (
                   <div className="workforce-selector" key="workforce-selector">
                     <button
                       className={"nitem workforce-selector-trigger" + (workforceSelectorActive ? " on" : "")}
                       onClick={() => setWorkforceMenuOpen((open) => !open)}
                       aria-haspopup="menu"
-                      aria-expanded={workforceMenuOpen}
-                      data-tooltip={selectedItem.label}
-                      title={collapsed ? selectedItem.label : undefined}
+                      aria-expanded={workforceMenuExpanded}
+                      data-tooltip="Capabilities"
+                      title={collapsed ? "Capabilities" : undefined}
                     >
-                      <Icon name={selectedItem.icon} size={17} />
-                      <span className="nav-text">{selectedItem.label}</span>
-                      <span className={"nav-right-icon workforce-chevron" + (workforceMenuOpen ? " open" : "")}>
+                      <Icon name="setup" size={17} />
+                      <span className="nav-text">Capabilities</span>
+                      <span className={"nav-right-icon workforce-chevron" + (workforceMenuExpanded ? " open" : "")}>
                         <Icon name="chevronDown" size={15} />
                       </span>
                     </button>
-                    {workforceMenuOpen && !collapsed && (
-                      <div className="workforce-menu" role="menu" aria-label="Workforce resources">
+                    {workforceMenuExpanded && (
+                      <div className="workforce-menu" role="menu" aria-label="Capabilities">
                         {workforceSelectorItems.map((item) => {
                           const active = view === item.key;
                           return (
@@ -315,7 +336,7 @@ export function NavRail() {
                               className={"workforce-menu-item" + (active ? " on" : "")}
                               onClick={() => {
                                 setView(item.key);
-                                setWorkforceMenuOpen(false);
+                                setWorkforceMenuOpen(true);
                               }}
                               role="menuitem"
                             >
@@ -357,10 +378,38 @@ export function NavRail() {
         ))}
       </div>
 
-      {uiMode !== "admin" && !collapsed && (
+      {!collapsed && (
         <div className="settings-dock">
           {settingsOpen && (
             <div className="settings-menu" role="menu" aria-label="System menu">
+              {permissions.accountIsAdmin && (
+                <div className="settings-mode-toggle" aria-label="Profile mode">
+                  <button
+                    className={"settings-mode-toggle-button" + (uiMode === "workspace" ? " on" : "")}
+                    aria-pressed={uiMode === "workspace"}
+                    onClick={switchToUserMode}
+                    type="button"
+                  >
+                    User
+                  </button>
+                  <button
+                    className={"settings-mode-toggle-button" + (uiMode === "expert" ? " on" : "")}
+                    aria-pressed={uiMode === "expert"}
+                    onClick={switchToExpertMode}
+                    type="button"
+                  >
+                    Expert
+                  </button>
+                  <button
+                    className={"settings-mode-toggle-button" + (uiMode === "admin" ? " on" : "")}
+                    aria-pressed={uiMode === "admin"}
+                    onClick={switchToAdminMode}
+                    type="button"
+                  >
+                    Admin
+                  </button>
+                </div>
+              )}
               {workspaceSystemItems.map((it, index) => {
                 const active = isRouteItem(it) && view === it.key;
                 const key = navItemKey(it);
