@@ -19549,7 +19549,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Cache-Control', 'no-store')
             self.end_headers()
             return
-        if parsed.path in ('/', '/login', '/docs', '/mission-control-docs', '/mission-control-guide'):
+        if parsed.path in ('/', '/login', '/agent-voice', '/docs', '/mission-control-docs', '/mission-control-guide'):
             self.send_html()
             return
         if parsed.path.startswith('/assets/') and self.send_file(parsed.path):

@@ -8088,6 +8088,112 @@ button.voice-activation {
 }
 
 
+/* Agent Voice cosmic orb Tier 1 overrides. */
+.agent-voice-page-cosmic {
+  background:
+    radial-gradient(circle at 18% 8%, rgba(139, 92, 246, .2), transparent 31%),
+    radial-gradient(circle at 82% 12%, rgba(34, 211, 238, .16), transparent 32%),
+    linear-gradient(180deg, #030712 0%, #07111f 48%, #02050b 100%);
+  color: #e0f2fe;
+}
+.agent-voice-cosmic-hero .stub-tag {
+  color: rgba(165, 180, 252, .88);
+}
+.agent-voice-cosmic-hero .agent-voice-titleblock h1 {
+  color: #f8fbff;
+  text-shadow: 0 0 42px rgba(34, 211, 238, .22);
+}
+.agent-voice-cosmic-hero .agent-voice-titleblock p {
+  color: rgba(224, 242, 254, .72);
+}
+.agent-voice-cosmic-actions {
+  min-width: 310px;
+}
+.agent-voice-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 8px 12px;
+  border: 1px solid rgba(125, 211, 252, .18);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, .58);
+  color: rgba(224, 242, 254, .8);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .24);
+  backdrop-filter: blur(14px);
+}
+.agent-voice-pill.accent {
+  border-color: rgba(196, 181, 253, .34);
+  color: #ddd6fe;
+  background: rgba(76, 29, 149, .32);
+}
+.agent-voice-cosmic-stage {
+  min-height: min(68vh, 760px);
+  border-color: rgba(125, 211, 252, .18);
+  background:
+    radial-gradient(circle at 50% 48%, rgba(34, 211, 238, .17), transparent 23%),
+    radial-gradient(circle at 50% 50%, rgba(139, 92, 246, .1), transparent 42%),
+    #000;
+  box-shadow:
+    0 34px 100px rgba(0, 0, 0, .42),
+    inset 0 0 0 1px rgba(255,255,255,.06),
+    inset 0 0 95px rgba(34, 211, 238, .08);
+}
+.agent-voice-cosmic-stage::before {
+  opacity: .42;
+  background:
+    linear-gradient(rgba(125, 211, 252, .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(196, 181, 253, .028) 1px, transparent 1px);
+  background-size: 54px 54px;
+}
+.agent-voice-cosmic-stage::after {
+  background:
+    radial-gradient(circle at 50% 50%, transparent 0%, transparent 48%, rgba(2, 5, 11, .58) 100%),
+    linear-gradient(180deg, rgba(255,255,255,.06), transparent 24%, transparent 76%, rgba(139, 92, 246, .1));
+}
+.agent-voice-three-mount,
+.agent-voice-webgl-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.agent-voice-webgl-missing {
+  display: grid;
+  place-items: center;
+  color: #fecaca;
+  font-weight: 800;
+  background: #02050b;
+}
+.agent-voice-tier-notes > div {
+  border-color: rgba(125, 211, 252, .16);
+  background: rgba(15, 23, 42, .64);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .18);
+  backdrop-filter: blur(16px);
+}
+.agent-voice-tier-notes h2 { color: #f8fbff; }
+.agent-voice-tier-notes p { color: rgba(224, 242, 254, .68); }
+
+@media (max-width: 760px) {
+  .agent-voice-page-cosmic {
+    background:
+      radial-gradient(circle at 18% 4%, rgba(139, 92, 246, .22), transparent 30%),
+      radial-gradient(circle at 84% 0%, rgba(34, 211, 238, .15), transparent 30%),
+      linear-gradient(180deg, #030712 0%, #07111f 100%);
+  }
+  .agent-voice-cosmic-actions {
+    display: flex;
+    min-width: 0;
+  }
+  .agent-voice-cosmic-stage { min-height: clamp(390px, 58vh, 520px); }
+  .agent-voice-pill { min-height: 32px; padding: 7px 10px; font-size: 10px; }
+}
+
 /* Mobile chat control refinements: project selector visible, real model select, no idle extra icon beside mic. */
 @media (max-width: 760px) {
   .mobile-chat-only-main .clean-chat-top-model-select {

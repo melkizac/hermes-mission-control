@@ -40,6 +40,7 @@ import { recordRouteTelemetry } from "./services/performanceTelemetry";
 
 const docsPaths = new Set(["/mission-control-docs", "/mission-control-guide", "/docs"]);
 const publicPaths = new Set(["/", "/login"]);
+const standaloneAgentVoicePaths = new Set(["/agent-voice"]);
 
 async function requestJson<T>(path: string): Promise<T> {
   const res = await fetch(`${window.location.protocol}//${window.location.host}${path}`, {
@@ -210,6 +211,10 @@ export default function App() {
 
   if (docsPaths.has(pathname)) {
     return <MissionControlDocs />;
+  }
+
+  if (standaloneAgentVoicePaths.has(pathname)) {
+    return <AgentVoice />;
   }
 
   if (publicPaths.has(pathname)) {

@@ -103,25 +103,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refresh = useCallback(async () => {
-    const nextMe = await client.getMe();
-    setMe(nextMe);
-    const nextAccountRole = nextMe?.user?.role;
-    const nextRole = nextAccountRole === "admin" && uiMode === "admin" ? "admin" : nextAccountRole === "admin" ? "user" : nextAccountRole;
-    setRawView((next) => canAccessView(nextRole, next) ? next : safeDefaultViewForRole(nextRole));
-    setLoading(false);
+    try {
+      const nextMe = await client.getMe();
+      setMe(nextMe);
+      const nextAccountRole = nextMe?.user?.role;
+      const nextRole = nextAccountRole === "admin" && uiMode === "admin" ? "admin" : nextAccountRole === "admin" ? "user" : nextAccountRole;
+      setRawView((next) => canAccessView(nextRole, next) ? next : safeDefaultViewForRole(nextRole));
+    } catch {
+      setMe(null);
+    } finally {
+      setLoading(false);
+    }
     window.setTimeout(() => {
       void client.listAgents()
         .then((a) => {
+          const nextAgents = Array.isArray(a) ? a : [];
           setAgents((cur) => {
             const detailedById = new Map(cur.filter((agent) => agent.detailLoaded).map((agent) => [agent.id, agent]));
-            return a.map((agent) => ({ ...agent, ...(detailedById.get(agent.id) ?? {}) }));
+            return nextAgents.map((agent) => ({ ...agent, ...(detailedById.get(agent.id) ?? {}) }));
           });
-          setSelectedId((cur) => cur ?? a[0]?.id ?? null);
+          setSelectedId((cur) => cur ?? nextAgents[0]?.id ?? null);
         })
         .catch(() => undefined);
     }, 250);
     window.setTimeout(() => {
-      void client.listApprovals().then(setApprovals).catch(() => setApprovals([]));
+      void client.listApprovals().then((items) => setApprovals(Array.isArray(items) ? items : [])).catch(() => setApprovals([]));
     }, 1000);
   }, [uiMode]);
 
