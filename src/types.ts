@@ -610,10 +610,23 @@ export interface AgentRuntimeAccount {
   notes?: string;
   configured?: boolean;
   secret_status?: string;
+  auth_label?: string;
+  auth_type?: string;
+  auth_source?: string;
+  auth_active?: boolean;
+  auth_status?: string;
+  health?: string;
+  last_error_code?: string;
+  last_error_class?: string;
+  last_error_reason?: string;
 }
 
 export interface AgentRuntimeAssignment {
   agent_id: string;
+  hermes_profile?: string;
+  provider?: string;
+  model?: string;
+  credential_label?: string;
   account_id: string;
   model_id: string;
   reasoning: string;
@@ -621,6 +634,9 @@ export interface AgentRuntimeAssignment {
   updated_at?: string;
   updated_by?: string;
   note?: string;
+  applied?: boolean;
+  gateway_restarted?: boolean;
+  smoke_test?: { ok?: boolean; error?: string; response?: string; returncode?: number } | boolean | null;
 }
 
 export interface AgentRuntimeSwitcher {

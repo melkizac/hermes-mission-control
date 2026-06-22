@@ -9073,3 +9073,16 @@ button.voice-activation {
 .agent-identity-file-row { margin: 0; cursor: default; }
 .agent-identity-file-row.readonly { opacity: 1; }
 .agent-identity-file-preview { grid-column: 2 / -1; margin: 6px 0 0; color:#536277; font-size:12.5px; line-height:1.45; }
+
+.agent-model-assignment.credential-routing { display: grid; gap: 10px; margin: 10px 0 14px; }
+.agent-model-selector { display: grid; gap: 6px; font-size: 12px; font-weight: 800; color: #64748b; }
+.agent-model-selector select { width: 100%; border: 1px solid #dbe5ee; border-radius: 12px; padding: 9px 10px; background: #fff; color: #0f172a; font-weight: 750; }
+.credential-health-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.credential-health { border: 1px solid #dbe5ee; border-radius: 999px; padding: 4px 8px; background: #f8fafc; color: #475569; font-size: 11px; font-weight: 800; }
+.credential-health.ok { border-color: #b8eadf; background: #ecfdf8; color: #0f766e; }
+.credential-health.active { border-color: #9bdad3; background: #dffcf7; color: #0e8f84; }
+.credential-health.warn { border-color: #fed7aa; background: #fff7ed; color: #c2410c; }
+.credential-health.bad { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
+.runtime-status-note { border-left: 3px solid #0e8f84; padding-left: 8px; }
+.runtime-action-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.runtime-action-row .btn { min-height: 32px; padding: 6px 10px; }

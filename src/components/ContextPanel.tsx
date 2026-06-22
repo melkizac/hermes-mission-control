@@ -82,7 +82,7 @@ export function ContextPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent.id, collapsed]);
 
-  const saveRuntimeAssignment = async (changes: Partial<Pick<AgentRuntimeAssignment, "account_id" | "model_id">>) => {
+  const saveRuntimeAssignment = async (changes: Partial<AgentRuntimeAssignment & { smoke_test: boolean }>) => {
     if (!runtimeSwitcher) return;
     const current = runtimeSwitcher.assignments?.[agent.id];
     if (!current) {
@@ -90,40 +90,44 @@ export function ContextPanel({
       return;
     }
     const requestedModel = runtimeSwitcher.models.find((model) => model.id === (changes.model_id || current.model_id));
-    const fallbackModel = runtimeSwitcher.models.find((model) => model.enabled && model.authorized && model.id === current.model_id)
+    const fallbackModel = runtimeSwitcher.models.find((model) => model.enabled && model.authorized && model.provider === "openai-codex")
+      ?? runtimeSwitcher.models.find((model) => model.enabled && model.provider === "openai-codex")
       ?? runtimeSwitcher.models.find((model) => model.enabled && model.authorized)
       ?? runtimeSwitcher.models.find((model) => model.enabled);
     const selectedModel = requestedModel ?? fallbackModel;
     if (!selectedModel) {
-      setRuntimeStatus("No authorised Hermes Admin Console model is available for this agent.");
+      setRuntimeStatus("No authorised Hermes model is available for this agent.");
       return;
     }
     const requestedAccount = runtimeSwitcher.accounts.find((account) => account.id === (changes.account_id || current.account_id));
     const selectedAccount = requestedAccount && (!selectedModel.provider || requestedAccount.provider === selectedModel.provider)
       ? requestedAccount
-      : runtimeSwitcher.accounts.find((account) => account.provider === selectedModel.provider && account.configured)
+      : runtimeSwitcher.accounts.find((account) => account.provider === selectedModel.provider && account.configured && account.health !== "dead/revoked")
         ?? runtimeSwitcher.accounts.find((account) => account.provider === selectedModel.provider)
-        ?? runtimeSwitcher.accounts.find((account) => account.configured)
         ?? runtimeSwitcher.accounts[0];
     if (!selectedAccount) {
-      setRuntimeStatus("Choose an admin console runtime account before assigning a model.");
+      setRuntimeStatus("Choose a Codex account before assigning this runtime.");
       return;
     }
     const next: AgentRuntimeAssignment = {
       ...current,
       account_id: selectedAccount.id,
       model_id: selectedModel.id,
-      apply_mode: current.apply_mode || "next_session",
+      provider: selectedModel.provider,
+      model: selectedModel.model,
+      credential_label: changes.credential_label || selectedAccount.auth_label || selectedAccount.label,
+      apply_mode: changes.apply_mode || current.apply_mode || "next_session",
       reasoning: current.reasoning || "balanced",
+      smoke_test: changes.smoke_test || undefined,
     };
     setRuntimeSaving(true);
-    setRuntimeStatus(`Saving ${selectedModel.label || selectedModel.model} for ${agent.name}…`);
+    setRuntimeStatus(`Applying ${selectedModel.model} with ${next.credential_label} for ${agent.name}…`);
     try {
       const data = await saveAgentRuntime(agent.id, next);
       setRuntimeSwitcher(data);
-      setRuntimeStatus(`Assigned ${selectedModel.label || selectedModel.model} via ${selectedAccount.label || selectedAccount.id}. New sessions use this model; active runs keep their existing runtime.`);
+      setRuntimeStatus(`Assigned ${selectedModel.provider}/${selectedModel.model} via ${next.credential_label}. ${next.apply_mode === "restart_gateway" ? "Gateway restart was requested." : "New sessions use this credential; active runs keep their existing runtime."}`);
     } catch (err) {
-      setRuntimeStatus(err instanceof Error ? err.message : "Runtime model assignment failed");
+      setRuntimeStatus(err instanceof Error ? err.message : "Runtime credential assignment failed");
     } finally {
       setRuntimeSaving(false);
     }
@@ -557,26 +561,12 @@ function FileRow({ file, onOpen, disabled }: { file: ConfigFile; onOpen: () => v
   );
 }
 
-function modelAccountOptionLabel(model: RouterModel, account: AgentRuntimeAccount) {
-  const modelName = model.label || model.model;
-  const accountName = account.label || account.id;
-  return `${modelName} · ${accountName}`;
-}
-
-type RuntimeModelOption = {
-  value: string;
-  model: RouterModel;
-  account: AgentRuntimeAccount;
-  explicitAccountMatch: boolean;
-};
-
-function modelMatchesAccount(model: RouterModel, account: AgentRuntimeAccount) {
-  const modelKey = `${model.id} ${model.label || ""} ${model.notes || ""}`.toLowerCase();
-  const authLabel = (account as AgentRuntimeAccount & { auth_label?: string }).auth_label;
-  const accountKeys = [account.id, account.label, authLabel]
-    .map((value) => String(value || "").toLowerCase())
-    .filter(Boolean);
-  return accountKeys.some((key) => modelKey.includes(key));
+function credentialHealthLabel(account?: AgentRuntimeAccount) {
+  if (!account) return "missing from this profile";
+  if (account.health) return account.health;
+  if (account.auth_status) return account.auth_status;
+  if (account.configured === false) return "missing from this profile";
+  return account.auth_active ? "active for this profile" : "healthy";
 }
 
 function AgentRuntimeAccountControl({
@@ -598,62 +588,67 @@ function AgentRuntimeAccountControl({
   authorizedModels: RouterModel[];
   saving: boolean;
   status: string;
-  onChange: (changes: Partial<Pick<AgentRuntimeAssignment, "account_id" | "model_id">>) => void;
+  onChange: (changes: Partial<AgentRuntimeAssignment & { smoke_test: boolean }>) => void;
 }) {
-  const configuredAccounts = accounts.filter((account) => account.configured !== false);
-  const accountPool = configuredAccounts.length ? configuredAccounts : accounts;
-  const rawOptions: RuntimeModelOption[] = authorizedModels.flatMap((model) => {
-    const matchingAccounts = accountPool.filter((account) => !model.provider || account.provider === model.provider);
-    const providerAccounts = matchingAccounts.length ? matchingAccounts : accountPool;
-    const explicitlyMatchedAccounts = providerAccounts.filter((account) => modelMatchesAccount(model, account));
-    const compatibleAccounts = explicitlyMatchedAccounts.length ? explicitlyMatchedAccounts : providerAccounts;
-    return compatibleAccounts.map((account) => ({
-      value: `${model.id}::${account.id}`,
-      model,
-      account,
-      explicitAccountMatch: modelMatchesAccount(model, account),
-    }));
-  });
-  const dedupedByModelAccount = new Map<string, RuntimeModelOption>();
-  for (const option of rawOptions) {
-    const key = `${option.model.provider || ""}::${option.model.model || option.model.id}::${option.account.id}`;
-    const existing = dedupedByModelAccount.get(key);
-    if (!existing || (!existing.explicitAccountMatch && option.explicitAccountMatch)) {
-      dedupedByModelAccount.set(key, option);
-    }
+  const modelMap = new Map<string, RouterModel>();
+  for (const model of authorizedModels.length ? authorizedModels : []) {
+    const key = `${model.provider || ""}::${model.model || model.id}`;
+    if (!modelMap.has(key) || model.id === assignment?.model_id) modelMap.set(key, model);
   }
-  const options = Array.from(dedupedByModelAccount.values());
-  const selectedValue = assignment?.model_id && assignment?.account_id
-    ? `${assignment.model_id}::${assignment.account_id}`
-    : "";
-  const hasSelectedOption = options.some((option) => option.value === selectedValue);
-  const selectedOption = options.find((option) => option.value === selectedValue);
-  const providerLabel = selectedOption?.model.provider || assignedModel?.provider || assignedAccount?.provider || "runtime provider";
-  const modelLabel = selectedOption?.model.model || assignedModel?.model || "model";
-  const accountLabel = selectedOption?.account.label || assignedAccount?.label || assignedAccount?.id || "default account";
+  const modelOptions = Array.from(modelMap.values());
+  const selectedModel = modelOptions.find((model) => model.id === assignment?.model_id) || assignedModel || modelOptions[0];
+  const accountOptions = accounts.filter((account) => !selectedModel?.provider || account.provider === selectedModel.provider);
+  const selectedAccount = accountOptions.find((account) => account.id === assignment?.account_id) || assignedAccount || accountOptions[0];
+  const providerLabel = selectedModel?.provider || selectedAccount?.provider || assignedModel?.provider || "runtime provider";
+  const modelLabel = selectedModel?.model || assignment?.model || assignedModel?.model || "model";
+  const credentialLabel = assignment?.credential_label || selectedAccount?.auth_label || selectedAccount?.label || "credential";
   return (
-    <div className="agent-model-assignment">
+    <div className="agent-model-assignment credential-routing">
       <label className="agent-model-selector">
         <span>Model for {agent.name}</span>
         <select
-          value={hasSelectedOption ? selectedValue : ""}
-          disabled={saving || options.length === 0}
-          onChange={(event) => {
-            const option = options.find((item) => item.value === event.target.value);
-            if (option) onChange({ model_id: option.model.id, account_id: option.account.id });
-          }}
+          value={selectedModel?.id || ""}
+          disabled={saving || modelOptions.length === 0}
+          onChange={(event) => onChange({ model_id: event.target.value })}
         >
-          <option value="">Choose model / quota account</option>
-          {options.map((option) => (
-            <option key={option.value} value={option.value}>
-              {modelAccountOptionLabel(option.model, option.account)}
+          <option value="">Choose model</option>
+          {modelOptions.map((model) => (
+            <option key={model.id} value={model.id}>
+              {model.model} · {model.provider}
             </option>
           ))}
         </select>
       </label>
+      <label className="agent-model-selector">
+        <span>Codex account for {agent.name}</span>
+        <select
+          value={selectedAccount?.id || ""}
+          disabled={saving || accountOptions.length === 0}
+          onChange={(event) => {
+            const account = accountOptions.find((item) => item.id === event.target.value);
+            onChange({ account_id: event.target.value, credential_label: account?.auth_label || account?.label });
+          }}
+        >
+          <option value="">Choose Codex account</option>
+          {accountOptions.map((account) => {
+            const health = credentialHealthLabel(account);
+            const unavailable = health.toLowerCase().includes("dead") || health.toLowerCase().includes("revoked") || health.toLowerCase().includes("missing");
+            return (
+              <option key={account.id} value={account.id} disabled={unavailable}>
+                {account.auth_label || account.label}
+              </option>
+            );
+          })}
+        </select>
+      </label>
       <p className="mini-note">
-        Current route: {providerLabel}/{modelLabel} via {accountLabel}. Changes apply per agent to new sessions; active runs keep their existing runtime.
+        Current route: {providerLabel}/{modelLabel} via {credentialLabel}. Account changes update the selected Hermes profile credential priority; active sessions keep their existing runtime unless restart/new-session mode is selected.
       </p>
+      <div className="runtime-action-row">
+        <button className="btn ghost" type="button" disabled={saving || !selectedModel || !selectedAccount} onClick={() => onChange({ smoke_test: true })}>Run smoke test</button>
+        <button className="btn ghost" type="button" disabled={saving || !selectedModel || !selectedAccount} onClick={() => onChange({ apply_mode: "restart_gateway" })}>Apply + restart gateway</button>
+      </div>
+      {assignment?.smoke_test && assignment.smoke_test !== true && <p className={assignment.smoke_test.ok ? "mini-note hi" : "mini-note err"}>Smoke test: {assignment.smoke_test.ok ? "passed" : assignment.smoke_test.error || "failed"}</p>}
       {status && <div className="mini-note runtime-status-note">{status}</div>}
     </div>
   );
