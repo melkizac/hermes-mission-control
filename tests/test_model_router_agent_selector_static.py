@@ -25,16 +25,19 @@ def test_models_and_rate_limits_are_parked_under_settings_nav():
     assert 'key: "models", eyebrow: "Models", title: "Models & Rate Limits"' in settings
 
 
-def test_agent_detail_drawer_has_authorised_model_selector_assignment_flow():
+def test_agent_detail_drawer_has_credential_routing_assignment_flow():
     panel = (ROOT / "src/components/ContextPanel.tsx").read_text()
     store = (ROOT / "src/services/store.tsx").read_text()
     client = (ROOT / "src/services/httpHermesClient.ts").read_text()
 
     assert "Model for" in panel
-    assert "Choose model / quota account" in panel
+    assert "Codex account for" in panel
+    assert "Choose model" in panel
+    assert "Choose Codex account" in panel
     assert "Runtime account / quota bucket" not in panel
-    assert "dedupedByModelAccount" in panel
-    assert "explicitAccountMatch" in panel
+    assert "Choose model / quota account" not in panel
+    assert "credentialHealthLabel" in panel
+    assert "credential_label" in panel
     assert "authorizedModels" in panel
     assert "saveAgentRuntime" in panel
     assert "getAgentRuntimes" in store
