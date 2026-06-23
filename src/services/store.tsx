@@ -16,8 +16,8 @@ import { HttpHermesClient } from "./httpHermesClient";
 import { initialDeepLinkTarget, parseMissionControlDeepLink, type MissionControlDeepLinkTarget } from "./deepLinks";
 import { cachedJsonRequest } from "./queryCache";
 
-type UiMode = "workspace" | "expert" | "admin";
-const defaultViewForUiMode = (mode: UiMode): ViewKey => mode === "admin" ? "settings" : mode === "expert" ? "agent-org" : "mission";
+type UiMode = "workspace" | "admin";
+const defaultViewForUiMode = (mode: UiMode): ViewKey => mode === "admin" ? "settings" : "mission";
 
 // Production Mission Control talks to the same authenticated origin.
 const client: HermesClient = new HttpHermesClient();
