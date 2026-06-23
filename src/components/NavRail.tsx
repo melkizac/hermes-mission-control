@@ -253,12 +253,6 @@ export function NavRail() {
     setSettingsOpen(false);
   }
 
-  function switchToExpertMode() {
-    window.history.pushState({}, "", "/app?mode=expert");
-    setUiMode("expert");
-    setView("agent-org");
-    setSettingsOpen(false);
-  }
 
   function switchToAdminMode() {
     window.history.pushState({}, "", "/admin");
@@ -391,14 +385,6 @@ export function NavRail() {
                     type="button"
                   >
                     User
-                  </button>
-                  <button
-                    className={"settings-mode-toggle-button" + (uiMode === "expert" ? " on" : "")}
-                    aria-pressed={uiMode === "expert"}
-                    onClick={switchToExpertMode}
-                    type="button"
-                  >
-                    Expert
                   </button>
                   <button
                     className={"settings-mode-toggle-button" + (uiMode === "admin" ? " on" : "")}
