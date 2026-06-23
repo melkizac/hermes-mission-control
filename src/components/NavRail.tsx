@@ -131,6 +131,9 @@ type UsageRemainingSummary = {
   daily?: UsageWindow;
   weekly?: UsageWindow;
 };
+type InboxSummary = { drafted?: number; ready?: number };
+type InboxItem = { status?: string };
+type InboxPayload = { summary?: InboxSummary; items?: InboxItem[] };
 
 async function requestStatus(): Promise<RailStatus> {
   const url = `${window.location.protocol}//${window.location.host}/api/status`;
@@ -145,6 +148,16 @@ async function requestUsageRemaining(): Promise<UsageRemainingSummary | null> {
   if (!res.ok) throw new Error(res.statusText);
   const data = await res.json() as { model_usage?: UsageRemainingSummary };
   return data.model_usage ?? null;
+}
+
+async function requestApprovalCount(fallbackCount: number): Promise<number> {
+  const url = `${window.location.protocol}//${window.location.host}/api/inbox`;
+  const res = await fetch(url, { credentials: "include", headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(res.statusText);
+  const inbox = await res.json() as InboxPayload;
+  if (inbox.summary) return Number(inbox.summary.drafted ?? 0) + Number(inbox.summary.ready ?? 0);
+  if (!Array.isArray(inbox.items)) return fallbackCount;
+  return inbox.items.filter((item) => item.status === "drafted" || item.status === "ready").length;
 }
 
 function remainingPercent(window?: UsageWindow) {
@@ -172,9 +185,10 @@ function UsageRemainingPeek({ usage }: { usage: UsageRemainingSummary | null }) 
 }
 
 export function NavRail() {
-  const { view, setView, uiMode, setUiMode, permissions } = useStore();
+  const { view, setView, uiMode, setUiMode, permissions, approvals } = useStore();
   const [status, setStatus] = useState<RailStatus | null>(null);
   const [usageRemaining, setUsageRemaining] = useState<UsageRemainingSummary | null>(null);
+  const [approvalCount, setApprovalCount] = useState(approvals.length);
   const [workforceMenuOpen, setWorkforceMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [usagePeekOpen, setUsagePeekOpen] = useState(false);
@@ -200,6 +214,27 @@ export function NavRail() {
       window.clearInterval(interval);
     };
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const next = await requestApprovalCount(approvals.length);
+        if (alive) setApprovalCount(next);
+      } catch {
+        if (alive) setApprovalCount(approvals.length);
+      }
+    };
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 20000);
+    const interval = window.setInterval(load, 60000);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+      window.clearInterval(interval);
+    };
+  }, [approvals.length]);
 
   useEffect(() => {
     if (!settingsOpen || !usagePeekOpen) return;
@@ -352,6 +387,10 @@ export function NavRail() {
               }
               const active = isRouteItem(it) && view === it.key;
               const key = navItemKey(it);
+              const approvalBadge = isRouteItem(it) && it.key === "approvals" && approvalCount > 0
+                ? (approvalCount > 99 ? "99+" : String(approvalCount))
+                : null;
+              const collapsedTitle = collapsed && approvalBadge ? `${it.label} (${approvalBadge})` : collapsed ? it.label : undefined;
               if (isLinkItem(it)) {
                 return (
                   <a key={key} className="nitem" href={it.href} data-tooltip={it.label} title={collapsed ? it.label : undefined}>
@@ -366,11 +405,12 @@ export function NavRail() {
                   key={key}
                   className={"nitem" + (active ? " on" : "")}
                   onClick={onClick}
-                  data-tooltip={it.label}
-                  title={collapsed ? it.label : undefined}
+                  data-tooltip={collapsedTitle ?? it.label}
+                  title={collapsedTitle}
                 >
                   <Icon name={it.icon} size={17} />
                   <span className="nav-text">{it.label}</span>
+                  {approvalBadge && <span className="pill" aria-label={`${approvalBadge} pending approvals`}>{approvalBadge}</span>}
                 </button>
               );
             })}
