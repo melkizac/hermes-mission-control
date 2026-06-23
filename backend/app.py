@@ -3422,6 +3422,74 @@ def cron_sessions_for_job(job_id, limit=5):
         return []
 
 
+def parse_cron_session_job_id(session_id):
+    text = str(session_id or '')
+    match = re.match(r'^cron_(.+?)_\d{8}_\d{6}(?:_.+)?$', text)
+    return match.group(1) if match else ''
+
+
+def cron_usage_for_jobs(job_ids=None, days=14):
+    """Aggregate cron session usage by job and by day without exposing prompts or outputs."""
+    job_ids = [safe_id(j) for j in (job_ids or []) if safe_id(j)]
+    known = set(job_ids)
+    empty = {
+        'by_job': {jid: {'job_id': jid, 'run_count': 0, 'message_count': 0, 'tool_call_count': 0, 'input_tokens': 0, 'output_tokens': 0, 'tokens': 0, 'estimated_cost_usd': 0.0, 'last_run_at': None} for jid in job_ids},
+        'daily_spend': [],
+        'totals': {'run_count': 0, 'message_count': 0, 'tool_call_count': 0, 'input_tokens': 0, 'output_tokens': 0, 'tokens': 0, 'estimated_cost_usd': 0.0},
+    }
+    if not STATE_DB.exists():
+        return empty
+    cutoff = time.time() - max(1, int(days or 14)) * 86400
+    try:
+        con = sqlite3.connect(f'file:{STATE_DB}?mode=ro', uri=True, timeout=2)
+        con.row_factory = sqlite3.Row
+        rows = con.execute("""
+            SELECT id, started_at, message_count, tool_call_count, input_tokens, output_tokens, estimated_cost_usd
+            FROM sessions
+            WHERE source='cron' AND started_at >= ?
+            ORDER BY started_at DESC
+        """, (cutoff,)).fetchall()
+        con.close()
+    except Exception:
+        return empty
+    by_job = empty['by_job']
+    by_day = {}
+    totals = empty['totals']
+    for r in rows:
+        jid = parse_cron_session_job_id(r['id'])
+        if not jid or (known and jid not in known):
+            continue
+        started = float(r['started_at'] or 0)
+        day = datetime.fromtimestamp(started, SGT).strftime('%Y-%m-%d') if started else 'unknown'
+        input_tokens = int(r['input_tokens'] or 0)
+        output_tokens = int(r['output_tokens'] or 0)
+        tokens = input_tokens + output_tokens
+        cost = float(r['estimated_cost_usd'] or 0)
+        messages = int(r['message_count'] or 0)
+        tools = int(r['tool_call_count'] or 0)
+        item = by_job.setdefault(jid, {'job_id': jid, 'run_count': 0, 'message_count': 0, 'tool_call_count': 0, 'input_tokens': 0, 'output_tokens': 0, 'tokens': 0, 'estimated_cost_usd': 0.0, 'last_run_at': None})
+        day_item = by_day.setdefault(day, {'date': day, 'run_count': 0, 'message_count': 0, 'tool_call_count': 0, 'input_tokens': 0, 'output_tokens': 0, 'tokens': 0, 'estimated_cost_usd': 0.0})
+        for target in (item, day_item, totals):
+            target['run_count'] += 1
+            target['message_count'] += messages
+            target['tool_call_count'] += tools
+            target['input_tokens'] += input_tokens
+            target['output_tokens'] += output_tokens
+            target['tokens'] += tokens
+            target['estimated_cost_usd'] = round(float(target['estimated_cost_usd']) + cost, 8)
+        if not item.get('last_run_at') or started > (item.get('_last_ts') or 0):
+            item['_last_ts'] = started
+            item['last_run_at'] = iso(started) if started else None
+    for item in by_job.values():
+        item.pop('_last_ts', None)
+        item['total_estimated_cost_usd'] = item['estimated_cost_usd']
+    daily_spend = sorted(by_day.values(), key=lambda row: row['date'], reverse=True)
+    for item in daily_spend:
+        item['total_estimated_cost_usd'] = item['estimated_cost_usd']
+    totals['total_estimated_cost_usd'] = totals['estimated_cost_usd']
+    return {'by_job': by_job, 'daily_spend': daily_spend, 'totals': totals}
+
+
 def funnel_evidence_history_from_outputs(job_id, existing=None, limit=3):
     history = list(existing or [])
     for out in cron_output_files(job_id, limit):
@@ -3442,12 +3510,13 @@ def funnel_evidence_history_from_outputs(job_id, existing=None, limit=3):
     return history
 
 
-def automation_row(job):
+def automation_row(job, usage_by_job=None):
     job_id = job.get('id') or ''
     repeat = job.get('repeat') or {}
     schedule = job.get('schedule') or {}
     recent_runs = cron_sessions_for_job(job_id, 4)
     outputs = cron_output_files(job_id, 3)
+    usage = (usage_by_job or {}).get(job_id) or {'job_id': job_id, 'run_count': 0, 'message_count': 0, 'tool_call_count': 0, 'input_tokens': 0, 'output_tokens': 0, 'tokens': 0, 'estimated_cost_usd': 0.0, 'total_estimated_cost_usd': 0.0, 'last_run_at': None}
     prompt = job.get('prompt') or ''
     skills = job.get('skills') or ([] if not job.get('skill') else [job.get('skill')])
     status = job.get('state') or ('scheduled' if job.get('enabled') else 'disabled')
@@ -3488,7 +3557,8 @@ def automation_row(job):
         'prompt_preview': preview_content(prompt, 520),
         'recent_runs': recent_runs,
         'recent_outputs': outputs,
-        'run_count': max(repeat.get('completed') or 0, len(recent_runs)),
+        'run_count': max(repeat.get('completed') or 0, len(recent_runs), usage.get('run_count') or 0),
+        'usage': usage,
     }
     metadata = job.get('metadata') if isinstance(job.get('metadata'), dict) else {}
     if metadata.get('workflow_template_id') == 'website-funnel-check':
@@ -3569,6 +3639,7 @@ def workflow_routine_as_automation_record(routine):
         'recent_runs': [],
         'recent_outputs': [],
         'run_count': 1 if last_run else 0,
+        'usage': {'job_id': routine.get('id'), 'run_count': 1 if last_run else 0, 'message_count': 0, 'tool_call_count': 0, 'input_tokens': 0, 'output_tokens': 0, 'tokens': 0, 'estimated_cost_usd': 0.0, 'total_estimated_cost_usd': 0.0, 'last_run_at': (last_run or {}).get('started_at')},
         'workflow_template_id': 'workflow-routine-admin',
         'workflowName': 'Workflow Routine Admin',
         'sourceOfTruth': 'runtime connector governance database',
@@ -3592,15 +3663,19 @@ def list_automations(filters=None, identity=None):
     filters = filters or {}
     rows = []
     error = None
+    usage = cron_usage_for_jobs([], 30)
     if CRON_JOBS.exists():
         try:
             data = json.loads(CRON_JOBS.read_text(errors='ignore'))
             jobs = data.get('jobs', [])
-            rows.extend(automation_row(j) for j in jobs)
+            usage = cron_usage_for_jobs([j.get('id') for j in jobs if isinstance(j, dict)], 30)
+            usage_by_job = usage.get('by_job') or {}
+            rows.extend(automation_row(j, usage_by_job) for j in jobs)
         except Exception as e:
             error = str(e)
     else:
         error = 'cron jobs.json not found'
+        usage = cron_usage_for_jobs([], 30)
     routine_payload = list_workflow_routines(identity, filters) if identity else {'routines': []}
     rows.extend(workflow_routine_as_automation_record(r) for r in routine_payload.get('routines') or [])
     q = (filters.get('q') or [''])[0].strip().lower()
@@ -3629,8 +3704,10 @@ def list_automations(filters=None, identity=None):
         'platform': sum(1 for r in rows if r.get('routine_type') == 'platform'),
         'workspace': sum(1 for r in rows if r.get('routine_type') == 'workspace'),
         'personal': sum(1 for r in rows if r.get('routine_type') == 'personal'),
+        'usage': usage.get('totals') or {},
+        'daily_spend': usage.get('daily_spend') or [],
     }
-    out = {'automations': rows, 'summary': summary, 'states': ['enabled', 'paused', 'error', 'script', 'platform', 'workspace', 'personal'], 'workflow_routines': routine_payload.get('routines') or [], 'routine_summary': routine_payload.get('summary') or {'total': 0}}
+    out = {'automations': rows, 'summary': summary, 'states': ['enabled', 'paused', 'error', 'script', 'platform', 'workspace', 'personal'], 'workflow_routines': routine_payload.get('routines') or [], 'routine_summary': routine_payload.get('summary') or {'total': 0}, 'usage_by_job': usage.get('by_job') or {}, 'daily_spend': usage.get('daily_spend') or []}
     if error:
         out['error'] = error
     return out

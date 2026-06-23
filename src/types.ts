@@ -942,6 +942,20 @@ export interface AuditSessionDetailResponse {
   messages: AuditMessage[];
 }
 
+export interface AutomationUsage {
+  job_id?: string;
+  date?: string;
+  run_count: number;
+  message_count: number;
+  tool_call_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  tokens: number;
+  estimated_cost_usd: number;
+  total_estimated_cost_usd?: number;
+  last_run_at?: string | null;
+}
+
 export interface AutomationRun {
   id: string;
   title: string;
@@ -994,6 +1008,7 @@ export interface AutomationRoutine {
   recent_runs: AutomationRun[];
   recent_outputs: AutomationOutput[];
   run_count: number;
+  usage: AutomationUsage;
   workflow_template_id?: string;
   workflowName?: string;
   taskBoardTenant?: string;
@@ -1047,10 +1062,14 @@ export interface AutomationsResponse {
     platform?: number;
     workspace?: number;
     personal?: number;
+    usage?: AutomationUsage;
+    daily_spend?: AutomationUsage[];
   };
   states: string[];
   workflow_routines?: AutomationRoutine[];
   routine_summary?: Record<string, number>;
+  usage_by_job?: Record<string, AutomationUsage>;
+  daily_spend?: AutomationUsage[];
   error?: string;
 }
 
