@@ -242,7 +242,25 @@ export function Automations() {
         <Metric label="Routines" value={summary?.total ?? automations.length} sub="Cron + governed routines" />
         <Metric label="Enabled" value={summary?.enabled ?? 0} sub="Visible background workers" />
         <Metric label="Governed" value={summary?.governed ?? 0} sub={`${summary?.platform ?? 0} platform · ${summary?.workspace ?? 0} workspace · ${summary?.personal ?? 0} personal`} />
+        <Metric label="Cron spend" value={money(summary?.usage?.estimated_cost_usd)} sub={`${compact(summary?.usage?.tokens)} tokens · ${summary?.usage?.run_count ?? 0} runs / 30d`} />
         <Metric label="Needs attention" value={summary?.error ?? 0} sub={`${summary?.paused ?? 0} paused`} tone={(summary?.error ?? 0) > 0 ? "bad" : "good"} />
+      </section>
+
+      <section className="automation-usage-panel">
+        <div className="automation-panel-head">
+          <span>Daily spend</span>
+          <small>All cron jobs · last 30 days</small>
+        </div>
+        <div className="automation-spend-days">
+          {(data?.daily_spend ?? summary?.daily_spend ?? []).slice(0, 7).map((day) => (
+            <article className="automation-spend-day" key={day.date}>
+              <span>{day.date}</span>
+              <b>{money(day.estimated_cost_usd)}</b>
+              <small>{compact(day.tokens)} tok · {day.run_count} runs</small>
+            </article>
+          ))}
+          {(data?.daily_spend ?? summary?.daily_spend ?? []).length === 0 && <div className="empty">No cron usage recorded in the last 30 days.</div>}
+        </div>
       </section>
 
       <section className="automation-filters">
@@ -688,8 +706,8 @@ function AutomationCard({ automation, active, busy, onSelect, onAction }: {
         <p>{automation.prompt_preview || "No prompt configured."}</p>
         <div className="automation-triplet">
           <Mini label="Runs" value={automation.run_count} />
-          <Mini label="Skills" value={automation.skill_count} />
-          <Mini label="Last" value={automation.last_status} />
+          <Mini label="Token use" value={compact(automation.usage?.tokens)} />
+          <Mini label="Cron spend" value={money(automation.usage?.estimated_cost_usd)} />
         </div>
       </button>
       <footer className="automation-card-foot">
@@ -736,7 +754,7 @@ function AutomationListRow({ automation, active, busy, onSelect, onAction }: {
       <div className="ops-row-meta">
         <span>{automation.schedule_kind}</span>
         <small>Next: {automation.next_run_relative}</small>
-        <em>{automation.run_count} runs · {automation.skill_count} skills · {automation.no_agent ? "script" : "agent"}</em>
+        <em>{automation.run_count} runs · {compact(automation.usage?.tokens)} tok · {money(automation.usage?.estimated_cost_usd)} · {automation.no_agent ? "script" : "agent"}</em>
       </div>
       <div className="ops-row-actions">
         {automation.workflow_template_id === "website-funnel-check" && !automation.enabled && (
@@ -801,6 +819,8 @@ function AutomationDrawer({ automation, tab, setTab, busy, onClose, onAction }: 
               <Info label="Scope" value={automation.routine_type || automation.agent_class || "cron"} />
               <Info label="Runtime / agent" value={[automation.runtime_id, automation.agent_id].filter(Boolean).join(" / ") || automation.profile || "—"} />
               <Info label="Task Board" value={automation.taskBoardTenant || "—"} />
+              <Info label="30d usage" value={`${automation.usage?.run_count ?? 0} runs · ${compact(automation.usage?.tokens)} tokens`} />
+              <Info label="30d spend" value={money(automation.usage?.estimated_cost_usd)} />
             </div>
             {automation.last_error && <div className="automation-error compact">{automation.last_error}</div>}
             <section className="automation-section operator-routine-summary">
