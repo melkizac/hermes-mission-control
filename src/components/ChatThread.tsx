@@ -271,8 +271,12 @@ export function ChatThread({
   }, [closedChatTabIds]);
 
   useEffect(() => {
-    if (selectedChatTabId === "all" || openChatTabs.some((session) => session.id === selectedChatTabId)) return;
-    setSelectedChatTabId("all");
+    if (
+      selectedChatTabId === "start" ||
+      selectedChatTabId === "all" ||
+      openChatTabs.some((session) => session.id === selectedChatTabId)
+    ) return;
+    setSelectedChatTabId("start");
   }, [openChatTabs, selectedChatTabId]);
 
   useEffect(() => {
