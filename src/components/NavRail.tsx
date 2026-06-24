@@ -149,7 +149,7 @@ function sessionTimeLabel(value?: string) {
 }
 
 export function NavRail() {
-  const { view, setView, uiMode, approvals, agents, selected, selectedId, select } = useStore();
+  const { view, setView, uiMode, approvals, agents, selected, selectedId, permissions, setUiMode, select } = useStore();
   const [status, setStatus] = useState<RailStatus | null>(null);
   const [projectChats, setProjectChats] = useState<ProjectChatResponse | null>(null);
   const [approvalCount, setApprovalCount] = useState(approvals.length);
@@ -487,6 +487,19 @@ export function NavRail() {
                 <Icon name="settings" size={17} />
                 <span>Manage Profiles</span>
               </button>
+              {permissions.canAccessAdmin && (
+                <button
+                  className="profile-selector-manage profile-selector-admin"
+                  type="button"
+                  onClick={() => {
+                    setAgentMenuOpen(false);
+                    setUiMode("admin");
+                  }}
+                >
+                  <Icon name="dashboard" size={17} />
+                  <span>Admin</span>
+                </button>
+              )}
             </div>
           )}
         </div>
