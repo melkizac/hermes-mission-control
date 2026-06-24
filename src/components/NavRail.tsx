@@ -11,6 +11,7 @@ type NavLinkItem = { href: string; label: string; icon: Parameters<typeof Icon>[
 type NavItem = NavRouteItem | NavActionItem | NavLinkItem;
 
 type NavGroup = { label: string; items: NavItem[]; system?: boolean };
+type CollapsedGroups = Record<string, boolean>;
 
 function isRouteItem(item: NavItem): item is NavRouteItem {
   return "key" in item;
@@ -74,6 +75,8 @@ const workspaceUtilityItems: NavRouteItem[] = [
   { key: "usage", label: "Usage", icon: "usage" },
   { key: "capabilities", label: "Capabilities", icon: "setup" },
 ];
+
+const collapsibleWorkspaceSections = new Set(["Workspace", "Operations", "Workforce"]);
 
 const adminConsoleGroups: NavGroup[] = [
   {
@@ -151,6 +154,13 @@ export function NavRail() {
   const [approvalCount, setApprovalCount] = useState(approvals.length);
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem("hmc-nav-collapsed") === "true");
+  const [collapsedGroups, setCollapsedGroups] = useState<CollapsedGroups>(() => {
+    try {
+      return JSON.parse(window.localStorage.getItem("hmc-nav-collapsed-groups") || "{}") as CollapsedGroups;
+    } catch {
+      return {};
+    }
+  });
 
   useEffect(() => {
     let alive = true;
@@ -201,12 +211,26 @@ export function NavRail() {
     }
   }, [collapsed]);
 
+  useEffect(() => {
+    window.localStorage.setItem("hmc-nav-collapsed-groups", JSON.stringify(collapsedGroups));
+  }, [collapsedGroups]);
+
   const gatewayOnline = status?.gateway?.running ?? true;
   const visibleGroups = uiMode === "admin" ? adminConsoleGroups : simplifiedWorkspaceGroups;
   const settingsActive = view === "settings";
   const activeProfile = selected ?? agents.find((agent) => agent.id === selectedId) ?? agents[0];
   const activeProfileLabel = activeProfile?.name ?? "Melkizac";
   const activeProfileMeta = activeProfile?.squad || activeProfile?.statusLabel || "Active profile";
+
+  useEffect(() => {
+    const activeGroup = visibleGroups.find((group) => group.items.some((item) => isRouteItem(item) && item.key === view));
+    if (!activeGroup?.label || !collapsibleWorkspaceSections.has(activeGroup.label)) return;
+    setCollapsedGroups((current) => current[activeGroup.label] ? { ...current, [activeGroup.label]: false } : current);
+  }, [view, visibleGroups]);
+
+  function toggleNavGroup(label: string) {
+    setCollapsedGroups((current) => ({ ...current, [label]: !current[label] }));
+  }
 
   async function handleLogout() {
     try {
@@ -260,8 +284,18 @@ export function NavRail() {
       <div className="nav scroll">
         {visibleGroups.map((group) => (
           <div className={"nav-group" + (group.system ? " system-nav" : "")} key={group.label || "primary-chat"}>
-            {group.label && <div className="nlabel">{group.label}</div>}
-            {group.items.map((it) => {
+            {group.label && collapsibleWorkspaceSections.has(group.label) ? (
+              <button
+                className={"nav-section-toggle" + (collapsedGroups[group.label] ? " collapsed" : "")}
+                type="button"
+                onClick={() => toggleNavGroup(group.label)}
+                aria-expanded={!collapsedGroups[group.label]}
+              >
+                <span>{group.label}</span>
+                <Icon name="chevronDown" size={13} />
+              </button>
+            ) : group.label ? <div className="nlabel">{group.label}</div> : null}
+            {(collapsed || !collapsedGroups[group.label] ? group.items : []).map((it) => {
               const active = isRouteItem(it) && view === it.key;
               const key = navItemKey(it);
               const approvalBadge = isRouteItem(it) && it.key === "approvals" && approvalCount > 0
