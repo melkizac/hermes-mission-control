@@ -1714,7 +1714,8 @@ input, select, textarea { font-family: inherit; }
 @media (max-width: 760px) { .audit-detail-drawer, .automation-detail-drawer { width: 100vw; border-radius: 0; } .audit-drawer-scrim, .automation-drawer-scrim { background: rgba(15, 23, 42, .38); } }
 
 /* Agents drawer-first refinement: remove permanent selected-agent details pane */
-.mc.agents-drawer-first { grid-template-columns: 282px minmax(0, 1fr); }
+.mc.agents-drawer-first:not(.agents-no-roster) { grid-template-columns: 282px minmax(0, 1fr); }
+.mc.agents-drawer-first.agents-no-roster { grid-template-columns: minmax(0, 1fr); }
 .mc.agents-drawer-first .center { width: 100%; }
 .agent-action-menu { position: relative; display: inline-flex; align-items: center; }
 .agent-action-menu-trigger { position: relative; }
@@ -1844,7 +1845,7 @@ input, select, textarea { font-family: inherit; }
 .tool-chip { border: 1px solid #dbeafe; background: #eff6ff; color: #1d4ed8; border-radius: 999px; padding: 4px 7px; font-size: 11px; font-weight: 800; }
 .tool-samples { border-top: 1px solid #edf1f5; padding-top: 9px; color: #64748b; font-size: 11px; line-height: 1.55; word-break: break-word; }
 .b-info { background: #eef2ff; color: #3730a3; border-color: #c7d2fe; }
-@media (max-width: 980px) { .mc.agents-drawer-first { grid-template-columns: 250px minmax(0, 1fr); } .chead { flex-wrap: wrap; } }
+@media (max-width: 980px) { .mc.agents-drawer-first:not(.agents-no-roster) { grid-template-columns: 250px minmax(0, 1fr); } .mc.agents-drawer-first.agents-no-roster { grid-template-columns: minmax(0, 1fr); } .chead { flex-wrap: wrap; } }
 @media (max-width: 760px) { .mc.agents-drawer-first { grid-template-columns: 1fr; } .roster { display: none; } .agent-detail-drawer { width: 100vw; border-radius: 0; } .agent-drawer-scrim { background: rgba(15, 23, 42, .38); } }
 
 
