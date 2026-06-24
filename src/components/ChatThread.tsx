@@ -741,6 +741,7 @@ export function ChatThread({
             }}
           />
           <div className="composer-control-row">
+            <div className={showWelcomeStart ? "clean-chat-left-controls" : "agent-composer-left-controls"}>
             <button
               className="plus"
               type="button"
@@ -774,7 +775,8 @@ export function ChatThread({
                 </select>
               </label>
             )}
-            <div className="composer-spacer" />
+            </div>
+            <div className={showWelcomeStart ? "clean-chat-right-controls" : "agent-composer-right-controls"}>
             <label className="model-selector-row" title={modelSelectorLabel}>
               <span className="sr-only">Model</span>
               <select
@@ -806,6 +808,7 @@ export function ChatThread({
             >
               {isProcessing ? <Icon name="stop" size={15} /> : uploading ? "…" : <Icon name="send" size={18} />}
             </button>
+            </div>
           </div>
         </div>
       </div>
