@@ -724,6 +724,83 @@ export function ChatThread({
             ))}
           </div>
         )}
+        {showWelcomeStart && (
+          <div className="clean-chat-composer agent-start-clean-composer">
+            <textarea
+              value={draft}
+              disabled={isProcessing || uploading}
+              rows={2}
+              placeholder={`Ask ${agent.name}`}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void submit();
+                }
+              }}
+            />
+            <div className="clean-chat-toolbar">
+              <div className="clean-chat-left-controls">
+                <label className="clean-chat-plus" title="Add document or image. Max 50MB">
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*,.txt,.md,.csv,.json,.yaml,.yml,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
+                    disabled={isProcessing || uploading || attachments.length >= 8}
+                    onChange={(e) => void onPickFiles(e.currentTarget.files)}
+                  />
+                  <span>+</span>
+                  <small>Add document or image · Max 50MB</small>
+                </label>
+                <label className="clean-select clean-permission-select agent-start-permission-select">
+                  <span aria-hidden="true">⊙</span>
+                  <select
+                    value={startPermissionMode}
+                    onChange={(e) => setStartPermissionMode(e.target.value as AgentStartPermissionMode)}
+                    aria-label="Permission mode"
+                    disabled={isProcessing || uploading}
+                  >
+                    {agentStartPermissionOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="clean-chat-right-controls">
+                <label className="clean-select agent-start-model-select" title={modelSelectorLabel}>
+                  <select
+                    value={selectedModel ? selectedModel.id : "auto"}
+                    onChange={(e) => setModelSelection(e.target.value)}
+                    onFocus={() => void ensureModelRouter()}
+                    onPointerDown={() => void ensureModelRouter()}
+                    disabled={isProcessing || uploading}
+                    aria-label="Select AI model for this message"
+                  >
+                    <option value="auto">{modelRouterLoading ? "Auto · loading models..." : "Auto"}</option>
+                    {enabledModels.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {(model.label || model.model)} · {model.tier}{model.authorized ? "" : " · key missing"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button className="mic" type="button" disabled aria-label="Voice input unavailable" title="Voice input unavailable">
+                  <Icon name="mic" size={18} />
+                </button>
+                <button
+                  className={isProcessing ? "clean-chat-send stop-send" : "clean-chat-send"}
+                  type="button"
+                  onClick={() => (isProcessing ? void stopCurrentMessage() : void submit())}
+                  disabled={uploading || (!isProcessing && !draft.trim() && attachments.length === 0)}
+                  aria-label={isProcessing ? "Stop current message processing" : "Send message"}
+                  title={isProcessing ? "Stop current message processing" : "Send message"}
+                >
+                  {isProcessing ? "■" : "↑"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="cbox composer-card">
           <textarea
             ref={composerInputRef}
