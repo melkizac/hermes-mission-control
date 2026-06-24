@@ -689,7 +689,7 @@ export function ChatThread({
         </button>
       )}
 
-      <div className="composer">
+      <div className={"composer" + (showWelcomeStart ? " agent-start-composer" : "")}>
         {error && <div className="senderror">{error}</div>}
         {replyTo && (
           <div className="reply-context" aria-label="Replying to selected message">
@@ -783,6 +783,14 @@ export function ChatThread({
           </div>
         </div>
       </div>
+      {showWelcomeStart && (
+        <div className="clean-project-strip agent-start-project-strip" aria-label="Project selector">
+          <span aria-hidden="true">▱</span>
+          <select value="" disabled aria-label="Project selector">
+            <option value="">No Project selected</option>
+          </select>
+        </div>
+      )}
     </div>
   );
 }

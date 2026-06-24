@@ -588,17 +588,21 @@ input, select, textarea { font-family: inherit; }
 .chat-session-tab-add { width: 44px; flex: 0 0 44px; border: 0; border-right: 1px solid #e1e7ef; background: transparent; color: #64748b; display: grid; place-items: center; }
 .chat-session-tab-add:hover { background: #eef2f7; color: #111827; }
 .chat-session-tab-add.on { background: #fff; color: #111827; }
-.chat-start-mode { background: #fff; }
+.chat-start-mode { background: #fff; align-items: stretch; padding: clamp(56px, 10vh, 118px) 24px 48px; overflow-y: auto; }
+.chat-start-mode .chat-session-tabs { margin: calc(-1 * clamp(56px, 10vh, 118px)) -24px 0; }
 .chat-start-mode .chead,
 .chat-start-mode .thread,
 .chat-start-mode .jump-to-latest { display: none; }
-.chat-start-hero { flex: 1 1 auto; min-height: 0; display: flex; align-items: flex-end; justify-content: center; padding: 48px 28px 28px; }
-.chat-start-hero h1 { margin: 0; color: #20242c; font-size: 40px; line-height: 1.1; letter-spacing: -.04em; font-weight: 650; text-align: center; }
-.chat-start-mode .composer { position: relative; bottom: auto; z-index: 1; width: min(1120px, calc(100% - 64px)); margin: 0 auto 14vh; padding: 0; border-top: 0; background: transparent; box-shadow: none; }
-.chat-start-mode .cbox.composer-card { min-height: 138px; border-radius: 24px; padding: 22px 22px 16px; box-shadow: 0 26px 70px rgba(20,26,38,.12); border-color: #e1e7ef; }
-.chat-start-mode .cbox .composer-input { min-height: 60px; font-size: 16px; }
-.chat-start-mode .composer-control-row { min-height: 38px; }
-.chat-start-mode .model-selector-row select { font-size: 14px; }
+.chat-start-hero { width: 100%; max-width: 1060px; margin: 0 auto; display: grid; justify-items: center; flex: 0 0 auto; min-height: 0; padding: 0; }
+.chat-start-hero h1 { margin: 0 0 62px; text-align: center; font-size: clamp(2.05rem, 3.2vw, 3rem); line-height: 1.1; font-weight: 500; letter-spacing: -0.04em; color: #202124; }
+.chat-start-mode .composer { position: relative; bottom: auto; z-index: 1; width: 100%; max-width: 1060px; margin: 0 auto; padding: 0; border-top: 0; background: transparent; box-shadow: none; flex: 0 0 auto; }
+.chat-start-mode .cbox.composer-card { min-height: 142px; border: 1px solid #e8eaed; border-radius: 30px; background: #fff; box-shadow: 0 18px 35px rgba(60,64,67,.16), 0 1px 2px rgba(60,64,67,.08); display: grid; grid-template-rows: 1fr auto; overflow: hidden; padding: 0; }
+.chat-start-mode .cbox .composer-input { width: 100%; min-height: 68px; max-height: calc(10 * 1.5em + 32px); resize: none; overflow-y: hidden; border: 0; outline: none; padding: 24px 18px 8px; font: inherit; font-size: 1.05rem; line-height: 1.5; color: #202124; background: transparent; }
+.chat-start-mode .cbox .composer-input::placeholder { color: #c7c9cc; }
+.chat-start-mode .composer-control-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 0; padding: 11px 12px 13px 18px; }
+.chat-start-mode .composer-spacer { flex: 1 1 auto; }
+.chat-start-mode .model-selector-row select { font-size: 1rem; color: #6b7280; }
+.chat-start-mode .agent-start-project-strip { width: 100%; max-width: 1060px; margin: 0 auto; flex: 0 0 auto; }
 .chead { display: flex; align-items: center; gap: 11px; padding: 13px 18px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
 .chead .av { width: 30px; height: 30px; border-radius: 8px; font-size: 12px; }
 .chead .nm { font-size: 14px; font-weight: 700; }
