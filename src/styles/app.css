@@ -589,7 +589,7 @@ input, select, textarea { font-family: inherit; }
 .chat-session-tab-add:hover { background: #eef2f7; color: #111827; }
 .chat-session-tab-add.on { background: #fff; color: #111827; }
 .chat-start-mode { background: #fff; align-items: stretch; padding: clamp(56px, 10vh, 118px) 24px 48px; overflow-y: auto; }
-.chat-start-mode .chat-session-tabs { margin: calc(-1 * clamp(56px, 10vh, 118px)) -24px 0; }
+.chat-start-mode .chat-session-tabs { margin: calc(-1 * clamp(56px, 10vh, 118px)) -24px clamp(48px, 9vh, 118px); }
 .chat-start-mode .chead,
 .chat-start-mode .thread,
 .chat-start-mode .jump-to-latest { display: none; }
