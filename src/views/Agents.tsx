@@ -3,7 +3,6 @@ import { useStore } from "../services/store";
 import { ChatThread } from "../components/ChatThread";
 import { ContextPanel } from "../components/ContextPanel";
 import { WorkerTranscriptDrawer } from "../components/WorkerTranscriptDrawer";
-import { AgentAvatar } from "../components/AgentAvatar";
 import { cachedJsonRequest } from "../services/queryCache";
 import type { Agent, ModelUsageLimitSummary, ModelUsageWindow, ProjectChatResponse } from "../types";
 
@@ -137,7 +136,7 @@ function AgentRateLimitsDrawer({ agent, onClose }: { agent: Agent; onClose: () =
 }
 
 export function Agents() {
-  const { agents, selected, loading, selectedId, select } = useStore();
+  const { agents, selected, loading, selectedId } = useStore();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [workerLogOpen, setWorkerLogOpen] = useState(false);
   const [rateLimitsOpen, setRateLimitsOpen] = useState(false);
@@ -192,39 +191,7 @@ export function Agents() {
 
   if (manageProfilesOpen) {
     return (
-      <div className="mc agents-drawer-first" data-deeplink-target="manage-profiles">
-        <aside className="roster agent-manage-roster" aria-label="Manage profiles">
-          <div className="rhead">
-            <h2>Manage Profiles</h2>
-          </div>
-          <div className="alist scroll">
-            {(agents.length ? agents : activeAgent ? [activeAgent] : []).map((agent) => {
-              const active = agent.id === activeAgent?.id;
-              return (
-                <button
-                  key={agent.id}
-                  className={"agent" + (active ? " on" : "")}
-                  type="button"
-                  onClick={() => select(agent.id)}
-                >
-                  <AgentAvatar agent={agent} />
-                  <span className="a-main">
-                    <span className="a-top">
-                      <span className="a-name">{agent.name}</span>
-                      <span className="a-time">{agent.lastActive || ""}</span>
-                    </span>
-                    <span className="a-sub">{agent.model || agent.squad || agent.statusLabel || "Agent profile"}</span>
-                    <span className={`badge b-${agent.status === "active" || agent.status === "working" ? "work" : agent.status === "error" ? "err" : "idle"}`}>
-                      <span className="sdot" /> {agent.statusLabel || agent.status || "idle"}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
-            {!agents.length && !activeAgent && <div className="empty big">No profiles available.</div>}
-          </div>
-        </aside>
-
+      <div className="mc agents-drawer-first agents-no-roster" data-deeplink-target="manage-profiles">
         {activeAgent ? (
           <ContextPanel agent={activeAgent} />
         ) : (
