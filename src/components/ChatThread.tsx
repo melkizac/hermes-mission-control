@@ -120,7 +120,7 @@ export function ChatThread({
   selectedProjectId?: string;
   selectedSessionId?: string;
 }) {
-  const { send, stopProcessing, uploadAttachment, refreshSelected, getModelRouter } = useStore();
+  const { send, stopProcessing, uploadAttachment, refreshSelected, getModelRouter, me } = useStore();
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [replyTo, setReplyTo] = useState<ReplyContext | null>(null);
@@ -136,7 +136,7 @@ export function ChatThread({
   const [lastSeenKey, setLastSeenKey] = useState<string | null | undefined>(undefined);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [agentActionMenuOpen, setAgentActionMenuOpen] = useState(false);
-  const [selectedChatTabId, setSelectedChatTabId] = useState<string>(selectedSessionId);
+  const [selectedChatTabId, setSelectedChatTabId] = useState<string>("start");
   const [closedChatTabIds, setClosedChatTabIds] = useState<string[]>(() => {
     try {
       return JSON.parse(window.localStorage.getItem("hmc:closed-chat-tabs") || "[]") as string[];
@@ -175,7 +175,9 @@ export function ChatThread({
         .slice(0, 6),
     [closedChatTabIds, projectSessions],
   );
-  const effectiveSelectedSessionId = selectedChatTabId === "all" || openChatTabs.some((session) => session.id === selectedChatTabId)
+  const effectiveSelectedSessionId = selectedChatTabId === "start"
+    ? "all"
+    : selectedChatTabId === "all" || openChatTabs.some((session) => session.id === selectedChatTabId)
     ? selectedChatTabId
     : selectedSessionId;
   const scopedSessionIds = useMemo(() => new Set(projectSessions.map((session) => session.id)), [projectSessions]);
@@ -231,6 +233,7 @@ export function ChatThread({
     [activeLocalRequest?.id, sortedMessages],
   );
   const visiblePendingMessage = pendingMessage?.agentId === agent.id && !pendingBackendUserVisible ? pendingMessage : null;
+  const showWelcomeStart = selectedChatTabId === "start" && !visiblePendingMessage && !activeBackendRequestId;
   const activeBackendStartedAt = activeBackendUserMessage?.ts
     ? activeBackendUserMessage.ts * 1000
     : activeBackendRequestDetail?.started_at
@@ -260,7 +263,7 @@ export function ChatThread({
   }, [draft]);
 
   useEffect(() => {
-    setSelectedChatTabId(selectedSessionId);
+    if (selectedSessionId !== "all") setSelectedChatTabId(selectedSessionId);
   }, [selectedSessionId]);
 
   useEffect(() => {
@@ -411,6 +414,7 @@ export function ChatThread({
     setDraft("");
     setAttachments([]);
     setReplyTo(null);
+    setSelectedChatTabId("all");
     setPendingMessage({ agentId: agent.id, text, attachments: sentAttachments, replyTo: sentReplyTo ?? undefined });
     const startedAt = Date.now();
     setProcessingStartedAt({ agentId: agent.id, startedAt });
@@ -523,8 +527,12 @@ export function ChatThread({
     if (selectedChatTabId === sessionId) setSelectedChatTabId("all");
   }
 
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const displayName = (me?.user?.name || "Melverick").split(/\s+/)[0] || "Melverick";
+
   return (
-    <div className="center" onPaste={handlePasteIntoChat}>
+    <div className={"center" + (showWelcomeStart ? " chat-start-mode" : "")} onPaste={handlePasteIntoChat}>
       {openChatTabs.length > 0 && (
         <div className="chat-session-tabs" role="tablist" aria-label="Open chat sessions">
           {openChatTabs.map((session) => {
@@ -542,10 +550,15 @@ export function ChatThread({
               </div>
             );
           })}
-          <button type="button" className="chat-session-tab-add" onClick={() => setSelectedChatTabId("all")} aria-label="Show all chat sessions" title="Show all chat sessions">
+          <button type="button" className={"chat-session-tab-add" + (selectedChatTabId === "start" ? " on" : "")} onClick={() => setSelectedChatTabId("start")} aria-label="Start a new chat" title="Start a new chat">
             <Icon name="plus" size={16} />
           </button>
         </div>
+      )}
+      {showWelcomeStart && (
+        <section className="chat-start-hero" aria-label="Start a new chat">
+          <h1>{greeting}, {displayName}!</h1>
+        </section>
       )}
       <div className="chead">
         <AgentAvatar agent={agent} />
@@ -700,7 +713,7 @@ export function ChatThread({
           <textarea
             ref={composerInputRef}
             className="composer-input"
-            placeholder={uploading ? "Uploading attachment…" : isProcessing ? `${agent.name} is processing…` : `Send a task or message to ${agent.name}…`}
+            placeholder={uploading ? "Uploading attachment…" : isProcessing ? `${agent.name} is processing…` : showWelcomeStart ? `Ask ${agent.name}` : `Send a task or message to ${agent.name}…`}
             value={draft}
             disabled={isProcessing || uploading}
             rows={1}
