@@ -51,12 +51,6 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
     ],
   },
   {
-    label: "Workforce",
-    items: [
-      { key: "agent-org", label: "Org Chart", icon: "agentOrg" },
-    ],
-  },
-  {
     label: "System",
     system: true,
     items: [
@@ -71,10 +65,11 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
 
 const workspaceUtilityItems: NavRouteItem[] = [
   { key: "approvals", label: "Approvals", icon: "approvals" },
+  { key: "agent-org", label: "Org Chart", icon: "agentOrg" },
   { key: "capabilities", label: "Capabilities", icon: "setup" },
 ];
 
-const collapsibleWorkspaceSections = new Set(["Workspace", "Operations", "Workforce"]);
+const collapsibleWorkspaceSections = new Set(["Workspace", "Operations"]);
 
 const adminConsoleGroups: NavGroup[] = [
   {
