@@ -273,7 +273,10 @@ export function ChatThread({
   }, [draft]);
 
   useEffect(() => {
-    if (selectedSessionId !== "all") setSelectedChatTabId(selectedSessionId);
+    if (selectedSessionId !== "all") {
+      setClosedChatTabIds((current) => current.filter((id) => id !== selectedSessionId));
+      setSelectedChatTabId(selectedSessionId);
+    }
   }, [selectedSessionId]);
 
   useEffect(() => {
@@ -554,7 +557,17 @@ export function ChatThread({
             const active = effectiveSelectedSessionId === session.id;
             return (
               <div className={"chat-session-tab" + (active ? " on" : "")} key={session.id}>
-                <button type="button" role="tab" aria-selected={active} onClick={() => setSelectedChatTabId(session.id)} title={label}>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent("hmc:open-chat-session", { detail: { sessionId: session.id } }));
+                    setClosedChatTabIds((current) => current.filter((id) => id !== session.id));
+                    setSelectedChatTabId(session.id);
+                  }}
+                  title={label}
+                >
                   <span className="chat-session-tab-avatar">{chatTabInitial(label)}</span>
                   <b>{label}</b>
                 </button>
@@ -564,7 +577,13 @@ export function ChatThread({
               </div>
             );
           })}
-          <button type="button" className={"chat-session-tab-add" + (selectedChatTabId === "start" ? " on" : "")} onClick={() => setSelectedChatTabId("start")} aria-label="Start a new chat" title="Start a new chat">
+          <button
+            type="button"
+            className={"chat-session-tab-add" + (selectedChatTabId === "start" ? " on" : "")}
+            onClick={() => setSelectedChatTabId("start")}
+            aria-label="Start a new chat"
+            title="Start a new chat"
+          >
             <Icon name="plus" size={16} />
           </button>
         </div>

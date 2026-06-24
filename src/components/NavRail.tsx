@@ -262,6 +262,7 @@ export function NavRail() {
     const needle = [session.project_owner, session.project_name, session.source, session.origin].filter(Boolean).join(" ").toLowerCase();
     const matchedAgent = agents.find((agent) => needle.includes(agent.id.toLowerCase()) || needle.includes(agent.name.toLowerCase()));
     if (matchedAgent) select(matchedAgent.id);
+    window.dispatchEvent(new CustomEvent("hmc:open-chat-session", { detail: { sessionId: session.id } }));
     setView("agents");
   }
 

@@ -136,14 +136,14 @@ function AgentRateLimitsDrawer({ agent, onClose }: { agent: Agent; onClose: () =
 }
 
 export function Agents() {
-  const { agents, selected, loading, selectedId } = useStore();
+  const { agents, selected, loading, selectedId, select } = useStore();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [workerLogOpen, setWorkerLogOpen] = useState(false);
   const [rateLimitsOpen, setRateLimitsOpen] = useState(false);
   const [projectChats, setProjectChats] = useState<ProjectChatResponse | null>(null);
   const [manageProfilesOpen, setManageProfilesOpen] = useState(() => window.sessionStorage.getItem("hmc:agents-manage-mode") === "true");
   const selectedProjectId = "all";
-  const selectedSessionId = "all";
+  const [selectedSessionId, setSelectedSessionId] = useState("all");
 
   useEffect(() => {
     const close = (event: KeyboardEvent) => {
@@ -179,13 +179,27 @@ export function Agents() {
   useEffect(() => {
     const openManage = () => setManageProfilesOpen(true);
     const openChat = () => setManageProfilesOpen(false);
+    const openChatSession = (event: Event) => {
+      const sessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId;
+      if (!sessionId) return;
+      const session = projectChats?.sessions.find((item) => item.id === sessionId);
+      if (session) {
+        const needle = [session.project_owner, session.project_name, session.source, session.origin].filter(Boolean).join(" ").toLowerCase();
+        const matchedAgent = agents.find((agent) => needle.includes(agent.id.toLowerCase()) || needle.includes(agent.name.toLowerCase()));
+        if (matchedAgent) select(matchedAgent.id);
+      }
+      setManageProfilesOpen(false);
+      setSelectedSessionId(sessionId);
+    };
     window.addEventListener("hmc:open-manage-profiles", openManage);
     window.addEventListener("hmc:agents-chat-mode", openChat);
+    window.addEventListener("hmc:open-chat-session", openChatSession);
     return () => {
       window.removeEventListener("hmc:open-manage-profiles", openManage);
       window.removeEventListener("hmc:agents-chat-mode", openChat);
+      window.removeEventListener("hmc:open-chat-session", openChatSession);
     };
-  }, []);
+  }, [agents, projectChats, select]);
 
   const activeAgent = selected ?? agents.find((agent) => agent.id === selectedId) ?? agents[0];
 
