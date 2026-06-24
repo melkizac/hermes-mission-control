@@ -599,11 +599,14 @@ input, select, textarea { font-family: inherit; }
 .chat-start-mode .cbox.composer-card { min-height: 142px; border: 1px solid #e8eaed; border-radius: 30px; background: #fff; box-shadow: 0 18px 35px rgba(60,64,67,.16), 0 1px 2px rgba(60,64,67,.08); display: grid; grid-template-rows: 1fr auto; overflow: hidden; padding: 0; }
 .chat-start-mode .cbox .composer-input { width: 100%; min-height: 68px; max-height: calc(10 * 1.5em + 32px); resize: none; overflow-y: hidden; border: 0; outline: none; padding: 24px 18px 8px; font: inherit; font-size: 1.05rem; line-height: 1.5; color: #202124; background: transparent; }
 .chat-start-mode .cbox .composer-input::placeholder { color: #c7c9cc; }
-.chat-start-mode .composer-control-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 0; padding: 11px 12px 13px 18px; }
+.chat-start-mode .composer-control-row { display: flex; align-items: center; justify-content: flex-start; gap: 18px; min-height: 0; padding: 11px 12px 13px 18px; width: 100%; }
 .chat-start-mode .composer-spacer { flex: 1 1 auto; }
 .chat-start-mode .agent-start-permission-select { color: #c46d38; font-weight: 700; }
 .chat-start-mode .agent-start-permission-select select { color: #c46d38; font-weight: 700; }
+.chat-start-mode .model-selector-row { margin-left: auto; display: inline-flex; align-items: center; }
 .chat-start-mode .model-selector-row select { font-size: 1rem; color: #6b7280; }
+.chat-start-mode .mic,
+.chat-start-mode .send { flex: 0 0 auto; }
 .chat-start-mode .agent-start-project-strip { width: 100%; max-width: 1060px; margin: 0 auto; flex: 0 0 auto; }
 .chead { display: flex; align-items: center; gap: 11px; padding: 13px 18px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
 .chead .av { width: 30px; height: 30px; border-radius: 8px; font-size: 12px; }
