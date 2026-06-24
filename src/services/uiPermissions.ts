@@ -24,7 +24,6 @@ export const adminOnlyViews = new Set<ViewKey>([
   "desktop-gateway",
   "approval-policy",
   "quota",
-  "settings",
 ]);
 
 export const workspaceViews = new Set<ViewKey>([
@@ -50,6 +49,7 @@ export const workspaceViews = new Set<ViewKey>([
   "browser-ops",
   "audit",
   "models",
+  "settings",
   "usage",
   "research-runs",
 ]);
@@ -103,6 +103,7 @@ export function viewLabelForRole(role: UserRole, view: ViewKey, fallback: string
     "second-brain": "Workspace Knowledge",
     audit: "My Audit / Evidence",
     usage: "Usage remaining",
+    settings: "Settings",
   };
   return labels[view] ?? fallback;
 }

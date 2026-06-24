@@ -80,7 +80,7 @@ const adminConsoleGroups: NavGroup[] = [
   {
     label: "Platform",
     items: [
-      { key: "settings", label: "Admin Console", icon: "dashboard" },
+      { key: "desktop-gateway", label: "Admin Console", icon: "dashboard" },
       { key: "users-workspaces", label: "Users & Workspaces", icon: "profile" },
       { key: "workspace-runtime-console", label: "Workspace Runtime Console", icon: "runtimes" },
       { key: "agent-platform-admin", label: "Platform Agent Org", icon: "agentOrg" },
@@ -90,7 +90,6 @@ const adminConsoleGroups: NavGroup[] = [
   {
     label: "Runtime",
     items: [
-      { key: "desktop-gateway", label: "Hermes Desktop", icon: "dashboard" },
       { key: "runtimes", label: "Runtime Connectors", icon: "runtimes" },
       { key: "workflow-library", label: "Workflow Templates Admin", icon: "skills" },
       { key: "research-runs", label: "Research Run Monitor", icon: "audit" },
@@ -126,11 +125,6 @@ type RailStatus = {
   gateway?: { running?: boolean };
 };
 
-type UsageWindow = { label?: string; percent_used?: number; remaining_percent?: number; reset_label?: string };
-type UsageRemainingSummary = {
-  daily?: UsageWindow;
-  weekly?: UsageWindow;
-};
 type InboxSummary = { drafted?: number; ready?: number };
 type InboxItem = { status?: string };
 type InboxPayload = { summary?: InboxSummary; items?: InboxItem[] };
@@ -140,14 +134,6 @@ async function requestStatus(): Promise<RailStatus> {
   const res = await fetch(url, { credentials: "include", headers: { Accept: "application/json" } });
   if (!res.ok) throw new Error(res.statusText);
   return res.json() as Promise<RailStatus>;
-}
-
-async function requestUsageRemaining(): Promise<UsageRemainingSummary | null> {
-  const url = `${window.location.protocol}//${window.location.host}/api/costs?days=30`;
-  const res = await fetch(url, { credentials: "include", headers: { Accept: "application/json" } });
-  if (!res.ok) throw new Error(res.statusText);
-  const data = await res.json() as { model_usage?: UsageRemainingSummary };
-  return data.model_usage ?? null;
 }
 
 async function requestApprovalCount(fallbackCount: number): Promise<number> {
@@ -160,38 +146,11 @@ async function requestApprovalCount(fallbackCount: number): Promise<number> {
   return inbox.items.filter((item) => item.status === "drafted" || item.status === "ready").length;
 }
 
-function remainingPercent(window?: UsageWindow) {
-  const explicit = Number(window?.remaining_percent);
-  if (Number.isFinite(explicit)) return `${Math.max(0, Math.min(100, Math.round(explicit)))}%`;
-  if (window?.percent_used === undefined || window?.percent_used === null) return "—";
-  const used = Number(window.percent_used);
-  if (!Number.isFinite(used)) return "—";
-  return `${Math.max(0, Math.min(100, Math.round(100 - used)))}%`;
-}
-
-function UsageRemainingPeek({ usage }: { usage: UsageRemainingSummary | null }) {
-  const rows = [usage?.daily, usage?.weekly].filter(Boolean) as UsageWindow[];
-  return (
-    <div className="settings-usage-peek" aria-label="Rate limits summary">
-      {(rows.length ? rows : [{ label: "5h" }, { label: "Weekly" }]).map((row) => (
-        <div className="settings-usage-row" key={row.label}>
-          <b>{row.label}</b>
-          <span>{remainingPercent(row)}</span>
-          <em>{row.reset_label || "—"}</em>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export function NavRail() {
-  const { view, setView, uiMode, setUiMode, permissions, approvals, agents, selected, selectedId, select } = useStore();
+  const { view, setView, uiMode, approvals, agents, selected, selectedId, select } = useStore();
   const [status, setStatus] = useState<RailStatus | null>(null);
-  const [usageRemaining, setUsageRemaining] = useState<UsageRemainingSummary | null>(null);
   const [approvalCount, setApprovalCount] = useState(approvals.length);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
-  const [usagePeekOpen, setUsagePeekOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem("hmc-nav-collapsed") === "true");
 
   useEffect(() => {
@@ -237,33 +196,15 @@ export function NavRail() {
   }, [approvals.length]);
 
   useEffect(() => {
-    if (!settingsOpen || !usagePeekOpen) return;
-    let alive = true;
-    requestUsageRemaining()
-      .then((next) => { if (alive) setUsageRemaining(next); })
-      .catch(() => { if (alive) setUsageRemaining(null); });
-    return () => { alive = false; };
-  }, [settingsOpen, usagePeekOpen]);
-
-  useEffect(() => {
-    if (settingsOpen) setUsagePeekOpen(true);
-  }, [settingsOpen]);
-
-  useEffect(() => {
     window.localStorage.setItem("hmc-nav-collapsed", String(collapsed));
     if (collapsed) {
-      setSettingsOpen(false);
-      setUsagePeekOpen(false);
       setAgentMenuOpen(false);
     }
   }, [collapsed]);
 
   const gatewayOnline = status?.gateway?.running ?? true;
   const visibleGroups = uiMode === "admin" ? adminConsoleGroups : simplifiedWorkspaceGroups;
-  const workspaceSystemGroup = simplifiedWorkspaceGroups.find((group) => group.system);
-  const workspaceSystemItems = workspaceSystemGroup?.items ?? [];
-  const settingsMenuItems = workspaceSystemItems.filter((item) => !(isRouteItem(item) && item.key === "usage"));
-  const settingsActive = view === "profile" || view === "settings" || view === "models" || view === "usage";
+  const settingsActive = view === "settings";
   const activeProfile = selected ?? agents.find((agent) => agent.id === selectedId) ?? agents[0];
   const activeProfileLabel = activeProfile?.name ?? "Melkizac";
   const activeProfileMeta = activeProfile?.squad || activeProfile?.statusLabel || "Active profile";
@@ -278,20 +219,6 @@ export function NavRail() {
     } finally {
       window.location.href = "/login";
     }
-  }
-
-  function switchToUserMode() {
-    window.history.pushState({}, "", "/app");
-    setUiMode("workspace");
-    setView("mission");
-    setSettingsOpen(false);
-  }
-
-  function switchToAdminMode() {
-    window.history.pushState({}, "", "/admin");
-    setUiMode("admin");
-    setView("settings");
-    setSettingsOpen(false);
   }
 
   return (
@@ -386,7 +313,6 @@ export function NavRail() {
                 data-tooltip={item.label}
                 onClick={() => {
                   setView(item.key);
-                  setSettingsOpen(false);
                 }}
               >
                 <Icon name={item.icon} size={18} />
@@ -395,12 +321,10 @@ export function NavRail() {
             );
           })}
           <button
-            className={"utility-dock-button utility-settings-button" + (settingsActive || settingsOpen ? " on" : "")}
+            className={"utility-dock-button utility-settings-button" + (settingsActive ? " on" : "")}
             type="button"
-            onClick={() => setSettingsOpen((open) => !open)}
-            aria-haspopup="menu"
-            aria-expanded={settingsOpen}
-            aria-label={settingsOpen ? "Hide Settings menu with rate limit details" : "Open Settings menu with rate limit details"}
+            onClick={() => setView("settings")}
+            aria-label="Open Settings"
             title="Settings"
             data-tooltip="Settings"
           >
@@ -462,97 +386,6 @@ export function NavRail() {
         </div>
       )}
 
-      {!collapsed && (
-        <div className="settings-dock">
-          {settingsOpen && (
-            <div className="settings-menu" role="menu" aria-label="System menu">
-              {permissions.accountIsAdmin && (
-                <div className="settings-mode-toggle settings-mode-toggle-two" aria-label="Profile mode">
-                  <button
-                    className={"settings-mode-toggle-button" + (uiMode === "workspace" ? " on" : "")}
-                    aria-pressed={uiMode === "workspace"}
-                    onClick={switchToUserMode}
-                    type="button"
-                  >
-                    User
-                  </button>
-                  <button
-                    className={"settings-mode-toggle-button" + (uiMode === "admin" ? " on" : "")}
-                    aria-pressed={uiMode === "admin"}
-                    onClick={switchToAdminMode}
-                    type="button"
-                  >
-                    Admin
-                  </button>
-                </div>
-              )}
-              {settingsMenuItems.map((it, index) => {
-                const active = isRouteItem(it) && view === it.key;
-                const key = navItemKey(it);
-                if (isLinkItem(it)) {
-                  return (
-                    <div key={key}>
-                      {index === 2 && <div className="settings-menu-divider" />}
-                      <a className="settings-menu-item" href={it.href} role="menuitem">
-                        <Icon name={it.icon} size={17} />
-                        {it.label}
-                      </a>
-                    </div>
-                  );
-                }
-                const onClick = isRouteItem(it)
-                  ? () => {
-                      setView(it.key);
-                      setSettingsOpen(false);
-                    }
-                  : () => {
-                      setSettingsOpen(false);
-                      void handleLogout();
-                    };
-                if (isRouteItem(it) && it.key === "usage") {
-                  return (
-                    <div key={key}>
-                      {index === 2 && <div className="settings-menu-divider" />}
-                      <div className={"settings-menu-row" + (active ? " on" : "")}>
-                        <button
-                          className="settings-menu-item settings-menu-primary"
-                          onClick={onClick}
-                          role="menuitem"
-                        >
-                          <Icon name={it.icon} size={17} />
-                          {it.label}
-                        </button>
-                        <button
-                          className={"settings-menu-expand" + (usagePeekOpen ? " open" : "")}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setUsagePeekOpen((open) => !open);
-                          }}
-                          aria-label={usagePeekOpen ? "Hide rate limits details" : "Show rate limits details"}
-                          aria-expanded={usagePeekOpen}
-                          title={usagePeekOpen ? "Hide rate limits details" : "Show rate limits details"}
-                        >
-                          <Icon name="chevronDown" size={15} />
-                        </button>
-                      </div>
-                      {usagePeekOpen && <UsageRemainingPeek usage={usageRemaining} />}
-                    </div>
-                  );
-                }
-                return (
-                  <div key={key}>
-                    {index === 2 && <div className="settings-menu-divider" />}
-                    <button className={"settings-menu-item" + (active ? " on" : "")} onClick={onClick} role="menuitem">
-                      <Icon name={it.icon} size={17} />
-                      {it.label}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
     </nav>
   );
 }

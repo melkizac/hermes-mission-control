@@ -26,6 +26,7 @@ import { PluginsHub } from "./views/PluginsHub";
 import { CostDashboard } from "./views/CostDashboard";
 import { UsageRemaining } from "./views/UsageRemaining";
 import { ModelRouter } from "./views/ModelRouter";
+import { SettingsPage } from "./views/SettingsPage";
 import { HermesDesktopAdmin } from "./views/HermesDesktopAdmin";
 import { MissionControlDocs } from "./views/MissionControlDocs";
 import { LandingPage } from "./views/LandingPage";
@@ -33,7 +34,6 @@ import { LoginPage } from "./views/LoginPage";
 import { AdminSetupPage } from "./views/AdminSetupPage";
 import { BrowserOperations } from "./views/BrowserOperations";
 import { ResearchRuns } from "./views/ResearchRuns";
-import { Placeholder } from "./views/Placeholder";
 import { parseMissionControlDeepLink } from "./services/deepLinks";
 import { recordRouteTelemetry } from "./services/performanceTelemetry";
 
@@ -95,7 +95,7 @@ function Shell() {
         {canRenderView && view === "dashboard" && <Dashboard />}
         {canRenderView && view === "delegate-work" && <DelegateWork />}
         {canRenderView && view === "workflow-library" && <WorkflowLibrary />}
-        {canRenderView && view === "profile" && <Placeholder title="Account Settings" blurb="Account identity and operator preferences for your Mission Control workspace." />}
+        {canRenderView && view === "profile" && <SettingsPage />}
         {canRenderView && view === "agents" && <Agents />}
         {canRenderView && view === "agent-voice" && <AgentVoice />}
         {canRenderView && view === "agent-org" && <AgentOrg />}
@@ -116,7 +116,7 @@ function Shell() {
         {canRenderView && view === "usage" && <UsageRemaining />}
         {canRenderView && view === "costs" && <CostDashboard />}
         {canRenderView && view === "models" && <ModelRouter />}
-        {canRenderView && view === "settings" && <HermesDesktopAdmin />}
+        {canRenderView && view === "settings" && <SettingsPage />}
         {canRenderView && view === "agent-platform-admin" && <AdminSetupPage kind="agent-platform-admin" />}
         {canRenderView && view === "users-workspaces" && <AdminSetupPage kind="users-workspaces" />}
         {canRenderView && view === "workspace-runtime-console" && <AdminSetupPage kind="workspace-runtime-console" />}

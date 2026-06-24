@@ -57,7 +57,7 @@ export function parseMissionControlDeepLink(input: string | URL | Location = win
     const topLevelView = normalizedPath.startsWith("/") ? normalizedPath.slice(1) as ViewKey : null;
     if (topLevelView && allowedViews.has(topLevelView)) target.view = topLevelView;
   }
-  if (!target.view && normalizedPath === "/admin") target.view = "settings";
+  if (!target.view && normalizedPath === "/admin") target.view = "desktop-gateway";
   const taskId = params.get("task") || params.get("task_id");
   const approvalId = params.get("approval") || params.get("approval_id");
   const agentId = params.get("agent") || params.get("agent_id");
@@ -81,7 +81,7 @@ export function buildMissionControlUrl(target: MissionControlDeepLinkTarget, ori
   if (target.agentId) params.set("agent", target.agentId);
   const query = params.toString();
   // Keep these examples literal for regression docs/tests: view=approvals&approval=, view=board&task=, view=agents&agent=
-  const adminViews = new Set<ViewKey>(["settings", "agent-platform-admin", "users-workspaces", "workspace-runtime-console", "shared-agent-templates", "runtimes", "desktop-gateway", "models", "capabilities", "costs", "approval-policy", "quota"]);
+  const adminViews = new Set<ViewKey>(["agent-platform-admin", "users-workspaces", "workspace-runtime-console", "shared-agent-templates", "runtimes", "desktop-gateway", "models", "capabilities", "costs", "approval-policy", "quota"]);
   const basePath = adminViews.has(view) ? "/admin" : "/app";
   return `${origin.replace(/\/$/, "")}${basePath}?${query}`;
 }
