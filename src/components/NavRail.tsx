@@ -32,11 +32,6 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
     label: "",
     items: [
       { key: "agents", label: "Chat", icon: "chat" },
-    ],
-  },
-  {
-    label: "Workspace",
-    items: [
       { key: "dashboard", label: "Dashboard", icon: "dashboard" },
       { key: "projects", label: "Projects", icon: "projects" },
       { key: "files", label: "Files", icon: "folder" },
@@ -63,7 +58,7 @@ const workspaceUtilityItems: NavRouteItem[] = [
   { key: "capabilities", label: "Capabilities", icon: "setup" },
 ];
 
-const collapsibleWorkspaceSections = new Set(["Workspace", "Operations"]);
+const collapsibleWorkspaceSections = new Set<string>();
 
 const adminConsoleGroups: NavGroup[] = [
   {
