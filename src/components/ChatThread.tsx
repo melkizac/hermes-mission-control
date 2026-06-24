@@ -8,7 +8,6 @@ import { formatSingaporeTime } from "../utils/time";
 const ONE_DAY_SECONDS = 24 * 60 * 60;
 
 type AgentStartPermissionMode = "full-policy" | "ask-critical" | "draft-only";
-
 const agentStartPermissionOptions: Array<{ value: AgentStartPermissionMode; label: string }> = [
   { value: "full-policy", label: "Full access" },
   { value: "ask-critical", label: "Ask permission" },
@@ -857,14 +856,14 @@ export function ChatThread({
             <label className="model-selector-row" title={modelSelectorLabel}>
               <span className="sr-only">Model</span>
               <select
-                value={selectedModel ? selectedModel.id : "auto"}
-                onChange={(e) => setModelSelection(e.target.value)}
+                  value={selectedModel ? selectedModel.id : "auto"}
+                  onChange={(e) => setModelSelection(e.target.value)}
                 onFocus={() => void ensureModelRouter()}
                 onPointerDown={() => void ensureModelRouter()}
                 disabled={isProcessing || uploading}
                 aria-label="Select AI model for this message"
               >
-                <option value="auto">{modelRouterLoading ? "Auto · loading models…" : "Auto"}</option>
+                <option value="auto">{modelRouterLoading ? "Auto · loading models..." : "Auto"}</option>
                 {enabledModels.map((model) => (
                   <option key={model.id} value={model.id}>
                     {(model.label || model.model)} · {model.tier}{model.authorized ? "" : " · key missing"}

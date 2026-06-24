@@ -6,13 +6,11 @@ import { Icon } from "../components/Icon";
 import { cachedJsonRequest } from "../services/queryCache";
 import { buildChatIntentPreview, confidenceFromScore, routeChatIntent, serializeChatIntentDecision } from "../services/chatIntentRouter";
 import type { ChatIntentDecision, ChatIntentPreview, ChatIntentNextAction, ChatIntentType, ChatMissionContext, ChatRoutineContext, ChatWorkflowContext } from "../services/chatIntentRouter";
-import type { Attachment, AutomationsResponse, BoardResponse, BoardTask, Message, ProjectRecord, ProjectsResponse, ReplyContext, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
+import type { Attachment, AutomationsResponse, BoardResponse, BoardTask, Message, ModelRoutingSelection, ProjectRecord, ProjectsResponse, ReplyContext, RouterConfig, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
 
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
 type ChatPermissionMode = "ask-critical" | "full-policy" | "draft-only";
-type ChatModelMode = "auto" | "gpt-55-medium" | "fast" | "deep";
-
 type ChatIntentRoutingActionId =
   | "send_to_agent"
   | "create_task"
@@ -168,13 +166,6 @@ const permissionModeOptions: Array<{ value: ChatPermissionMode; label: string; p
   { value: "full-policy", label: "Full access", promptLabel: "Full access within policy" },
   { value: "ask-critical", label: "Ask permission", promptLabel: "Ask before critical actions" },
   { value: "draft-only", label: "Draft only", promptLabel: "Draft only" },
-];
-
-const modelModeOptions: Array<{ value: ChatModelMode; label: string; promptLabel: string }> = [
-  { value: "auto", label: "AUTO", promptLabel: "AUTO — Melkizac decides" },
-  { value: "gpt-55-medium", label: "5.5 Medium", promptLabel: "5.5 Medium" },
-  { value: "fast", label: "Fast", promptLabel: "Fast" },
-  { value: "deep", label: "Deep", promptLabel: "Deep reasoning" },
 ];
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -458,7 +449,7 @@ function formatRunDuration(ms: number) {
 }
 
 export function MissionControl() {
-  const { agents, approvals, sendToAgent, uploadAttachmentToAgent, setView, stopProcessingForAgent, refreshAgent } = useStore();
+  const { agents, approvals, sendToAgent, uploadAttachmentToAgent, setView, stopProcessingForAgent, refreshAgent, getModelRouter } = useStore();
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -471,7 +462,9 @@ export function MissionControl() {
   const [workflowContextLoaded, setWorkflowContextLoaded] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [permissionMode, setPermissionMode] = useState<ChatPermissionMode>("full-policy");
-  const [modelMode, setModelMode] = useState<ChatModelMode>("gpt-55-medium");
+  const [modelMode, setModelMode] = useState(() => window.localStorage.getItem("hmc:model-selection") || "auto");
+  const [modelRouterConfig, setModelRouterConfig] = useState<RouterConfig | null>(null);
+  const [modelRouterLoading, setModelRouterLoading] = useState(false);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [hasStartedMainChat, setHasStartedMainChat] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>("idle");
@@ -605,7 +598,14 @@ export function MissionControl() {
       .map((workItem) => ({ id: workItem.id, title: workItem.title, status: workItem.status })),
     [recentTasks],
   );
-  const selectedModel = modelModeOptions.find((option) => option.value === modelMode) ?? modelModeOptions[0];
+  const enabledModels = useMemo(() => (modelRouterConfig?.models ?? []).filter((model) => model.enabled), [modelRouterConfig]);
+  const selectedModel = enabledModels.find((model) => model.id === modelMode) ?? null;
+  const selectedModelLabel = selectedModel ? (selectedModel.label || selectedModel.model) : "Auto";
+  const selectedModelPromptLabel = selectedModel
+    ? `${selectedModel.label || selectedModel.model} · ${selectedModel.tier}${selectedModel.authorized ? "" : " · key missing"}`
+    : modelRouterConfig?.enabled === false
+      ? "Default Hermes model"
+      : "AUTO - Melkizac decides";
   const selectedPermission = permissionModeOptions.find((option) => option.value === permissionMode) ?? permissionModeOptions[0];
   const greeting = singaporeDaypartGreeting();
   const heroPrompt = selectedProject ? `What should we work on in “${projectLabel(selectedProject)}”?` : `${greeting}, Melverick!`;
@@ -648,6 +648,57 @@ export function MissionControl() {
   const isMainChatProcessing = sending || Boolean(routingActionBusy) || Boolean(activeMainBackendRequestId);
   const shouldShowMainChatTranscript = hasStartedMainChat || Boolean(visiblePendingMainMessage) || Boolean(activeMainBackendRequestId);
   const processingElapsedLabel = effectiveProcessingStartedAt ? formatRunDuration(processingNow - effectiveProcessingStartedAt) : "0:00";
+
+  const ensureModelRouter = useCallback(async () => {
+    if (modelRouterConfig || modelRouterLoading) return modelRouterConfig;
+    setModelRouterLoading(true);
+    let alive = true;
+    try {
+      const cfg = await getModelRouter();
+      if (!alive) return cfg;
+      setModelRouterConfig(cfg);
+      const exists = modelMode === "auto" || (cfg.models ?? []).some((model) => model.enabled && model.id === modelMode);
+      if (!exists) setModelMode("auto");
+      return cfg;
+    } catch {
+      if (alive) setModelRouterConfig(null);
+      return null;
+    } finally {
+      if (alive) setModelRouterLoading(false);
+    }
+  }, [getModelRouter, modelMode, modelRouterConfig, modelRouterLoading]);
+
+  useEffect(() => {
+    let alive = true;
+    setModelRouterLoading(true);
+    void getModelRouter()
+      .then((cfg) => {
+        if (!alive) return;
+        setModelRouterConfig(cfg);
+        const exists = modelMode === "auto" || (cfg.models ?? []).some((model) => model.enabled && model.id === modelMode);
+        if (!exists) setModelMode("auto");
+      })
+      .catch(() => {
+        if (alive) setModelRouterConfig(null);
+      })
+      .finally(() => {
+        if (alive) setModelRouterLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [getModelRouter, modelMode]);
+
+  useEffect(() => {
+    window.localStorage.setItem("hmc:model-selection", modelMode);
+  }, [modelMode]);
+
+  async function resolveMainModelRouting(): Promise<ModelRoutingSelection> {
+    if (modelMode === "auto") return { mode: "auto" };
+    const cfg = modelRouterConfig ?? await ensureModelRouter();
+    const manualModel = (cfg?.models ?? []).find((model) => model.enabled && model.id === modelMode);
+    return manualModel ? { mode: "manual", modelId: manualModel.id } : { mode: "auto" };
+  }
 
   function scrollToLatestMainChatMessage() {
     window.requestAnimationFrame(() => {
@@ -1423,7 +1474,7 @@ export function MissionControl() {
   async function runRoutingActionFor(
     current: { instruction: string; decision: ChatIntentDecision; preview: ChatIntentPreview },
     action: ChatIntentRoutingActionId,
-    options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; speakReply?: boolean } = {},
+    options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection; speakReply?: boolean } = {},
   ) {
     if (routingActionBusy) return;
     const { speakReply = false, ...sendOptions } = options;
@@ -1539,7 +1590,7 @@ export function MissionControl() {
     const context = [
       selectedProject ? `Project: ${projectLabel(selectedProject)} (${selectedProject.id})` : "Project: No Project selected",
       `Permission: ${selectedPermission.promptLabel}`,
-      `Model: ${selectedModel.promptLabel}`,
+      `Model: ${selectedModelPromptLabel}`,
       attachments.length ? `Attachments: ${attachments.map((file) => `${file.name} (${formatBytes(file.size)})`).join(", ")}` : null,
     ].filter(Boolean);
     return `${instruction}\n\n[Mission Control Chat Context]\n${context.join("\n")}\n\n[Mission Control Intent Routing]\n${serializeChatIntentDecision(intentDecision)}`;
@@ -1549,7 +1600,7 @@ export function MissionControl() {
     const context = [
       selectedProject ? `Project: ${projectLabel(selectedProject)} (${selectedProject.id})` : "Project: No Project selected",
       `Permission: ${selectedPermission.promptLabel}`,
-      `Model: ${selectedModel.promptLabel}`,
+      `Model: ${selectedModelPromptLabel}`,
       attachments.length ? `Attachments: ${attachments.map((file) => `${file.name} (${formatBytes(file.size)})`).join(", ")}` : null,
     ].filter(Boolean);
     const suggestedQuestion = preview.suggestedQuestion || "Ask one concise clarification question before taking action.";
@@ -1616,6 +1667,7 @@ export function MissionControl() {
       if (controller.signal.aborted) return;
       const preview = buildChatIntentPreview(intentDecision);
       const routed = { instruction, decision: intentDecision, preview };
+      const modelRouting = await resolveMainModelRouting();
       // Keep the router silent by default. The agent/router decides the path;
       // users see only chat replies, clarification questions, compact task cards,
       // or real Approval Gates when policy requires them.
@@ -1626,6 +1678,7 @@ export function MissionControl() {
         signal: controller.signal,
         requestId,
         replyTo: activeReplyTo ?? undefined,
+        modelRouting,
         speakReply: options.keepVoiceScreen === true,
       });
       if (options.keepVoiceScreen) setVoiceStatus("ready");
@@ -1699,10 +1752,11 @@ export function MissionControl() {
             <span aria-hidden="true" />
           </button>
           <label className="clean-chat-model-button clean-chat-top-model-select" aria-label="AI model selector">
-            <strong>{selectedModel.label === "AUTO" ? "Melkizac" : selectedModel.label}</strong>
-            <span>{selectedModel.value === "auto" ? "Auto" : ""}</span>
-            <select value={modelMode} onChange={(event) => setModelMode(event.target.value as ChatModelMode)}>
-              {modelModeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            <strong>{modelMode === "auto" ? "Melkizac" : selectedModelLabel}</strong>
+            <span>{modelMode === "auto" ? "Auto" : ""}</span>
+            <select value={selectedModel ? selectedModel.id : "auto"} onChange={(event) => setModelMode(event.target.value)} onFocus={() => void ensureModelRouter()} onPointerDown={() => void ensureModelRouter()}>
+              <option value="auto">{modelRouterLoading ? "Auto · loading models..." : "Auto"}</option>
+              {enabledModels.map((model) => <option key={model.id} value={model.id}>{(model.label || model.model)} · {model.tier}{model.authorized ? "" : " · key missing"}</option>)}
             </select>
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <path d="M7 10l5 5 5-5" />
@@ -1768,8 +1822,9 @@ export function MissionControl() {
 
             <div className="clean-chat-right-controls">
               <label className="clean-select">
-                <select value={modelMode} onChange={(event) => setModelMode(event.target.value as ChatModelMode)} aria-label="AI model selector">
-                  {modelModeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                <select value={selectedModel ? selectedModel.id : "auto"} onChange={(event) => setModelMode(event.target.value)} onFocus={() => void ensureModelRouter()} onPointerDown={() => void ensureModelRouter()} aria-label="AI model selector">
+                  <option value="auto">{modelRouterLoading ? "Auto · loading models..." : "Auto"}</option>
+                  {enabledModels.map((model) => <option key={model.id} value={model.id}>{(model.label || model.model)} · {model.tier}{model.authorized ? "" : " · key missing"}</option>)}
                 </select>
               </label>
               {renderVoiceReplyControl()}
@@ -2003,8 +2058,9 @@ export function MissionControl() {
 
             <div className="main-chat-right-controls">
               <label className="clean-select">
-                <select value={modelMode} onChange={(event) => setModelMode(event.target.value as ChatModelMode)} aria-label="AI model selector">
-                  {modelModeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                <select value={selectedModel ? selectedModel.id : "auto"} onChange={(event) => setModelMode(event.target.value)} onFocus={() => void ensureModelRouter()} onPointerDown={() => void ensureModelRouter()} aria-label="AI model selector">
+                  <option value="auto">{modelRouterLoading ? "Auto · loading models..." : "Auto"}</option>
+                  {enabledModels.map((model) => <option key={model.id} value={model.id}>{(model.label || model.model)} · {model.tier}{model.authorized ? "" : " · key missing"}</option>)}
                 </select>
               </label>
               {renderVoiceReplyControl()}
