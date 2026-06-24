@@ -342,6 +342,23 @@ input, select, textarea { font-family: inherit; }
 .profile-selector-menu-item small { color: var(--muted); font-size: 11px; font-weight: 650; }
 .profile-selector-menu-item.on small { color: #0f766e; }
 .profile-selector-empty { padding: 10px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.profile-selector-manage {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 10px 9px 8px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink2);
+  text-align: left;
+  font-size: 13px;
+  font-weight: 750;
+}
+.profile-selector-manage:hover { color: #0b6f66; background: #f6fffd; }
+.profile-selector-manage svg { color: var(--muted); }
 .utility-dock { position: relative; margin: 0 12px 10px; flex: 0 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.92); box-shadow: 0 12px 30px rgba(20,26,38,.07); }
 .utility-dock-button { position: relative; width: 100%; height: 36px; border: 0; border-radius: 11px; background: transparent; color: #9aa3af; display: grid; place-items: center; }
 .utility-dock-button:hover { background: #f1f3f6; color: var(--ink2); }

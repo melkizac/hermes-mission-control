@@ -489,6 +489,17 @@ export function NavRail() {
                 );
               })}
               {!agents.length && !activeProfile && <div className="profile-selector-empty">No agents available</div>}
+              <button
+                className="profile-selector-manage"
+                type="button"
+                onClick={() => {
+                  setAgentMenuOpen(false);
+                  setView("agents");
+                }}
+              >
+                <Icon name="settings" size={17} />
+                <span>Manage Profiles</span>
+              </button>
             </div>
           )}
         </div>
