@@ -12,8 +12,6 @@ type NavItem = NavRouteItem | NavActionItem | NavLinkItem;
 
 type NavGroup = { label: string; items: NavItem[]; system?: boolean };
 
-const workforceSelectorKeys: ViewKey[] = ["skills", "tools", "plugins", "memory", "reflections"];
-
 function isRouteItem(item: NavItem): item is NavRouteItem {
   return "key" in item;
 }
@@ -56,12 +54,6 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
     items: [
       { key: "agents", label: "Agents", icon: "agents" },
       { key: "agent-org", label: "Org Chart", icon: "agentOrg" },
-      { key: "skills", label: "Skills", icon: "skills" },
-      { key: "tools", label: "Tools", icon: "tools" },
-      { key: "plugins", label: "Plugins", icon: "plugins" },
-      { key: "memory", label: "Memory", icon: "memory" },
-      { key: "reflections", label: "Reflections", icon: "reflections" },
-      { key: "approvals", label: "Approvals", icon: "approvals" },
     ],
   },
   {
@@ -75,6 +67,13 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
       { action: "logout", label: "Log out", icon: "logout" },
     ],
   },
+];
+
+const workspaceUtilityItems: NavRouteItem[] = [
+  { key: "approvals", label: "Approvals", icon: "approvals" },
+  { key: "usage", label: "Usage", icon: "usage" },
+  { key: "capabilities", label: "Capabilities", icon: "setup" },
+  { key: "memory", label: "Memory", icon: "memory" },
 ];
 
 const adminConsoleGroups: NavGroup[] = [
@@ -190,7 +189,6 @@ export function NavRail() {
   const [status, setStatus] = useState<RailStatus | null>(null);
   const [usageRemaining, setUsageRemaining] = useState<UsageRemainingSummary | null>(null);
   const [approvalCount, setApprovalCount] = useState(approvals.length);
-  const [workforceMenuOpen, setWorkforceMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const [usagePeekOpen, setUsagePeekOpen] = useState(false);
@@ -256,7 +254,6 @@ export function NavRail() {
     if (collapsed) {
       setSettingsOpen(false);
       setUsagePeekOpen(false);
-      setWorkforceMenuOpen(false);
       setAgentMenuOpen(false);
     }
   }, [collapsed]);
@@ -265,12 +262,8 @@ export function NavRail() {
   const visibleGroups = uiMode === "admin" ? adminConsoleGroups : simplifiedWorkspaceGroups;
   const workspaceSystemGroup = simplifiedWorkspaceGroups.find((group) => group.system);
   const workspaceSystemItems = workspaceSystemGroup?.items ?? [];
+  const settingsMenuItems = workspaceSystemItems.filter((item) => !(isRouteItem(item) && item.key === "usage"));
   const settingsActive = view === "profile" || view === "settings" || view === "models" || view === "usage";
-  const workforceSelectorItems = simplifiedWorkspaceGroups
-    .find((group) => group.label === "Workforce")
-    ?.items.filter((item): item is NavRouteItem => isRouteItem(item) && workforceSelectorKeys.includes(item.key)) ?? [];
-  const workforceSelectorActive = workforceSelectorKeys.includes(view);
-  const workforceMenuExpanded = !collapsed && (workforceMenuOpen || workforceSelectorActive);
   const activeProfile = selected ?? agents.find((agent) => agent.id === selectedId) ?? agents[0];
   const activeProfileLabel = activeProfile?.name ?? "Melkizac";
   const activeProfileMeta = activeProfile?.squad || activeProfile?.statusLabel || "Active profile";
@@ -343,48 +336,6 @@ export function NavRail() {
           <div className={"nav-group" + (group.system ? " system-nav" : "")} key={group.label || "primary-chat"}>
             {group.label && <div className="nlabel">{group.label}</div>}
             {group.items.map((it) => {
-              if (uiMode !== "admin" && group.label === "Workforce" && isRouteItem(it) && workforceSelectorKeys.includes(it.key)) {
-                if (it.key !== workforceSelectorKeys[0]) return null;
-                return (
-                  <div className="workforce-selector" key="workforce-selector">
-                    <button
-                      className={"nitem workforce-selector-trigger" + (workforceSelectorActive ? " on" : "")}
-                      onClick={() => setWorkforceMenuOpen((open) => !open)}
-                      aria-haspopup="menu"
-                      aria-expanded={workforceMenuExpanded}
-                      data-tooltip="Capabilities"
-                      title={collapsed ? "Capabilities" : undefined}
-                    >
-                      <Icon name="setup" size={17} />
-                      <span className="nav-text">Capabilities</span>
-                      <span className={"nav-right-icon workforce-chevron" + (workforceMenuExpanded ? " open" : "")}>
-                        <Icon name="chevronDown" size={15} />
-                      </span>
-                    </button>
-                    {workforceMenuExpanded && (
-                      <div className="workforce-menu" role="menu" aria-label="Capabilities">
-                        {workforceSelectorItems.map((item) => {
-                          const active = view === item.key;
-                          return (
-                            <button
-                              key={item.key}
-                              className={"workforce-menu-item" + (active ? " on" : "")}
-                              onClick={() => {
-                                setView(item.key);
-                                setWorkforceMenuOpen(true);
-                              }}
-                              role="menuitem"
-                            >
-                              <Icon name={item.icon} size={17} />
-                              <span>{item.label}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              }
               const active = isRouteItem(it) && view === it.key;
               const key = navItemKey(it);
               const approvalBadge = isRouteItem(it) && it.key === "approvals" && approvalCount > 0
@@ -417,6 +368,46 @@ export function NavRail() {
           </div>
         ))}
       </div>
+
+      {!collapsed && (
+        <div className="utility-dock" aria-label="Utilities">
+          {workspaceUtilityItems.map((item) => {
+            const active = view === item.key;
+            const approvalBadge = item.key === "approvals" && approvalCount > 0
+              ? (approvalCount > 99 ? "99+" : String(approvalCount))
+              : null;
+            return (
+              <button
+                key={item.key}
+                className={"utility-dock-button" + (active ? " on" : "")}
+                type="button"
+                aria-label={approvalBadge ? `${item.label}, ${approvalBadge} pending` : item.label}
+                title={item.label}
+                data-tooltip={item.label}
+                onClick={() => {
+                  setView(item.key);
+                  setSettingsOpen(false);
+                }}
+              >
+                <Icon name={item.icon} size={18} />
+                {approvalBadge && <span className="utility-dock-badge">{approvalBadge}</span>}
+              </button>
+            );
+          })}
+          <button
+            className={"utility-dock-button utility-settings-button" + (settingsActive || settingsOpen ? " on" : "")}
+            type="button"
+            onClick={() => setSettingsOpen((open) => !open)}
+            aria-haspopup="menu"
+            aria-expanded={settingsOpen}
+            aria-label={settingsOpen ? "Hide Settings menu with rate limit details" : "Open Settings menu with rate limit details"}
+            title="Settings"
+            data-tooltip="Settings"
+          >
+            <Icon name="settings" size={18} />
+          </button>
+        </div>
+      )}
 
       {!collapsed && (
         <div className="profile-selector-dock">
@@ -495,7 +486,7 @@ export function NavRail() {
                   </button>
                 </div>
               )}
-              {workspaceSystemItems.map((it, index) => {
+              {settingsMenuItems.map((it, index) => {
                 const active = isRouteItem(it) && view === it.key;
                 const key = navItemKey(it);
                 if (isLinkItem(it)) {
@@ -560,18 +551,6 @@ export function NavRail() {
               })}
             </div>
           )}
-          <button
-            className={"settings-trigger" + (settingsActive || settingsOpen ? " on" : "")}
-            onClick={() => setSettingsOpen((open) => !open)}
-            aria-haspopup="menu"
-            aria-expanded={settingsOpen}
-            aria-label={settingsOpen ? "Hide Settings menu with rate limit details" : "Open Settings menu with rate limit details"}
-            title="Settings and rate limit details"
-            data-tooltip="Settings"
-          >
-            <Icon name="settings" size={18} />
-            Settings
-          </button>
         </div>
       )}
     </nav>
