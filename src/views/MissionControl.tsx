@@ -682,7 +682,7 @@ export function MissionControl() {
     // orphaned backend request discovered outside the local send lifecycle.
     const poll = window.setInterval(() => void refreshAgent(activeAgentId).catch(() => undefined), 3000);
     return () => window.clearInterval(poll);
-  }, [activeMainBackendRequestId, refreshAgent, sending]);
+  }, [activeAgentId, activeMainBackendRequestId, refreshAgent, sending]);
 
   useEffect(() => {
     if (sending || routingActionBusy || !hasStartedMainChat) return;
