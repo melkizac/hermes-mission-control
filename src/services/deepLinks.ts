@@ -81,7 +81,7 @@ export function buildMissionControlUrl(target: MissionControlDeepLinkTarget, ori
   if (target.agentId) params.set("agent", target.agentId);
   const query = params.toString();
   // Keep these examples literal for regression docs/tests: view=approvals&approval=, view=board&task=, view=agents&agent=
-  const adminViews = new Set<ViewKey>(["agent-platform-admin", "users-workspaces", "workspace-runtime-console", "shared-agent-templates", "runtimes", "desktop-gateway", "models", "capabilities", "costs", "approval-policy", "quota"]);
+  const adminViews = new Set<ViewKey>(["agent-platform-admin", "users-workspaces", "workspace-runtime-console", "shared-agent-templates", "runtimes", "desktop-gateway", "models", "costs", "approval-policy", "quota"]);
   const basePath = adminViews.has(view) ? "/admin" : "/app";
   return `${origin.replace(/\/$/, "")}${basePath}?${query}`;
 }
