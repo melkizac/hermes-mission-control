@@ -3,10 +3,11 @@ import type React from "react";
 import voiceHudReference from "../assets/voice-hud-reference.jpg";
 import { useStore } from "../services/store";
 import { Icon } from "../components/Icon";
+import { AgentAvatar } from "../components/AgentAvatar";
 import { cachedJsonRequest } from "../services/queryCache";
 import { buildChatIntentPreview, confidenceFromScore, routeChatIntent, serializeChatIntentDecision } from "../services/chatIntentRouter";
 import type { ChatIntentDecision, ChatIntentPreview, ChatIntentNextAction, ChatIntentType, ChatMissionContext, ChatRoutineContext, ChatWorkflowContext } from "../services/chatIntentRouter";
-import type { Attachment, AutomationsResponse, BoardResponse, BoardTask, Message, ProjectRecord, ProjectsResponse, ReplyContext, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
+import type { Agent, Attachment, AutomationsResponse, BoardResponse, BoardTask, Message, ProjectRecord, ProjectsResponse, ReplyContext, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
 
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
@@ -448,6 +449,74 @@ function MainChatDownloadButton({ message }: { message: Message }) {
   );
 }
 
+
+type ChatProfileSelectorProps = {
+  agents: Agent[];
+  activeAgent?: Agent;
+  onSelect: (agentId: string) => void;
+  className?: string;
+};
+
+function ChatProfileSelector({ agents, activeAgent, onSelect, className = "" }: ChatProfileSelectorProps) {
+  const [open, setOpen] = useState(false);
+  const activeProfileLabel = activeAgent?.name ?? "Melkizac";
+  const activeProfileMeta = activeAgent?.squad || activeAgent?.statusLabel || "Active profile";
+  const visibleAgents = agents.length ? agents : activeAgent ? [activeAgent] : [];
+
+  return (
+    <div className={`chat-profile-selector ${className}`.trim()}>
+      <button
+        className={"chat-profile-selector-trigger" + (open ? " on" : "")}
+        type="button"
+        onClick={() => setOpen((next) => !next)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`Active profile: ${activeProfileLabel}. Select agent profile`}
+      >
+        {activeAgent ? (
+          <AgentAvatar agent={activeAgent} className="chat-profile-selector-avatar" />
+        ) : (
+          <span className="chat-profile-selector-avatar chat-profile-selector-avatar-fallback">M</span>
+        )}
+        <span className="chat-profile-selector-copy">
+          <span>Active profile</span>
+          <b>{activeProfileLabel}</b>
+          <small>{activeProfileMeta}</small>
+        </span>
+        <Icon name="chevronDown" size={15} />
+      </button>
+      {open && (
+        <div className="chat-profile-selector-menu" role="listbox" aria-label="Select active agent profile">
+          {visibleAgents.map((agent) => {
+            const active = agent.id === activeAgent?.id;
+            return (
+              <button
+                key={agent.id}
+                className={"chat-profile-selector-menu-item" + (active ? " on" : "")}
+                type="button"
+                role="option"
+                aria-selected={active}
+                onClick={() => {
+                  onSelect(agent.id);
+                  setOpen(false);
+                }}
+              >
+                <AgentAvatar agent={agent} className="chat-profile-selector-menu-avatar" />
+                <span>
+                  <b>{agent.name}</b>
+                  <small>{agent.squad || agent.statusLabel || agent.model}</small>
+                </span>
+                {active && <Icon name="check" size={15} />}
+              </button>
+            );
+          })}
+          {!visibleAgents.length && <div className="chat-profile-selector-empty">No agents available</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function formatRunDuration(ms: number) {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   const hours = Math.floor(totalSeconds / 3600);
@@ -458,7 +527,7 @@ function formatRunDuration(ms: number) {
 }
 
 export function MissionControl() {
-  const { agents, approvals, selected, selectedId, sendToAgent, uploadAttachmentToAgent, setView, stopProcessingForAgent, refreshAgent } = useStore();
+  const { agents, approvals, selected, selectedId, select, sendToAgent, uploadAttachmentToAgent, setView, stopProcessingForAgent, refreshAgent } = useStore();
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1721,6 +1790,10 @@ export function MissionControl() {
           </button>
         </header>
 
+        <div className="clean-chat-topbar" aria-label="Chat profile controls">
+          <ChatProfileSelector agents={agents} activeAgent={activeAgent} onSelect={select} />
+        </div>
+
         <div className="clean-chat-hero" aria-label="Chat start prompt">
           <h1>{heroPrompt}</h1>
         </div>
@@ -1816,7 +1889,7 @@ export function MissionControl() {
             </div>
             <span className="main-chat-status"><i /> {activeAgent?.statusLabel || "Active"} · {activeAgent?.activityState || "active"}</span>
           </div>
-          <button className="main-chat-details" type="button" aria-label={`Open ${activeAgentName} details`}>Details</button>
+          <ChatProfileSelector agents={agents} activeAgent={activeAgent} onSelect={select} className="main-chat-profile-selector" />
         </header>
 
         <main ref={mainChatHistoryRef} className={`main-chat-history ${voiceStatus !== "idle" ? "voice-mode" : ""}`} aria-label={voiceStatus !== "idle" ? "Voice input activation" : `${activeAgentName} conversation history`}>
