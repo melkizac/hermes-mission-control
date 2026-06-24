@@ -3,7 +3,7 @@ import { useStore } from "../services/store";
 import { Icon } from "./Icon";
 import { AgentAvatar } from "./AgentAvatar";
 import logoUrl from "../assets/melverick-os-logo.jpg";
-import type { ViewKey } from "../types";
+import type { ProjectChatResponse, ProjectChatSession, ViewKey } from "../types";
 
 type NavRouteItem = { key: ViewKey; label: string; icon: Parameters<typeof Icon>[0]["name"] };
 type NavActionItem = { action: "logout"; label: string; icon: Parameters<typeof Icon>[0]["name"] };
@@ -148,11 +148,32 @@ async function requestApprovalCount(fallbackCount: number): Promise<number> {
   return inbox.items.filter((item) => item.status === "drafted" || item.status === "ready").length;
 }
 
+async function requestProjectChats(): Promise<ProjectChatResponse | null> {
+  const res = await fetch(`${window.location.protocol}//${window.location.host}/api/project-chats`, { credentials: "include", headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(res.statusText);
+  return res.json() as Promise<ProjectChatResponse>;
+}
+
+function sessionTimeLabel(value?: string) {
+  if (!value) return "";
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return "";
+  const diff = Date.now() - time;
+  const minutes = Math.max(1, Math.floor(diff / 60000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
+}
+
 export function NavRail() {
   const { view, setView, uiMode, approvals, agents, selected, selectedId, select } = useStore();
   const [status, setStatus] = useState<RailStatus | null>(null);
+  const [projectChats, setProjectChats] = useState<ProjectChatResponse | null>(null);
   const [approvalCount, setApprovalCount] = useState(approvals.length);
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
+  const [chatsCollapsed, setChatsCollapsed] = useState(() => window.localStorage.getItem("hmc-nav-chats-collapsed") === "true");
   const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem("hmc-nav-collapsed") === "true");
   const [collapsedGroups, setCollapsedGroups] = useState<CollapsedGroups>(() => {
     try {
@@ -205,6 +226,20 @@ export function NavRail() {
   }, [approvals.length]);
 
   useEffect(() => {
+    if (uiMode === "admin") return;
+    let alive = true;
+    const timer = window.setTimeout(() => {
+      void requestProjectChats()
+        .then((next) => { if (alive) setProjectChats(next); })
+        .catch(() => { if (alive) setProjectChats(null); });
+    }, 900);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [uiMode]);
+
+  useEffect(() => {
     window.localStorage.setItem("hmc-nav-collapsed", String(collapsed));
     if (collapsed) {
       setAgentMenuOpen(false);
@@ -214,6 +249,10 @@ export function NavRail() {
   useEffect(() => {
     window.localStorage.setItem("hmc-nav-collapsed-groups", JSON.stringify(collapsedGroups));
   }, [collapsedGroups]);
+
+  useEffect(() => {
+    window.localStorage.setItem("hmc-nav-chats-collapsed", String(chatsCollapsed));
+  }, [chatsCollapsed]);
 
   const gatewayOnline = status?.gateway?.running ?? true;
   const visibleGroups = uiMode === "admin" ? adminConsoleGroups : simplifiedWorkspaceGroups;
@@ -230,6 +269,19 @@ export function NavRail() {
 
   function toggleNavGroup(label: string) {
     setCollapsedGroups((current) => ({ ...current, [label]: !current[label] }));
+  }
+
+  const chatSessions = (projectChats?.sessions ?? [])
+    .filter((session) => session.human_initiated !== false)
+    .slice()
+    .sort((a, b) => new Date(b.started_at || 0).getTime() - new Date(a.started_at || 0).getTime())
+    .slice(0, 5);
+
+  function openChatSession(session: ProjectChatSession) {
+    const needle = [session.project_owner, session.project_name, session.source, session.origin].filter(Boolean).join(" ").toLowerCase();
+    const matchedAgent = agents.find((agent) => needle.includes(agent.id.toLowerCase()) || needle.includes(agent.name.toLowerCase()));
+    if (matchedAgent) select(matchedAgent.id);
+    setView("agents");
   }
 
   async function handleLogout() {
@@ -327,6 +379,31 @@ export function NavRail() {
             })}
           </div>
         ))}
+        {uiMode !== "admin" && (
+          <section className="nav-chat-sessions" aria-label="Recent chat sessions">
+            <button
+              className={"nav-section-toggle nav-chat-toggle" + (chatsCollapsed ? " collapsed" : "")}
+              type="button"
+              onClick={() => setChatsCollapsed((next) => !next)}
+              aria-expanded={!chatsCollapsed}
+            >
+              <span>Chats</span>
+              <Icon name="chevronDown" size={13} />
+            </button>
+            {!chatsCollapsed && (
+              <div className="nav-chat-list">
+                {chatSessions.map((session) => (
+                  <button key={session.id} className="nav-chat-session" type="button" onClick={() => openChatSession(session)} title={session.title}>
+                    <span aria-hidden="true" />
+                    <b>{session.title || session.project_name || "Untitled chat"}</b>
+                    <small>{sessionTimeLabel(session.started_at)}</small>
+                  </button>
+                ))}
+                {!chatSessions.length && <div className="nav-chat-empty">No saved chats yet</div>}
+              </div>
+            )}
+          </section>
+        )}
       </div>
 
       {!collapsed && (
