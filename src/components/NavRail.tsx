@@ -453,7 +453,6 @@ export function NavRail() {
                     aria-selected={active}
                     onClick={() => {
                       select(agent.id);
-                      setView("mission");
                       setAgentMenuOpen(false);
                     }}
                   >
