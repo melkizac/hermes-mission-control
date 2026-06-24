@@ -71,7 +71,6 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
 
 const workspaceUtilityItems: NavRouteItem[] = [
   { key: "approvals", label: "Approvals", icon: "approvals" },
-  { key: "usage", label: "Usage", icon: "usage" },
   { key: "capabilities", label: "Capabilities", icon: "setup" },
 ];
 

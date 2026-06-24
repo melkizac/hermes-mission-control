@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { Icon } from "../components/Icon";
 import { useStore } from "../services/store";
+import { UsageRemaining } from "./UsageRemaining";
 
-type SettingsTab = "profile" | "security";
+type SettingsTab = "profile" | "security" | "usage";
 
 const tabs: Array<{ id: SettingsTab; label: string; icon: Parameters<typeof Icon>[0]["name"] }> = [
   { id: "profile", label: "Profile", icon: "profile" },
   { id: "security", label: "Security", icon: "settings" },
+  { id: "usage", label: "Usage", icon: "usage" },
 ];
 
 function ValueRow({ label, value }: { label: string; value?: string | null }) {
@@ -129,6 +131,8 @@ export function SettingsPage() {
           </article>
         </section>
       )}
+
+      {tab === "usage" && <UsageRemaining embedded />}
     </div>
   );
 }

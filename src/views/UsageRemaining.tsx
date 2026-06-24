@@ -68,7 +68,7 @@ function ModelRateLimitCard({ usage }: { usage: NonNullable<CostsResponse["model
   );
 }
 
-export function UsageRemaining() {
+export function UsageRemaining({ embedded = false }: { embedded?: boolean }) {
   const { uiMode } = useStore();
   const [selectedModel, setSelectedModel] = useState("");
   const [data, setData] = useState<CostsResponse | null>(null);
@@ -103,7 +103,7 @@ export function UsageRemaining() {
   const models = usage?.models?.length ? usage.models : selectedModel ? [selectedModel] : [];
 
   return (
-    <div className="usage-page scroll">
+    <div className={embedded ? "usage-page usage-page-embedded" : "usage-page scroll"}>
       <header className="usage-hero">
         <div>
           <span className="stub-tag">RATE LIMITS</span>
