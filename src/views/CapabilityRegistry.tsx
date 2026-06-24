@@ -9,6 +9,7 @@ import { SkillsHub } from "./SkillsHub";
 import { MemoryContext } from "./MemoryContext";
 import { ToolsHub } from "./ToolsHub";
 import { PluginsHub } from "./PluginsHub";
+import { Reflections } from "./Reflections";
 
 const client = new HttpHermesClient();
 
@@ -95,13 +96,14 @@ function isBroken(record: CapabilityRegistryRecord) {
   return brokenStatuses.has(record.status || "") || brokenHealth.has(record.health?.state || "") || approvalPending;
 }
 
-type CapabilityHubTab = "skills" | "memory" | "tools" | "plugins";
+type CapabilityHubTab = "skills" | "memory" | "tools" | "plugins" | "reflections";
 
 const capabilityHubTabs: Array<{ id: CapabilityHubTab; label: string; icon: Parameters<typeof Icon>[0]["name"] }> = [
   { id: "skills", label: "Skills", icon: "skills" },
   { id: "memory", label: "Memory", icon: "memory" },
   { id: "tools", label: "Tools", icon: "tools" },
   { id: "plugins", label: "Plugins", icon: "plugins" },
+  { id: "reflections", label: "Reflections", icon: "reflections" },
 ];
 
 export function CapabilityRegistry() {
@@ -135,6 +137,7 @@ export function CapabilityRegistry() {
         {hubTab === "memory" && <MemoryContext />}
         {hubTab === "tools" && <ToolsHub />}
         {hubTab === "plugins" && <PluginsHub />}
+        {hubTab === "reflections" && <Reflections />}
       </div>
     </div>
   );

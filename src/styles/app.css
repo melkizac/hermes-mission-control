@@ -1962,6 +1962,7 @@ input, select, textarea { font-family: inherit; }
 .capability-hub-tabs button.on { color: #0b5a9c; }
 .capability-hub-tabs button.on::after { background: #0b5a9c; }
 .capability-hub-panel > .skills-page { padding: 0; background: transparent; overflow: visible; height: auto; }
+.capability-hub-panel > .reflections-page { padding: 0; background: transparent; overflow: visible; height: auto; min-height: 0; }
 .capability-hub-panel .skills-hero { display: none; }
 .capability-registry-page .skills-hero p { max-width: 940px; }
 .capability-tabs {
