@@ -10,6 +10,7 @@ export type MissionControlDeepLinkTarget = {
 const allowedViews = new Set<ViewKey>([
   "mission",
   "dashboard",
+  "operations",
   "delegate-work",
   "workflow-library",
   "profile",

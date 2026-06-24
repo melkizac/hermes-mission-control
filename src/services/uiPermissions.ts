@@ -28,6 +28,7 @@ export const adminOnlyViews = new Set<ViewKey>([
 export const workspaceViews = new Set<ViewKey>([
   "mission",
   "dashboard",
+  "operations",
   "delegate-work",
   "workflow-library",
   "profile",
@@ -86,6 +87,7 @@ export function viewLabelForRole(role: UserRole, view: ViewKey, fallback: string
   if (isAdminRole(role)) return fallback;
   const labels: Partial<Record<ViewKey, string>> = {
     agents: "My Agents",
+    operations: "Operations",
     "agent-voice": "Agent Voice",
     "delegate-work": "Delegate Work",
     "workflow-library": "Workflow Library",

@@ -2608,6 +2608,7 @@ export type ViewKey =
   | "mission"
   | "dashboard"
   | "work"
+  | "operations"
   | "delegate-work"
   | "workflow-library"
   | "profile"

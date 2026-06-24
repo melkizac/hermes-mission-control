@@ -46,8 +46,7 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
   {
     label: "Operations",
     items: [
-      { key: "automations", label: "Routines", icon: "automations" },
-      { key: "workflow-library", label: "Workflows", icon: "workflow" },
+      { key: "operations", label: "Operations", icon: "automations" },
     ],
   },
   {

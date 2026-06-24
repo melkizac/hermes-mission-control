@@ -2038,6 +2038,10 @@ input, select, textarea { font-family: inherit; }
 .capability-hub-panel > .skills-page { padding: 0; background: transparent; overflow: visible; height: auto; }
 .capability-hub-panel > .reflections-page { padding: 0; background: transparent; overflow: visible; height: auto; min-height: 0; }
 .capability-hub-panel .skills-hero { display: none; }
+.operations-hub-panel > .automations-page,
+.operations-hub-panel > .workflow-library-page { padding: 0; background: transparent; overflow: visible; height: auto; }
+.operations-hub-panel .automations-hero,
+.operations-hub-panel .workflow-hero { display: none; }
 .capability-registry-page .skills-hero p { max-width: 940px; }
 .capability-tabs {
   display: grid;

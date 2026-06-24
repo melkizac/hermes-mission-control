@@ -17,6 +17,7 @@ import { Approvals } from "./views/Approvals";
 import { Reflections } from "./views/Reflections";
 import { AuditLog } from "./views/AuditLog";
 import { Automations } from "./views/Automations";
+import { OperationsHub } from "./views/OperationsHub";
 import { TaskBoard } from "./views/TaskBoard";
 import { SkillsHub } from "./views/SkillsHub";
 import { MemoryContext } from "./views/MemoryContext";
@@ -94,6 +95,7 @@ function Shell() {
         {canRenderView && view === "mission" && <MissionControl />}
         {canRenderView && view === "dashboard" && <Dashboard />}
         {canRenderView && view === "delegate-work" && <DelegateWork />}
+        {canRenderView && view === "operations" && <OperationsHub />}
         {canRenderView && view === "workflow-library" && <WorkflowLibrary />}
         {canRenderView && view === "profile" && <SettingsPage />}
         {canRenderView && view === "agents" && <Agents />}
