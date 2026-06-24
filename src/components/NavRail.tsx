@@ -32,7 +32,6 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
     label: "",
     items: [
       { key: "agents", label: "Chat", icon: "chat" },
-      { key: "dashboard", label: "Dashboard", icon: "dashboard" },
       { key: "projects", label: "Projects", icon: "projects" },
       { key: "files", label: "Files", icon: "folder" },
       { key: "board", label: "Task Board", icon: "board" },
@@ -282,26 +281,22 @@ export function NavRail() {
     <nav className={"rail" + (collapsed ? " collapsed" : "")} aria-label={collapsed ? "Mission Control navigation collapsed" : "Mission Control navigation"}>
       <div className="ws">
         <button
-          className="rail-brand-toggle"
-          onClick={() => setCollapsed((next) => !next)}
-          aria-label={collapsed ? "Open sidebar" : "Close sidebar"}
-          aria-expanded={!collapsed}
-          data-tooltip={collapsed ? "Open sidebar" : "Close sidebar"}
+          className="rail-brand-home"
+          onClick={() => setView("dashboard")}
+          aria-label="Go to Dashboard"
+          data-tooltip="Dashboard"
         >
           <span className="mark">
             <img src={logoUrl} alt="Melverick_OS logo" />
           </span>
-          <span className="rail-toggle-icon" aria-hidden="true">
-            <Icon name="sidebar" size={18} />
-          </span>
+          <b className="brand-name">Melverick_OS</b>
+          <span
+            className="brand-status-dot"
+            style={{ background: gatewayOnline ? "var(--good)" : "var(--bad)" }}
+            aria-label={gatewayOnline ? "System online" : "System offline"}
+            title={gatewayOnline ? "System online" : "System offline"}
+          />
         </button>
-        <b className="brand-name">Melverick_OS</b>
-        <span
-          className="brand-status-dot"
-          style={{ background: gatewayOnline ? "var(--good)" : "var(--bad)" }}
-          aria-label={gatewayOnline ? "System online" : "System offline"}
-          title={gatewayOnline ? "System online" : "System offline"}
-        />
         {!collapsed && (
           <button
             className="rail-collapse-button"
