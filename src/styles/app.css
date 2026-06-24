@@ -601,6 +601,8 @@ input, select, textarea { font-family: inherit; }
 .chat-start-mode .cbox .composer-input::placeholder { color: #c7c9cc; }
 .chat-start-mode .composer-control-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; min-height: 0; padding: 11px 12px 13px 18px; }
 .chat-start-mode .composer-spacer { flex: 1 1 auto; }
+.chat-start-mode .agent-start-permission-select { color: #c46d38; font-weight: 700; }
+.chat-start-mode .agent-start-permission-select select { color: #c46d38; font-weight: 700; }
 .chat-start-mode .model-selector-row select { font-size: 1rem; color: #6b7280; }
 .chat-start-mode .agent-start-project-strip { width: 100%; max-width: 1060px; margin: 0 auto; flex: 0 0 auto; }
 .chead { display: flex; align-items: center; gap: 11px; padding: 13px 18px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }

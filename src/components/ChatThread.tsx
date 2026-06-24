@@ -7,6 +7,14 @@ import { formatSingaporeTime } from "../utils/time";
 
 const ONE_DAY_SECONDS = 24 * 60 * 60;
 
+type AgentStartPermissionMode = "full-policy" | "ask-critical" | "draft-only";
+
+const agentStartPermissionOptions: Array<{ value: AgentStartPermissionMode; label: string }> = [
+  { value: "full-policy", label: "Full access" },
+  { value: "ask-critical", label: "Ask permission" },
+  { value: "draft-only", label: "Draft only" },
+];
+
 const statusPill: Record<string, { bg: string; fg: string; dot: string }> = {
   active: { bg: "var(--good-soft)", fg: "#0f7a37", dot: "#15a34a" },
   working: { bg: "var(--good-soft)", fg: "#0f7a37", dot: "#15a34a" },
@@ -137,6 +145,8 @@ export function ChatThread({
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [agentActionMenuOpen, setAgentActionMenuOpen] = useState(false);
   const [selectedChatTabId, setSelectedChatTabId] = useState<string>("start");
+  const [startPermissionMode, setStartPermissionMode] = useState<AgentStartPermissionMode>("full-policy");
+  const [startProjectId, setStartProjectId] = useState("");
   const [closedChatTabIds, setClosedChatTabIds] = useState<string[]>(() => {
     try {
       return JSON.parse(window.localStorage.getItem("hmc:closed-chat-tabs") || "[]") as string[];
@@ -190,6 +200,7 @@ export function ChatThread({
     () => projectChats?.projects.find((project) => project.id === selectedProjectId)?.name,
     [projectChats, selectedProjectId],
   );
+  const startProjectOptions = projectChats?.projects ?? [];
   const activeSession = useMemo(
     () => projectSessions.find((session) => session.id === effectiveSelectedSessionId),
     [effectiveSelectedSessionId, projectSessions],
@@ -748,6 +759,21 @@ export function ChatThread({
               accept="image/*,.txt,.md,.csv,.json,.yaml,.yml,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
               onChange={(e) => void onPickFiles(e.currentTarget.files)}
             />
+            {showWelcomeStart && (
+              <label className="clean-select clean-permission-select agent-start-permission-select">
+                <span aria-hidden="true">⊙</span>
+                <select
+                  value={startPermissionMode}
+                  onChange={(e) => setStartPermissionMode(e.target.value as AgentStartPermissionMode)}
+                  aria-label="Permission mode"
+                  disabled={isProcessing || uploading}
+                >
+                  {agentStartPermissionOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
             <div className="composer-spacer" />
             <label className="model-selector-row" title={modelSelectorLabel}>
               <span className="sr-only">Model</span>
@@ -786,8 +812,17 @@ export function ChatThread({
       {showWelcomeStart && (
         <div className="clean-project-strip agent-start-project-strip" aria-label="Project selector">
           <span aria-hidden="true">▱</span>
-          <select value="" disabled aria-label="Project selector">
-            <option value="">No Project selected</option>
+          <select
+            value={startProjectId}
+            onChange={(e) => setStartProjectId(e.target.value)}
+            aria-label="Project selector"
+            aria-busy={Boolean(projectChats === null)}
+            disabled={projectChats === null}
+          >
+            <option value="">{projectChats === null ? "Loading projects..." : "No Project selected"}</option>
+            {startProjectOptions.map((project) => (
+              <option key={project.id} value={project.id}>{project.name}</option>
+            ))}
           </select>
         </div>
       )}
