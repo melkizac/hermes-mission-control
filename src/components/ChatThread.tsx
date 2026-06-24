@@ -95,6 +95,14 @@ function replyPreviewText(reply: ReplyContext) {
   return reply.text.replace(/\s+/g, " ").trim().slice(0, 220) || "Message without text";
 }
 
+function chatTabLabel(title?: string, fallback?: string) {
+  return (title || fallback || "Untitled chat").replace(/\s+/g, " ").trim();
+}
+
+function chatTabInitial(sessionTitle: string) {
+  return sessionTitle.trim().charAt(0).toUpperCase() || "C";
+}
+
 export function ChatThread({
   agent,
   onOpenDetails,
@@ -128,6 +136,14 @@ export function ChatThread({
   const [lastSeenKey, setLastSeenKey] = useState<string | null | undefined>(undefined);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [agentActionMenuOpen, setAgentActionMenuOpen] = useState(false);
+  const [selectedChatTabId, setSelectedChatTabId] = useState<string>(selectedSessionId);
+  const [closedChatTabIds, setClosedChatTabIds] = useState<string[]>(() => {
+    try {
+      return JSON.parse(window.localStorage.getItem("hmc:closed-chat-tabs") || "[]") as string[];
+    } catch {
+      return [];
+    }
+  });
   const threadRef = useRef<HTMLDivElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -150,19 +166,31 @@ export function ChatThread({
     () => (projectChats?.sessions ?? []).filter((session) => selectedProjectId === "all" || session.project_id === selectedProjectId),
     [projectChats, selectedProjectId],
   );
+  const openChatTabs = useMemo(
+    () =>
+      projectSessions
+        .filter((session) => session.human_initiated !== false && !closedChatTabIds.includes(session.id))
+        .slice()
+        .sort((a, b) => new Date(b.started_at || 0).getTime() - new Date(a.started_at || 0).getTime())
+        .slice(0, 6),
+    [closedChatTabIds, projectSessions],
+  );
+  const effectiveSelectedSessionId = selectedChatTabId === "all" || openChatTabs.some((session) => session.id === selectedChatTabId)
+    ? selectedChatTabId
+    : selectedSessionId;
   const scopedSessionIds = useMemo(() => new Set(projectSessions.map((session) => session.id)), [projectSessions]);
   const scopedMessages = useMemo(() => {
-    if (selectedSessionId !== "all") return agent.messages.filter((m) => m.sessionId === selectedSessionId || m.requestId?.includes(selectedSessionId));
+    if (effectiveSelectedSessionId !== "all") return agent.messages.filter((m) => m.sessionId === effectiveSelectedSessionId || m.requestId?.includes(effectiveSelectedSessionId));
     if (selectedProjectId !== "all") return agent.messages.filter((m) => m.projectId === selectedProjectId || (!m.projectId && (!m.sessionId || scopedSessionIds.has(m.sessionId))));
     return agent.messages;
-  }, [agent.messages, scopedSessionIds, selectedProjectId, selectedSessionId]);
+  }, [agent.messages, effectiveSelectedSessionId, scopedSessionIds, selectedProjectId]);
   const activeProjectName = useMemo(
     () => projectChats?.projects.find((project) => project.id === selectedProjectId)?.name,
     [projectChats, selectedProjectId],
   );
   const activeSession = useMemo(
-    () => projectSessions.find((session) => session.id === selectedSessionId),
-    [projectSessions, selectedSessionId],
+    () => projectSessions.find((session) => session.id === effectiveSelectedSessionId),
+    [effectiveSelectedSessionId, projectSessions],
   );
   const activeSessionTitle = activeSession?.title;
   const sortedMessages = useMemo(
@@ -230,6 +258,19 @@ export function ChatThread({
   useLayoutEffect(() => {
     resizeComposerInput();
   }, [draft]);
+
+  useEffect(() => {
+    setSelectedChatTabId(selectedSessionId);
+  }, [selectedSessionId]);
+
+  useEffect(() => {
+    window.localStorage.setItem("hmc:closed-chat-tabs", JSON.stringify(closedChatTabIds.slice(0, 80)));
+  }, [closedChatTabIds]);
+
+  useEffect(() => {
+    if (selectedChatTabId === "all" || openChatTabs.some((session) => session.id === selectedChatTabId)) return;
+    setSelectedChatTabId("all");
+  }, [openChatTabs, selectedChatTabId]);
 
   useEffect(() => {
     const onResize = () => resizeComposerInput();
@@ -477,8 +518,35 @@ export function ChatThread({
     window.requestAnimationFrame(() => composerInputRef.current?.focus());
   };
 
+  function closeChatTab(sessionId: string) {
+    setClosedChatTabIds((current) => current.includes(sessionId) ? current : [sessionId, ...current].slice(0, 80));
+    if (selectedChatTabId === sessionId) setSelectedChatTabId("all");
+  }
+
   return (
     <div className="center" onPaste={handlePasteIntoChat}>
+      {openChatTabs.length > 0 && (
+        <div className="chat-session-tabs" role="tablist" aria-label="Open chat sessions">
+          {openChatTabs.map((session) => {
+            const label = chatTabLabel(session.title, session.project_name);
+            const active = effectiveSelectedSessionId === session.id;
+            return (
+              <div className={"chat-session-tab" + (active ? " on" : "")} key={session.id}>
+                <button type="button" role="tab" aria-selected={active} onClick={() => setSelectedChatTabId(session.id)} title={label}>
+                  <span className="chat-session-tab-avatar">{chatTabInitial(label)}</span>
+                  <b>{label}</b>
+                </button>
+                <button type="button" className="chat-session-tab-close" onClick={() => closeChatTab(session.id)} aria-label={`Close ${label}`}>
+                  x
+                </button>
+              </div>
+            );
+          })}
+          <button type="button" className="chat-session-tab-add" onClick={() => setSelectedChatTabId("all")} aria-label="Show all chat sessions" title="Show all chat sessions">
+            <Icon name="plus" size={16} />
+          </button>
+        </div>
+      )}
       <div className="chead">
         <AgentAvatar agent={agent} />
         <div className="nm">
@@ -550,8 +618,8 @@ export function ChatThread({
 
       <div className="thread scroll" ref={threadRef} onScroll={updateJumpButton}>
         <div className="divider">
-          {selectedSessionId !== "all"
-            ? `Session view · ${activeSessionTitle ?? selectedSessionId}${activeSession?.relationship_type ? ` · ${activeSession.relationship_type.replace(/[_-]+/g, " ")}` : ""}`
+          {effectiveSelectedSessionId !== "all"
+            ? `Session view · ${activeSessionTitle ?? effectiveSelectedSessionId}${activeSession?.relationship_type ? ` · ${activeSession.relationship_type.replace(/[_-]+/g, " ")}` : ""}`
             : selectedProjectId !== "all"
               ? `Project view · ${activeProjectName ?? selectedProjectId}`
               : "Global Command Chat · sorted into projects and sessions"}
