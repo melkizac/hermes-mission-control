@@ -360,7 +360,13 @@ export function NavRail() {
                   </a>
                 );
               }
-              const onClick = isRouteItem(it) ? () => setView(it.key) : () => void handleLogout();
+              const onClick = isRouteItem(it) ? () => {
+                if (it.key === "agents") {
+                  window.sessionStorage.removeItem("hmc:agents-manage-mode");
+                  window.dispatchEvent(new CustomEvent("hmc:agents-chat-mode"));
+                }
+                setView(it.key);
+              } : () => void handleLogout();
               return (
                 <button
                   key={key}
@@ -494,6 +500,8 @@ export function NavRail() {
                 type="button"
                 onClick={() => {
                   setAgentMenuOpen(false);
+                  window.sessionStorage.setItem("hmc:agents-manage-mode", "true");
+                  window.dispatchEvent(new CustomEvent("hmc:open-manage-profiles"));
                   setView("agents");
                 }}
               >
