@@ -104,13 +104,17 @@ function Shell() {
     );
   }
 
+  const isChatFocusView = canRenderView && uiMode !== "admin" && view === "mission";
+
   return (
-    <div className="shell">
-      <NavRail />
-      <div className="top-right-actions">
-        <NeedsAttentionBell />
-      </div>
-      <main className="main">
+    <div className={"shell" + (isChatFocusView ? " chat-focus-shell" : "")}>
+      {!isChatFocusView && <NavRail />}
+      {!isChatFocusView && (
+        <div className="top-right-actions">
+          <NeedsAttentionBell />
+        </div>
+      )}
+      <main className={"main" + (isChatFocusView ? " chat-focus-main" : "")}>
         {!canRenderView && <AdminOnlyNotice onGoHome={() => setView(safeDefaultViewForRole(me?.user.role))} />}
         {canRenderView && view === "mission" && <MissionControl />}
         {canRenderView && view === "dashboard" && <Dashboard />}
