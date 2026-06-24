@@ -501,6 +501,7 @@ input, select, textarea { font-family: inherit; }
 /* ---------------- MISSION CONTROL GRID ---------------- */
 .mc { flex: 1; display: grid; grid-template-columns: 282px minmax(0, 1fr) minmax(360px, 430px); min-width: 0; min-height: 0; height: calc(100vh - var(--top-chrome-reserve)); height: calc(100dvh - var(--top-chrome-reserve)); overflow: hidden; }
 .mc.ctx-is-collapsed { grid-template-columns: 282px minmax(0, 1fr) 48px; }
+.mc.agents-no-roster { grid-template-columns: minmax(0, 1fr); }
 .mc-empty { display: grid; place-items: center; color: var(--muted); font-size: 13.5px; min-height: 0; }
 
 /* ---------------- ROSTER ---------------- */

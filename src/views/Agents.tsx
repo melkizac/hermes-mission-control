@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "../services/store";
-import { Roster } from "../components/Roster";
 import { ChatThread } from "../components/ChatThread";
 import { ContextPanel } from "../components/ContextPanel";
 import { WorkerTranscriptDrawer } from "../components/WorkerTranscriptDrawer";
@@ -142,15 +141,8 @@ export function Agents() {
   const [workerLogOpen, setWorkerLogOpen] = useState(false);
   const [rateLimitsOpen, setRateLimitsOpen] = useState(false);
   const [projectChats, setProjectChats] = useState<ProjectChatResponse | null>(null);
-  const [selectedProjectId, setSelectedProjectId] = useState("all");
-  const [selectedSessionId, setSelectedSessionId] = useState("all");
-  const [projectChatError, setProjectChatError] = useState<string | null>(null);
-  const [projectChatsHydrating, setProjectChatsHydrating] = useState(false);
-
-  const projectSessions = useMemo(
-    () => (projectChats?.sessions ?? []).filter((session) => selectedProjectId === "all" || session.project_id === selectedProjectId),
-    [projectChats, selectedProjectId],
-  );
+  const selectedProjectId = "all";
+  const selectedSessionId = "all";
 
   useEffect(() => {
     const close = (event: KeyboardEvent) => {
@@ -168,19 +160,13 @@ export function Agents() {
     let alive = true;
     const cancelHydration = scheduleProgressiveHydration(() => {
       if (!alive) return;
-      setProjectChatsHydrating(true);
       void fetchProjectChats()
         .then((data) => {
           if (!alive) return;
           setProjectChats(data);
-          setProjectChatError(null);
         })
         .catch((err) => {
-          if (!alive) return;
-          setProjectChatError(err instanceof Error ? err.message : "Could not load project chats");
-        })
-        .finally(() => {
-          if (alive) setProjectChatsHydrating(false);
+          console.warn("Could not load project chats", err);
         });
     });
     return () => {
@@ -189,27 +175,8 @@ export function Agents() {
     };
   }, [selected?.id, selected?.sessionCount]);
 
-  useEffect(() => {
-    setSelectedSessionId("all");
-  }, [selectedProjectId]);
-
-  useEffect(() => {
-    if (selectedSessionId !== "all" && !projectSessions.some((session) => session.id === selectedSessionId)) {
-      setSelectedSessionId("all");
-    }
-  }, [projectSessions, selectedSessionId]);
-
   return (
-    <div className="mc agents-drawer-first" data-deeplink-target="agent-chat">
-      <Roster
-        projectChats={projectChats}
-        selectedProjectId={selectedProjectId}
-        selectedSessionId={selectedSessionId}
-        onProjectChange={setSelectedProjectId}
-        onSessionChange={setSelectedSessionId}
-        projectChatError={projectChatError}
-        projectChatsHydrating={projectChatsHydrating}
-      />
+    <div className="mc agents-drawer-first agents-no-roster" data-deeplink-target="agent-chat">
       {selected ? (
         <>
           <ChatThread
@@ -254,7 +221,7 @@ export function Agents() {
         </>
       ) : (
         <div className="center mc-empty">
-          {loading ? "Loading agents…" : "Select an agent from the roster to begin."}
+          {loading ? "Loading agents…" : "Select an active profile from the left rail to begin."}
         </div>
       )}
     </div>
