@@ -487,7 +487,7 @@ export function NavRail() {
                 <Icon name="settings" size={17} />
                 <span>Manage Profiles</span>
               </button>
-              {permissions.canAccessAdmin && (
+              {permissions.accountIsAdmin && (
                 <button
                   className="profile-selector-manage profile-selector-admin"
                   type="button"
