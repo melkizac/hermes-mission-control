@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useStore } from "../services/store";
 import { Icon } from "./Icon";
 import { AgentAvatar } from "./AgentAvatar";
-import type { Agent, Attachment, Message, ModelRoutingSelection, ProjectChatResponse, ReplyContext, RouterConfig } from "../types";
+import type { Agent, Attachment, Message, ModelRoutingSelection, ProjectChatMessagesResponse, ProjectChatResponse, ReplyContext, RouterConfig } from "../types";
 import { formatSingaporeTime } from "../utils/time";
 
 const ONE_DAY_SECONDS = 24 * 60 * 60;
@@ -144,6 +144,9 @@ export function ChatThread({
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [agentActionMenuOpen, setAgentActionMenuOpen] = useState(false);
   const [selectedChatTabId, setSelectedChatTabId] = useState<string>("start");
+  const [sessionMessages, setSessionMessages] = useState<Record<string, Message[]>>({});
+  const [sessionMessageLoading, setSessionMessageLoading] = useState<Record<string, boolean>>({});
+  const [sessionMessageErrors, setSessionMessageErrors] = useState<Record<string, string>>({});
   const [startPermissionMode, setStartPermissionMode] = useState<AgentStartPermissionMode>("full-policy");
   const [startProjectId, setStartProjectId] = useState("");
   const [closedChatTabIds, setClosedChatTabIds] = useState<string[]>(() => {
@@ -191,10 +194,16 @@ export function ChatThread({
     : selectedSessionId;
   const scopedSessionIds = useMemo(() => new Set(projectSessions.map((session) => session.id)), [projectSessions]);
   const scopedMessages = useMemo(() => {
-    if (effectiveSelectedSessionId !== "all") return agent.messages.filter((m) => m.sessionId === effectiveSelectedSessionId || m.requestId?.includes(effectiveSelectedSessionId));
+    if (effectiveSelectedSessionId !== "all") {
+      const loaded = agent.messages.filter((m) => m.sessionId === effectiveSelectedSessionId || m.requestId?.includes(effectiveSelectedSessionId));
+      const fetched = sessionMessages[effectiveSelectedSessionId] ?? [];
+      const byId = new Map<string, Message>();
+      for (const message of [...loaded, ...fetched]) byId.set(`${message.id}|${message.role}`, message);
+      return Array.from(byId.values());
+    }
     if (selectedProjectId !== "all") return agent.messages.filter((m) => m.projectId === selectedProjectId || (!m.projectId && (!m.sessionId || scopedSessionIds.has(m.sessionId))));
     return agent.messages;
-  }, [agent.messages, effectiveSelectedSessionId, scopedSessionIds, selectedProjectId]);
+  }, [agent.messages, effectiveSelectedSessionId, scopedSessionIds, selectedProjectId, sessionMessages]);
   const activeProjectName = useMemo(
     () => projectChats?.projects.find((project) => project.id === selectedProjectId)?.name,
     [projectChats, selectedProjectId],
@@ -278,6 +287,42 @@ export function ChatThread({
       setSelectedChatTabId(selectedSessionId);
     }
   }, [selectedSessionId]);
+
+  useEffect(() => {
+    if (effectiveSelectedSessionId === "all" || sessionMessages[effectiveSelectedSessionId] || sessionMessageLoading[effectiveSelectedSessionId]) return;
+    const sessionId = effectiveSelectedSessionId;
+    let alive = true;
+    setSessionMessageLoading((current) => ({ ...current, [sessionId]: true }));
+    setSessionMessageErrors((current) => {
+      const next = { ...current };
+      delete next[sessionId];
+      return next;
+    });
+    fetch(`${window.location.protocol}//${window.location.host}/api/project-chats/${encodeURIComponent(sessionId)}/messages`, {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({})) as ProjectChatMessagesResponse;
+        if (!res.ok || data.error) throw new Error(data.error || res.statusText || "Unable to load chat session");
+        return data.messages ?? [];
+      })
+      .then((messages) => {
+        if (!alive) return;
+        setSessionMessages((current) => ({ ...current, [sessionId]: messages }));
+      })
+      .catch((err) => {
+        if (!alive) return;
+        setSessionMessageErrors((current) => ({ ...current, [sessionId]: err instanceof Error ? err.message : "Unable to load chat session" }));
+      })
+      .finally(() => {
+        if (!alive) return;
+        setSessionMessageLoading((current) => ({ ...current, [sessionId]: false }));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [effectiveSelectedSessionId, sessionMessageLoading, sessionMessages]);
 
   useEffect(() => {
     window.localStorage.setItem("hmc:closed-chat-tabs", JSON.stringify(closedChatTabIds.slice(0, 80)));
@@ -670,7 +715,17 @@ export function ChatThread({
               ? `Project view · ${activeProjectName ?? selectedProjectId}`
               : "Global Command Chat · sorted into projects and sessions"}
         </div>
-        {sortedMessages.length === 0 && (
+        {sortedMessages.length === 0 && effectiveSelectedSessionId !== "all" && sessionMessageLoading[effectiveSelectedSessionId] && (
+          <div className="empty" style={{ marginTop: 30 }}>
+            Loading conversation...
+          </div>
+        )}
+        {sortedMessages.length === 0 && effectiveSelectedSessionId !== "all" && sessionMessageErrors[effectiveSelectedSessionId] && (
+          <div className="senderror" style={{ marginTop: 30 }}>
+            {sessionMessageErrors[effectiveSelectedSessionId]}
+          </div>
+        )}
+        {sortedMessages.length === 0 && !sessionMessageLoading[effectiveSelectedSessionId] && !sessionMessageErrors[effectiveSelectedSessionId] && (
           <div className="empty" style={{ marginTop: 30 }}>
             No messages yet. Send {agent.name} a task below.
           </div>

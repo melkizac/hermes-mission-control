@@ -737,6 +737,14 @@ export interface ProjectChatResponse {
   error?: string;
 }
 
+export interface ProjectChatMessagesResponse {
+  ok?: boolean;
+  session?: Partial<ProjectChatSession>;
+  messages: Message[];
+  summary?: { messages: number };
+  error?: string;
+}
+
 export interface ProjectChatMutationResponse {
   ok: boolean;
   error?: string;
