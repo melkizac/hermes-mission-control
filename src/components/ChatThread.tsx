@@ -163,6 +163,7 @@ export function ChatThread({
   const activeRequestRef = useRef<{ id: string; agentId: string; controller: AbortController } | null>(null);
   const unreadRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const sessionMessageFetchesRef = useRef<Set<string>>(new Set());
   const p = statusPill[agent.status] || statusPill.degraded;
   const storageKey = `hmc:last-seen-message:${agent.id}`;
   const enabledModels = useMemo(() => (routerConfig?.models ?? []).filter((model) => model.enabled), [routerConfig]);
@@ -289,9 +290,14 @@ export function ChatThread({
   }, [selectedSessionId]);
 
   useEffect(() => {
-    if (effectiveSelectedSessionId === "all" || sessionMessages[effectiveSelectedSessionId] || sessionMessageLoading[effectiveSelectedSessionId]) return;
+    if (
+      effectiveSelectedSessionId === "all" ||
+      sessionMessages[effectiveSelectedSessionId] ||
+      sessionMessageFetchesRef.current.has(effectiveSelectedSessionId)
+    ) return;
     const sessionId = effectiveSelectedSessionId;
     let alive = true;
+    sessionMessageFetchesRef.current.add(sessionId);
     setSessionMessageLoading((current) => ({ ...current, [sessionId]: true }));
     setSessionMessageErrors((current) => {
       const next = { ...current };
@@ -316,13 +322,14 @@ export function ChatThread({
         setSessionMessageErrors((current) => ({ ...current, [sessionId]: err instanceof Error ? err.message : "Unable to load chat session" }));
       })
       .finally(() => {
+        sessionMessageFetchesRef.current.delete(sessionId);
         if (!alive) return;
         setSessionMessageLoading((current) => ({ ...current, [sessionId]: false }));
       });
     return () => {
       alive = false;
     };
-  }, [effectiveSelectedSessionId, sessionMessageLoading, sessionMessages]);
+  }, [effectiveSelectedSessionId, sessionMessages]);
 
   useEffect(() => {
     window.localStorage.setItem("hmc:closed-chat-tabs", JSON.stringify(closedChatTabIds.slice(0, 80)));
