@@ -282,7 +282,10 @@ export function NavRail() {
       <div className="ws">
         <button
           className="rail-brand-home"
-          onClick={() => setView("dashboard")}
+          onClick={() => {
+            if (uiMode === "admin") setUiMode("workspace");
+            setView("dashboard");
+          }}
           aria-label="Go to Dashboard"
           data-tooltip="Dashboard"
         >
