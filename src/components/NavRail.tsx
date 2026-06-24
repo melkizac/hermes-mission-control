@@ -41,12 +41,7 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
       { key: "projects", label: "Projects", icon: "projects" },
       { key: "files", label: "Files", icon: "folder" },
       { key: "board", label: "Task Board", icon: "board" },
-    ],
-  },
-  {
-    label: "Operations",
-    items: [
-      { key: "operations", label: "Operations", icon: "automations" },
+      { key: "operations", label: "Automations", icon: "automations" },
     ],
   },
   {
