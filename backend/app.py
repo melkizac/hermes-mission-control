@@ -3422,6 +3422,74 @@ def cron_sessions_for_job(job_id, limit=5):
         return []
 
 
+def parse_cron_session_job_id(session_id):
+    text = str(session_id or '')
+    match = re.match(r'^cron_(.+?)_\d{8}_\d{6}(?:_.+)?$', text)
+    return match.group(1) if match else ''
+
+
+def cron_usage_for_jobs(job_ids=None, days=14):
+    """Aggregate cron session usage by job and by day without exposing prompts or outputs."""
+    job_ids = [safe_id(j) for j in (job_ids or []) if safe_id(j)]
+    known = set(job_ids)
+    empty = {
+        'by_job': {jid: {'job_id': jid, 'run_count': 0, 'message_count': 0, 'tool_call_count': 0, 'input_tokens': 0, 'output_tokens': 0, 'tokens': 0, 'estimated_cost_usd': 0.0, 'last_run_at': None} for jid in job_ids},
+        'daily_spend': [],
+        'totals': {'run_count': 0, 'message_count': 0, 'tool_call_count': 0, 'input_tokens': 0, 'output_tokens': 0, 'tokens': 0, 'estimated_cost_usd': 0.0},
+    }
+    if not STATE_DB.exists():
+        return empty
+    cutoff = time.time() - max(1, int(days or 14)) * 86400
+    try:
+        con = sqlite3.connect(f'file:{STATE_DB}?mode=ro', uri=True, timeout=2)
+        con.row_factory = sqlite3.Row
+        rows = con.execute("""
+            SELECT id, started_at, message_count, tool_call_count, input_tokens, output_tokens, estimated_cost_usd
+            FROM sessions
+            WHERE source='cron' AND started_at >= ?
+            ORDER BY started_at DESC
+        """, (cutoff,)).fetchall()
+        con.close()
+    except Exception:
+        return empty
+    by_job = empty['by_job']
+    by_day = {}
+    totals = empty['totals']
+    for r in rows:
+        jid = parse_cron_session_job_id(r['id'])
+        if not jid or (known and jid not in known):
+            continue
+        started = float(r['started_at'] or 0)
+        day = datetime.fromtimestamp(started, SGT).strftime('%Y-%m-%d') if started else 'unknown'
+        input_tokens = int(r['input_tokens'] or 0)
+        output_tokens = int(r['output_tokens'] or 0)
+        tokens = input_tokens + output_tokens
+        cost = float(r['estimated_cost_usd'] or 0)
+        messages = int(r['message_count'] or 0)
+        tools = int(r['tool_call_count'] or 0)
+        item = by_job.setdefault(jid, {'job_id': jid, 'run_count': 0, 'message_count': 0, 'tool_call_count': 0, 'input_tokens': 0, 'output_tokens': 0, 'tokens': 0, 'estimated_cost_usd': 0.0, 'last_run_at': None})
+        day_item = by_day.setdefault(day, {'date': day, 'run_count': 0, 'message_count': 0, 'tool_call_count': 0, 'input_tokens': 0, 'output_tokens': 0, 'tokens': 0, 'estimated_cost_usd': 0.0})
+        for target in (item, day_item, totals):
+            target['run_count'] += 1
+            target['message_count'] += messages
+            target['tool_call_count'] += tools
+            target['input_tokens'] += input_tokens
+            target['output_tokens'] += output_tokens
+            target['tokens'] += tokens
+            target['estimated_cost_usd'] = round(float(target['estimated_cost_usd']) + cost, 8)
+        if not item.get('last_run_at') or started > (item.get('_last_ts') or 0):
+            item['_last_ts'] = started
+            item['last_run_at'] = iso(started) if started else None
+    for item in by_job.values():
+        item.pop('_last_ts', None)
+        item['total_estimated_cost_usd'] = item['estimated_cost_usd']
+    daily_spend = sorted(by_day.values(), key=lambda row: row['date'], reverse=True)
+    for item in daily_spend:
+        item['total_estimated_cost_usd'] = item['estimated_cost_usd']
+    totals['total_estimated_cost_usd'] = totals['estimated_cost_usd']
+    return {'by_job': by_job, 'daily_spend': daily_spend, 'totals': totals}
+
+
 def funnel_evidence_history_from_outputs(job_id, existing=None, limit=3):
     history = list(existing or [])
     for out in cron_output_files(job_id, limit):
@@ -3442,12 +3510,13 @@ def funnel_evidence_history_from_outputs(job_id, existing=None, limit=3):
     return history
 
 
-def automation_row(job):
+def automation_row(job, usage_by_job=None):
     job_id = job.get('id') or ''
     repeat = job.get('repeat') or {}
     schedule = job.get('schedule') or {}
     recent_runs = cron_sessions_for_job(job_id, 4)
     outputs = cron_output_files(job_id, 3)
+    usage = (usage_by_job or {}).get(job_id) or {'job_id': job_id, 'run_count': 0, 'message_count': 0, 'tool_call_count': 0, 'input_tokens': 0, 'output_tokens': 0, 'tokens': 0, 'estimated_cost_usd': 0.0, 'total_estimated_cost_usd': 0.0, 'last_run_at': None}
     prompt = job.get('prompt') or ''
     skills = job.get('skills') or ([] if not job.get('skill') else [job.get('skill')])
     status = job.get('state') or ('scheduled' if job.get('enabled') else 'disabled')
@@ -3488,7 +3557,8 @@ def automation_row(job):
         'prompt_preview': preview_content(prompt, 520),
         'recent_runs': recent_runs,
         'recent_outputs': outputs,
-        'run_count': max(repeat.get('completed') or 0, len(recent_runs)),
+        'run_count': max(repeat.get('completed') or 0, len(recent_runs), usage.get('run_count') or 0),
+        'usage': usage,
     }
     metadata = job.get('metadata') if isinstance(job.get('metadata'), dict) else {}
     if metadata.get('workflow_template_id') == 'website-funnel-check':
@@ -3569,6 +3639,7 @@ def workflow_routine_as_automation_record(routine):
         'recent_runs': [],
         'recent_outputs': [],
         'run_count': 1 if last_run else 0,
+        'usage': {'job_id': routine.get('id'), 'run_count': 1 if last_run else 0, 'message_count': 0, 'tool_call_count': 0, 'input_tokens': 0, 'output_tokens': 0, 'tokens': 0, 'estimated_cost_usd': 0.0, 'total_estimated_cost_usd': 0.0, 'last_run_at': (last_run or {}).get('started_at')},
         'workflow_template_id': 'workflow-routine-admin',
         'workflowName': 'Workflow Routine Admin',
         'sourceOfTruth': 'runtime connector governance database',
@@ -3592,15 +3663,19 @@ def list_automations(filters=None, identity=None):
     filters = filters or {}
     rows = []
     error = None
+    usage = cron_usage_for_jobs([], 30)
     if CRON_JOBS.exists():
         try:
             data = json.loads(CRON_JOBS.read_text(errors='ignore'))
             jobs = data.get('jobs', [])
-            rows.extend(automation_row(j) for j in jobs)
+            usage = cron_usage_for_jobs([j.get('id') for j in jobs if isinstance(j, dict)], 30)
+            usage_by_job = usage.get('by_job') or {}
+            rows.extend(automation_row(j, usage_by_job) for j in jobs)
         except Exception as e:
             error = str(e)
     else:
         error = 'cron jobs.json not found'
+        usage = cron_usage_for_jobs([], 30)
     routine_payload = list_workflow_routines(identity, filters) if identity else {'routines': []}
     rows.extend(workflow_routine_as_automation_record(r) for r in routine_payload.get('routines') or [])
     q = (filters.get('q') or [''])[0].strip().lower()
@@ -3629,8 +3704,10 @@ def list_automations(filters=None, identity=None):
         'platform': sum(1 for r in rows if r.get('routine_type') == 'platform'),
         'workspace': sum(1 for r in rows if r.get('routine_type') == 'workspace'),
         'personal': sum(1 for r in rows if r.get('routine_type') == 'personal'),
+        'usage': usage.get('totals') or {},
+        'daily_spend': usage.get('daily_spend') or [],
     }
-    out = {'automations': rows, 'summary': summary, 'states': ['enabled', 'paused', 'error', 'script', 'platform', 'workspace', 'personal'], 'workflow_routines': routine_payload.get('routines') or [], 'routine_summary': routine_payload.get('summary') or {'total': 0}}
+    out = {'automations': rows, 'summary': summary, 'states': ['enabled', 'paused', 'error', 'script', 'platform', 'workspace', 'personal'], 'workflow_routines': routine_payload.get('routines') or [], 'routine_summary': routine_payload.get('summary') or {'total': 0}, 'usage_by_job': usage.get('by_job') or {}, 'daily_spend': usage.get('daily_spend') or []}
     if error:
         out['error'] = error
     return out
@@ -9583,8 +9660,75 @@ def provider_credential_env(provider):
     return mapping.get(str(provider or '').strip().lower(), '')
 
 
+def runtime_profile_home(profile):
+    pid = safe_id(profile or 'default') or 'default'
+    base_home = HOME / '.hermes'
+    if pid == 'default':
+        return base_home
+    return base_home / 'profiles' / pid
+
+
+def credential_health_from_record(record):
+    status = str(record.get('last_status') or '').strip().lower()
+    code = str(record.get('last_error_code') or '').strip()
+    reason = str(record.get('last_error_reason') or '').strip().lower()
+    message = str(record.get('last_error_message') or '').strip()
+    if status in ('dead', 'revoked') or code == '401' or reason in ('token_revoked', 'token_invalidated', 'refresh_token_reused'):
+        return 'dead/revoked', code or '401', reason or 'token_revoked', message
+    if status in ('rate-limited', 'rate_limited', 'exhausted') or code == '429' or 'rate' in reason or 'quota' in reason:
+        return 'rate-limited', code or '429', reason or 'rate_limited', message
+    if status in ('missing', 'unavailable'):
+        return status, code, reason, message
+    return 'healthy', code, reason, message
+
+
+def read_profile_auth_credentials(profile='default', provider_filter=''):
+    """Read non-secret credential-pool metadata directly from a Hermes profile auth.json."""
+    root = runtime_profile_home(profile)
+    auth_path = root / 'auth.json'
+    if not auth_path.exists():
+        return []
+    try:
+        auth = json.loads(auth_path.read_text(errors='replace') or '{}')
+    except Exception:
+        return []
+    pool = auth.get('credential_pool') if isinstance(auth, dict) else {}
+    if not isinstance(pool, dict):
+        return []
+    credentials = []
+    for provider, rows in pool.items():
+        if provider_filter and provider != provider_filter:
+            continue
+        if not isinstance(rows, list):
+            continue
+        sorted_rows = sorted([r for r in rows if isinstance(r, dict)], key=lambda r: int(r.get('priority') if str(r.get('priority', '')).lstrip('-').isdigit() else 9999))
+        active_id = str(sorted_rows[0].get('id') or '') if sorted_rows else ''
+        for idx, record in enumerate(sorted_rows, 1):
+            health, error_code, error_reason, error_message = credential_health_from_record(record)
+            credentials.append({
+                'provider': str(provider),
+                'index': idx,
+                'id': str(record.get('id') or ''),
+                'label': str(record.get('label') or record.get('source') or f'credential-{idx}')[:120],
+                'auth_type': str(record.get('auth_type') or 'oauth')[:40],
+                'source': str(record.get('source') or '')[:120],
+                'active': str(record.get('id') or '') == active_id,
+                'status': health,
+                'health': health,
+                'last_error_code': error_code,
+                'last_error_reason': error_reason,
+                'last_error_class': error_reason or error_code,
+                'last_error_message': preview_content(error_message, 240) if error_message else '',
+                'profile': safe_id(profile or 'default') or 'default',
+            })
+    return credentials
+
+
 def hermes_auth_credentials():
     """Return non-secret Hermes credential-pool metadata for display/status checks."""
+    direct = read_profile_auth_credentials('default')
+    if direct:
+        return direct
     hermes_bin = shutil.which('hermes') or '/root/hermes-agent/venv/bin/hermes'
     if not Path(hermes_bin).exists():
         return []
@@ -9615,12 +9759,11 @@ def hermes_auth_credentials():
         if not item or not provider:
             continue
         source = item.group(4).strip()
-        status = ''
+        status = 'healthy'
         if ' rate-limited' in source or ' auth failed' in source or ' exhausted' in source:
-            # Keep the status visible while preserving the source field's stable value.
             parts = source.split(' ', 1)
             source = parts[0]
-            status = parts[1] if len(parts) > 1 else ''
+            status = parts[1] if len(parts) > 1 else 'unavailable'
         credentials.append({
             'provider': provider,
             'index': int(item.group(1)),
@@ -9629,6 +9772,7 @@ def hermes_auth_credentials():
             'source': source,
             'active': bool(item.group(5)),
             'status': status,
+            'health': status,
         })
     return credentials
 
@@ -9851,6 +9995,7 @@ def account_with_status(account, env_keys=None, auth_credentials=None):
         None,
     )
     configured = bool((credential_env and credential_env in env_keys) or matched_credential)
+    health = (matched_credential or {}).get('health') or (matched_credential or {}).get('status') or ('healthy' if configured else 'missing from this profile')
     return {
         **account,
         'configured': configured,
@@ -9859,8 +10004,213 @@ def account_with_status(account, env_keys=None, auth_credentials=None):
         'auth_type': matched_credential.get('auth_type') if matched_credential else '',
         'auth_source': matched_credential.get('source') if matched_credential else '',
         'auth_active': bool(matched_credential.get('active')) if matched_credential else False,
-        'auth_status': matched_credential.get('status') if matched_credential else '',
+        'auth_status': health,
+        'health': health,
+        'last_error_code': matched_credential.get('last_error_code') if matched_credential else '',
+        'last_error_class': matched_credential.get('last_error_class') if matched_credential else '',
+        'last_error_reason': matched_credential.get('last_error_reason') if matched_credential else '',
     }
+
+
+def runtime_agent_profile(agent_id, identity=None):
+    aid = safe_id(agent_id or 'default') or 'default'
+    try:
+        agents = list_agents_payload(identity)
+        agent_rows = agents if isinstance(agents, list) else agents.get('agents') or []
+        match = next((a for a in agent_rows if safe_id((a or {}).get('id') or '') == aid), None)
+        if match:
+            profile_path = str(match.get('profilePath') or match.get('profile_path') or '')
+            if profile_path.endswith('/.hermes') or profile_path == str(HERMES_HOME):
+                return 'default'
+            m = re.search(r'/profiles/([^/]+)$', profile_path)
+            if m:
+                return safe_id(m.group(1)) or aid
+    except Exception:
+        pass
+    known = set(configured_hermes_profile_ids(include_default=True))
+    if aid in known:
+        return aid
+    aliases = {
+        'devops-builder': 'dev-ops',
+        'andrej': 'dev-ops',
+        'devops': 'dev-ops',
+        'chief-operator': 'default',
+        'melkizac': 'default',
+    }
+    return aliases.get(aid, aid if aid in known else 'default')
+
+
+def list_profile_runtime_credentials(profile, provider='openai-codex'):
+    pid = safe_id(profile or 'default') or 'default'
+    root = runtime_profile_home(pid)
+    cfg = profile_model_config(pid)
+    credentials = read_profile_auth_credentials(pid, provider)
+    return {
+        'ok': True,
+        'profile': pid,
+        'profile_path': str(root),
+        'provider': provider,
+        'model': cfg.get('model') or '',
+        'active_credential_label': next((c.get('label') for c in credentials if c.get('active')), ''),
+        'credentials': credentials,
+        'summary': {
+            'total': len(credentials),
+            'healthy': sum(1 for c in credentials if c.get('health') == 'healthy'),
+            'dead': sum(1 for c in credentials if c.get('health') == 'dead/revoked'),
+            'rate_limited': sum(1 for c in credentials if c.get('health') == 'rate-limited'),
+        },
+    }
+
+
+def backup_runtime_file(path, backup_root, label):
+    path = Path(path)
+    if not path.exists():
+        return ''
+    backup_root.mkdir(parents=True, exist_ok=True)
+    dest = backup_root / f"{label}.{path.name}"
+    shutil.copy2(path, dest)
+    try:
+        os.chmod(dest, 0o600)
+    except Exception:
+        pass
+    return str(dest)
+
+
+def update_profile_model_config(profile, provider, model):
+    if yaml is None:
+        raise RuntimeError('PyYAML is required to update Hermes config.yaml safely')
+    root = runtime_profile_home(profile)
+    cfg_path = root / 'config.yaml'
+    cfg = {}
+    if cfg_path.exists():
+        cfg = yaml.safe_load(cfg_path.read_text(errors='replace') or '{}') or {}
+        if not isinstance(cfg, dict):
+            cfg = {}
+    model_cfg = cfg.get('model') if isinstance(cfg.get('model'), dict) else {}
+    model_cfg['provider'] = provider
+    model_cfg['default'] = model
+    cfg['model'] = model_cfg
+    root.mkdir(parents=True, exist_ok=True)
+    cfg_path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding='utf-8')
+    try:
+        os.chmod(cfg_path, 0o600)
+    except Exception:
+        pass
+    return str(cfg_path)
+
+
+def reorder_profile_credential_pool(profile, provider, credential_label):
+    root = runtime_profile_home(profile)
+    auth_path = root / 'auth.json'
+    if not auth_path.exists():
+        raise FileNotFoundError(f'auth.json not found for Hermes profile {profile}')
+    auth = json.loads(auth_path.read_text(errors='replace') or '{}')
+    if not isinstance(auth, dict):
+        raise RuntimeError('auth.json is not a JSON object')
+    pool = auth.get('credential_pool') if isinstance(auth.get('credential_pool'), dict) else {}
+    rows = pool.get(provider) if isinstance(pool.get(provider), list) else []
+    label_norm = str(credential_label or '').strip().lower()
+    selected = next((row for row in rows if isinstance(row, dict) and str(row.get('label') or '').strip().lower() == label_norm), None)
+    if not selected:
+        raise ValueError(f'Credential label {credential_label} is missing from profile {profile}')
+    health, error_code, error_reason, _ = credential_health_from_record(selected)
+    if health in ('dead/revoked', 'rate-limited'):
+        raise ValueError(f'Credential {credential_label} is {health}: {error_reason or error_code}')
+    ordered = [selected] + [row for row in rows if row is not selected]
+    for priority, row in enumerate(ordered):
+        if isinstance(row, dict):
+            row['priority'] = priority
+    pool[provider] = ordered
+    auth['credential_pool'] = pool
+    strategies = auth.get('credential_pool_strategies') if isinstance(auth.get('credential_pool_strategies'), dict) else {}
+    strategies[provider] = 'fill_first'
+    auth['credential_pool_strategies'] = strategies
+    auth['active_provider'] = provider
+    auth['updated_at'] = datetime.now(SGT).isoformat()
+    auth_path.write_text(json.dumps(auth, indent=2), encoding='utf-8')
+    try:
+        os.chmod(auth_path, 0o600)
+    except Exception:
+        pass
+    return str(auth_path)
+
+
+def restart_profile_gateway(profile):
+    hermes_bin = shutil.which('hermes') or '/root/hermes-agent/venv/bin/hermes'
+    cmd = [hermes_bin]
+    if safe_id(profile or 'default') != 'default':
+        cmd.extend(['--profile', safe_id(profile)])
+    cmd.extend(['gateway', 'restart'])
+    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=60)
+    return {'ok': proc.returncode == 0, 'returncode': proc.returncode, 'stdout': preview_content(proc.stdout, 600), 'stderr': preview_content(proc.stderr, 600)}
+
+
+def smoke_test_profile_runtime(profile, provider='openai-codex', model='gpt-5.5'):
+    pid = safe_id(profile or 'default') or 'default'
+    hermes_bin = shutil.which('hermes') or '/root/hermes-agent/venv/bin/hermes'
+    cmd = [hermes_bin]
+    if pid != 'default':
+        cmd.extend(['--profile', pid])
+    cmd.extend(['chat', '--provider', provider, '-m', model, '-q', 'Reply exactly OK', '--quiet'])
+    try:
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        return {'ok': False, 'profile': pid, 'provider': provider, 'model': model, 'error': 'smoke test timed out'}
+    output = (proc.stdout or '').strip()
+    stderr = (proc.stderr or '').strip()
+    return {
+        'ok': proc.returncode == 0 and output.endswith('OK'),
+        'profile': pid,
+        'provider': provider,
+        'model': model,
+        'returncode': proc.returncode,
+        'response': preview_content(output, 240),
+        'error': preview_content(stderr, 500) if proc.returncode != 0 else '',
+    }
+
+
+def apply_profile_runtime(profile, provider, model, credential_label, apply_mode='next_session', smoke_test=False):
+    pid = safe_id(profile or 'default') or 'default'
+    provider = str(provider or 'openai-codex').strip()[:80]
+    model = str(model or 'gpt-5.5').strip()[:160]
+    credential_label = str(credential_label or '').strip()[:120]
+    mode = str(apply_mode or 'next_session').strip()[:40]
+    if not credential_label:
+        return {'ok': False, 'error': 'credential_label required'}, 400
+    root = runtime_profile_home(pid)
+    if not root.exists():
+        return {'ok': False, 'error': f'Hermes profile {pid} not found'}, 404
+    stamp = datetime.now(SGT).strftime('%Y%m%d-%H%M%S')
+    backup_root = APP_ROOT / 'backups' / 'runtime-switcher' / pid / stamp
+    try:
+        backups = {
+            'auth_json': backup_runtime_file(root / 'auth.json', backup_root, 'before'),
+            'config_yaml': backup_runtime_file(root / 'config.yaml', backup_root, 'before'),
+        }
+        config_path = update_profile_model_config(pid, provider, model)
+        auth_path = reorder_profile_credential_pool(pid, provider, credential_label)
+        restart_result = None
+        if mode == 'restart_gateway':
+            restart_result = restart_profile_gateway(pid)
+        smoke = smoke_test_profile_runtime(pid, provider, model) if smoke_test else None
+        credentials = list_profile_runtime_credentials(pid, provider)
+        return {
+            'ok': True,
+            'profile': pid,
+            'profile_path': str(root),
+            'provider': provider,
+            'model': model,
+            'credential_label': credential_label,
+            'apply_mode': mode,
+            'config_path': config_path,
+            'auth_path': auth_path,
+            'backups': backups,
+            'gateway': {'restarted': mode == 'restart_gateway', 'result': restart_result},
+            'smoke_test': smoke,
+            'credentials': credentials.get('credentials', []),
+        }, 200
+    except Exception as exc:
+        return {'ok': False, 'profile': pid, 'provider': provider, 'model': model, 'credential_label': credential_label, 'error': preview_content(str(exc), 700)}, 400
 
 
 def default_agent_runtime_assignment(agent_id, models, accounts):
@@ -9902,6 +10252,29 @@ def read_agent_runtime_switcher(identity=None):
             account['id'] = f"{account['id']}-{idx}"
         seen.add(account['id'])
         accounts.append(account_with_status(account, auth_credentials=auth_credentials))
+    # Auto-surface any Hermes OpenAI Codex credentials that were added after the
+    # runtime switcher registry was written. This keeps HMC selectable accounts
+    # aligned to auth.json labels without treating account labels as model ids.
+    for credential in auth_credentials:
+        if credential.get('provider') != 'openai-codex':
+            continue
+        label = str(credential.get('label') or '').strip()
+        if not label:
+            continue
+        if any(str(a.get('label') or '').strip().lower() == label.lower() for a in accounts):
+            continue
+        account = sanitize_runtime_account({
+            'id': f"openai-codex-{label}",
+            'label': label,
+            'provider': 'openai-codex',
+            'credential_env': '',
+            'billing_owner': 'Hermes credential pool',
+            'notes': 'Auto-discovered from Hermes auth.json credential pool. Secrets stay server-side.',
+        }, len(accounts))
+        if account['id'] in seen:
+            account['id'] = f"{account['id']}-{len(accounts)}"
+        seen.add(account['id'])
+        accounts.append(account_with_status(account, auth_credentials=auth_credentials))
     try:
         agents = list_agents_payload(identity)
     except Exception:
@@ -9925,8 +10298,17 @@ def read_agent_runtime_switcher(identity=None):
             account_id = base.get('account_id') or ''
         if model_id not in model_ids:
             model_id = base.get('model_id') or ''
+        selected_model_row = next((m for m in models if m.get('id') == model_id), {})
+        if selected_model_row.get('provider') == 'openai-codex' and selected_model_row.get('model'):
+            canonical_model = next((m for m in models if m.get('provider') == 'openai-codex' and m.get('model') == selected_model_row.get('model') and not any(token in str(m.get('id') or '').lower() for token in ('codex-nexius', 'codex-nexiuslabs', 'codex-melverick'))), None)
+            if canonical_model and canonical_model.get('id'):
+                model_id = canonical_model.get('id')
         assignments[aid] = {
             **base,
+            'hermes_profile': str(saved.get('hermes_profile') or runtime_agent_profile(aid, identity))[:120],
+            'provider': str(saved.get('provider') or '')[:80],
+            'model': str(saved.get('model') or '')[:160],
+            'credential_label': str(saved.get('credential_label') or '')[:120],
             'account_id': account_id,
             'model_id': model_id,
             'reasoning': str(saved.get('reasoning') or base.get('reasoning') or 'balanced')[:40],
@@ -9934,6 +10316,9 @@ def read_agent_runtime_switcher(identity=None):
             'updated_at': str(saved.get('updated_at') or '')[:80],
             'updated_by': str(saved.get('updated_by') or '')[:120],
             'note': str(saved.get('note') or base.get('note') or '')[:500],
+            'applied': bool(saved.get('applied')),
+            'gateway_restarted': bool(saved.get('gateway_restarted')),
+            'smoke_test': saved.get('smoke_test') if isinstance(saved.get('smoke_test'), dict) else None,
         }
     audit = raw.get('audit') if isinstance(raw.get('audit'), list) else []
     return {
@@ -9980,32 +10365,66 @@ def write_agent_runtime_assignment(identity, agent_id, payload):
     previous = current['assignments'].get(agent_id) or {}
     actor = (((identity or {}).get('user') or {}).get('email') or 'Mission Control operator')
     now = datetime.now(SGT).strftime('%Y-%m-%d %H:%M:%S SGT')
+    account = next((a for a in current.get('accounts', []) if a.get('id') == account_id), {})
+    model = next((m for m in current.get('models', []) if m.get('id') == model_id), {})
+    provider = str(model.get('provider') or account.get('provider') or 'openai-codex').strip()
+    model_value = str(model.get('model') or payload.get('model') or 'gpt-5.5').strip()
+    canonical_model = next((m for m in current.get('models', []) if m.get('provider') == provider and m.get('model') == model_value and not any(token in str(m.get('id') or '').lower() for token in ('codex-nexius', 'codex-nexiuslabs', 'codex-melverick'))), None)
+    if canonical_model and canonical_model.get('id'):
+        model_id = canonical_model.get('id')
+        model = canonical_model
+    credential_label = str(payload.get('credential_label') or payload.get('credentialLabel') or account.get('auth_label') or account.get('label') or '').strip()
+    apply_mode = str(payload.get('apply_mode') or payload.get('applyMode') or 'next_session')[:40]
+    profile = runtime_agent_profile(agent_id, identity)
+    apply_result = None
+    if provider == 'openai-codex' and credential_label:
+        apply_result, apply_status = apply_profile_runtime(
+            profile,
+            provider,
+            model_value,
+            credential_label,
+            apply_mode=apply_mode,
+            smoke_test=bool(payload.get('smoke_test') or payload.get('smokeTest')),
+        )
+        if apply_status != 200:
+            return apply_result, apply_status
     next_assignment = {
         'agent_id': agent_id,
+        'hermes_profile': profile,
+        'provider': provider,
+        'model': model_value,
+        'credential_label': credential_label,
         'account_id': account_id,
         'model_id': model_id,
         'reasoning': str(payload.get('reasoning') or previous.get('reasoning') or 'balanced')[:40],
-        'apply_mode': str(payload.get('apply_mode') or payload.get('applyMode') or 'next_session')[:40],
+        'apply_mode': apply_mode,
         'updated_at': now,
         'updated_by': actor,
         'note': str(payload.get('note') or 'Runtime switch saved from Mission Control.')[:500],
+        'applied': bool(apply_result and apply_result.get('ok')),
+        'gateway_restarted': bool((apply_result or {}).get('gateway', {}).get('restarted')),
+        'smoke_test': (apply_result or {}).get('smoke_test'),
     }
     assignments[agent_id] = next_assignment
     raw['assignments'] = assignments
     raw['updated_at'] = now
-    account = next((a for a in current.get('accounts', []) if a.get('id') == account_id), {})
-    model = next((m for m in current.get('models', []) if m.get('id') == model_id), {})
     audit = raw.get('audit') if isinstance(raw.get('audit'), list) else []
     audit.append({
         'id': f"runtime-switch-{int(time.time()*1000)}",
         'agent_id': agent_id,
+        'hermes_profile': profile,
         'from_account': previous.get('account_id') or '',
         'to_account': account_id,
         'from_model': previous.get('model_id') or '',
         'to_model': model_id,
+        'provider': provider,
+        'model': model_value,
+        'credential_label': credential_label,
         'account_label': account.get('label') or account_id,
-        'model_label': model.get('label') or model.get('model') or model_id,
+        'model_label': model.get('label') or model_value or model_id,
         'apply_mode': next_assignment['apply_mode'],
+        'gateway_restarted': next_assignment['gateway_restarted'],
+        'smoke_test_ok': bool((next_assignment.get('smoke_test') or {}).get('ok')) if next_assignment.get('smoke_test') else None,
         'reasoning': next_assignment['reasoning'],
         'changed_by': actor,
         'timestamp': now,
@@ -19549,7 +19968,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Cache-Control', 'no-store')
             self.end_headers()
             return
-        if parsed.path in ('/', '/login', '/docs', '/mission-control-docs', '/mission-control-guide'):
+        if parsed.path in ('/', '/login', '/agent-voice', '/docs', '/mission-control-docs', '/mission-control-guide'):
             self.send_html()
             return
         if parsed.path.startswith('/assets/') and self.send_file(parsed.path):
@@ -19649,6 +20068,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(result, status)
         elif parsed.path == '/api/agent-runtimes':
             self.send_json(read_agent_runtime_switcher(current_identity_from_cookie(self.headers.get('Cookie', ''))))
+        elif parsed.path.startswith('/api/agent-runtimes/') and parsed.path.endswith('/credentials'):
+            identity = current_identity_from_cookie(self.headers.get('Cookie', ''))
+            parts = parsed.path.strip('/').split('/')
+            agent_id = parts[2] if len(parts) >= 4 else 'default'
+            profile = runtime_agent_profile(agent_id, identity)
+            self.send_json(list_profile_runtime_credentials(profile, 'openai-codex'))
         elif parsed.path == '/api/model-router':
             self.send_json(read_model_router_config())
         elif parsed.path == '/api/performance/events':
@@ -20120,6 +20545,13 @@ class Handler(BaseHTTPRequestHandler):
         elif parsed.path == '/api/agent-runtimes':
             result, status = write_agent_runtime_assignment(identity, payload.get('agent_id') or payload.get('agentId') or '', payload)
             self.send_json(result, status)
+        elif parsed.path.startswith('/api/agent-runtimes/') and parsed.path.endswith('/smoke'):
+            parts = parsed.path.strip('/').split('/')
+            agent_id = parts[2] if len(parts) >= 4 else 'default'
+            profile = runtime_agent_profile(agent_id, identity)
+            provider = str(payload.get('provider') or 'openai-codex')
+            model = str(payload.get('model') or 'gpt-5.5')
+            self.send_json(smoke_test_profile_runtime(profile, provider, model))
         elif parsed.path.startswith('/api/agent-runtimes/'):
             parts = parsed.path.strip('/').split('/')
             result, status = write_agent_runtime_assignment(identity, parts[2] if len(parts) >= 3 else '', payload)

@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { StoreProvider, useStore } from "./services/store";
 import { adminOnlyViews, canAccessView, safeDefaultViewForRole } from "./services/uiPermissions";
 import { NavRail } from "./components/NavRail";
-import { Icon } from "./components/Icon";
 import { MissionControl } from "./views/MissionControl";
 import { Dashboard } from "./views/Dashboard";
 import { Agents } from "./views/Agents";
@@ -40,23 +39,7 @@ import { recordRouteTelemetry } from "./services/performanceTelemetry";
 
 const docsPaths = new Set(["/mission-control-docs", "/mission-control-guide", "/docs"]);
 const publicPaths = new Set(["/", "/login"]);
-
-async function requestJson<T>(path: string): Promise<T> {
-  const res = await fetch(`${window.location.protocol}//${window.location.host}${path}`, {
-    credentials: "include",
-    headers: { Accept: "application/json" },
-  });
-  if (!res.ok) throw new Error(`${path}: ${res.statusText}`);
-  return res.json() as Promise<T>;
-}
-
-async function safeJson<T>(path: string, fallback: T): Promise<T> {
-  try {
-    return await requestJson<T>(path);
-  } catch {
-    return fallback;
-  }
-}
+const standaloneAgentVoicePaths = new Set(["/agent-voice"]);
 
 function Shell() {
   // Preserve auth-flash regression contract: const { view, setView, me, loading } = useStore();
@@ -106,9 +89,6 @@ function Shell() {
   return (
     <div className="shell">
       <NavRail />
-      <div className="top-right-actions">
-        <NeedsAttentionBell />
-      </div>
       <main className="main">
         {!canRenderView && <AdminOnlyNotice onGoHome={() => setView(safeDefaultViewForRole(me?.user.role))} />}
         {canRenderView && view === "mission" && <MissionControl />}
@@ -151,50 +131,6 @@ function Shell() {
   );
 }
 
-function NeedsAttentionBell() {
-  const { approvals, setView } = useStore();
-  const [approvalCount, setApprovalCount] = useState(approvals.length);
-
-  useEffect(() => {
-    let alive = true;
-    async function loadApprovalCount() {
-      const inbox = await safeJson<any>("/api/inbox", null);
-      const summary = inbox?.summary;
-      const pendingFromSummary = Number(summary?.drafted ?? 0) + Number(summary?.ready ?? 0);
-      const pendingFromItems = Array.isArray(inbox?.items)
-        ? inbox.items.filter((item: any) => item?.status === "drafted" || item?.status === "ready").length
-        : approvals.length;
-      const nextCount = summary ? pendingFromSummary : pendingFromItems;
-      if (alive) setApprovalCount(nextCount);
-    }
-    const timer = window.setTimeout(() => {
-      void loadApprovalCount();
-    }, 20000);
-    const interval = window.setInterval(loadApprovalCount, 60000);
-    return () => {
-      alive = false;
-      window.clearTimeout(timer);
-      window.clearInterval(interval);
-    };
-  }, [approvals.length]);
-
-  if (approvalCount <= 0) return null;
-
-  const countLabel = approvalCount === 1 ? "1 pending approval" : `${approvalCount} pending approvals`;
-
-  return (
-    <button
-      className="top-attention-bell has-items"
-      aria-label={`Pending approvals: ${approvalCount}`}
-      onClick={() => setView("approvals")}
-      title={countLabel}
-    >
-      <Icon name="bell" size={18} />
-      <span className="attention-count">{approvalCount > 99 ? "99+" : approvalCount}</span>
-    </button>
-  );
-}
-
 function AdminOnlyNotice({ onGoHome }: { onGoHome: () => void }) {
   return (
     <div className="center mc-empty">
@@ -210,6 +146,10 @@ export default function App() {
 
   if (docsPaths.has(pathname)) {
     return <MissionControlDocs />;
+  }
+
+  if (standaloneAgentVoicePaths.has(pathname)) {
+    return <AgentVoice />;
   }
 
   if (publicPaths.has(pathname)) {

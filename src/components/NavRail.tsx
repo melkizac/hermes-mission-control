@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../services/store";
 import { Icon } from "./Icon";
+import { AgentAvatar } from "./AgentAvatar";
 import logoUrl from "../assets/melverick-os-logo.jpg";
 import type { ViewKey } from "../types";
 
@@ -131,6 +132,9 @@ type UsageRemainingSummary = {
   daily?: UsageWindow;
   weekly?: UsageWindow;
 };
+type InboxSummary = { drafted?: number; ready?: number };
+type InboxItem = { status?: string };
+type InboxPayload = { summary?: InboxSummary; items?: InboxItem[] };
 
 async function requestStatus(): Promise<RailStatus> {
   const url = `${window.location.protocol}//${window.location.host}/api/status`;
@@ -145,6 +149,16 @@ async function requestUsageRemaining(): Promise<UsageRemainingSummary | null> {
   if (!res.ok) throw new Error(res.statusText);
   const data = await res.json() as { model_usage?: UsageRemainingSummary };
   return data.model_usage ?? null;
+}
+
+async function requestApprovalCount(fallbackCount: number): Promise<number> {
+  const url = `${window.location.protocol}//${window.location.host}/api/inbox`;
+  const res = await fetch(url, { credentials: "include", headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(res.statusText);
+  const inbox = await res.json() as InboxPayload;
+  if (inbox.summary) return Number(inbox.summary.drafted ?? 0) + Number(inbox.summary.ready ?? 0);
+  if (!Array.isArray(inbox.items)) return fallbackCount;
+  return inbox.items.filter((item) => item.status === "drafted" || item.status === "ready").length;
 }
 
 function remainingPercent(window?: UsageWindow) {
@@ -172,11 +186,13 @@ function UsageRemainingPeek({ usage }: { usage: UsageRemainingSummary | null }) 
 }
 
 export function NavRail() {
-  const { view, setView, uiMode, setUiMode, permissions } = useStore();
+  const { view, setView, uiMode, setUiMode, permissions, approvals, agents, selected, selectedId, select } = useStore();
   const [status, setStatus] = useState<RailStatus | null>(null);
   const [usageRemaining, setUsageRemaining] = useState<UsageRemainingSummary | null>(null);
+  const [approvalCount, setApprovalCount] = useState(approvals.length);
   const [workforceMenuOpen, setWorkforceMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const [usagePeekOpen, setUsagePeekOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem("hmc-nav-collapsed") === "true");
 
@@ -202,6 +218,27 @@ export function NavRail() {
   }, []);
 
   useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const next = await requestApprovalCount(approvals.length);
+        if (alive) setApprovalCount(next);
+      } catch {
+        if (alive) setApprovalCount(approvals.length);
+      }
+    };
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 20000);
+    const interval = window.setInterval(load, 60000);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+      window.clearInterval(interval);
+    };
+  }, [approvals.length]);
+
+  useEffect(() => {
     if (!settingsOpen || !usagePeekOpen) return;
     let alive = true;
     requestUsageRemaining()
@@ -220,6 +257,7 @@ export function NavRail() {
       setSettingsOpen(false);
       setUsagePeekOpen(false);
       setWorkforceMenuOpen(false);
+      setAgentMenuOpen(false);
     }
   }, [collapsed]);
 
@@ -233,6 +271,9 @@ export function NavRail() {
     ?.items.filter((item): item is NavRouteItem => isRouteItem(item) && workforceSelectorKeys.includes(item.key)) ?? [];
   const workforceSelectorActive = workforceSelectorKeys.includes(view);
   const workforceMenuExpanded = !collapsed && (workforceMenuOpen || workforceSelectorActive);
+  const activeProfile = selected ?? agents.find((agent) => agent.id === selectedId) ?? agents[0];
+  const activeProfileLabel = activeProfile?.name ?? "Melkizac";
+  const activeProfileMeta = activeProfile?.squad || activeProfile?.statusLabel || "Active profile";
 
   async function handleLogout() {
     try {
@@ -250,13 +291,6 @@ export function NavRail() {
     window.history.pushState({}, "", "/app");
     setUiMode("workspace");
     setView("mission");
-    setSettingsOpen(false);
-  }
-
-  function switchToExpertMode() {
-    window.history.pushState({}, "", "/app?mode=expert");
-    setUiMode("expert");
-    setView("agent-org");
     setSettingsOpen(false);
   }
 
@@ -302,6 +336,7 @@ export function NavRail() {
           </button>
         )}
       </div>
+
 
       <div className="nav scroll">
         {visibleGroups.map((group) => (
@@ -352,6 +387,10 @@ export function NavRail() {
               }
               const active = isRouteItem(it) && view === it.key;
               const key = navItemKey(it);
+              const approvalBadge = isRouteItem(it) && it.key === "approvals" && approvalCount > 0
+                ? (approvalCount > 99 ? "99+" : String(approvalCount))
+                : null;
+              const collapsedTitle = collapsed && approvalBadge ? `${it.label} (${approvalBadge})` : collapsed ? it.label : undefined;
               if (isLinkItem(it)) {
                 return (
                   <a key={key} className="nitem" href={it.href} data-tooltip={it.label} title={collapsed ? it.label : undefined}>
@@ -366,11 +405,12 @@ export function NavRail() {
                   key={key}
                   className={"nitem" + (active ? " on" : "")}
                   onClick={onClick}
-                  data-tooltip={it.label}
-                  title={collapsed ? it.label : undefined}
+                  data-tooltip={collapsedTitle ?? it.label}
+                  title={collapsedTitle}
                 >
                   <Icon name={it.icon} size={17} />
                   <span className="nav-text">{it.label}</span>
+                  {approvalBadge && <span className="pill" aria-label={`${approvalBadge} pending approvals`}>{approvalBadge}</span>}
                 </button>
               );
             })}
@@ -379,11 +419,65 @@ export function NavRail() {
       </div>
 
       {!collapsed && (
+        <div className="profile-selector-dock">
+          <button
+            className={"profile-selector-trigger" + (agentMenuOpen ? " on" : "")}
+            type="button"
+            onClick={() => setAgentMenuOpen((open) => !open)}
+            aria-haspopup="listbox"
+            aria-expanded={agentMenuOpen}
+            aria-label={`Active profile: ${activeProfileLabel}. Select agent profile`}
+          >
+            {activeProfile ? (
+              <AgentAvatar agent={activeProfile} className="profile-selector-avatar" />
+            ) : (
+              <span className="profile-selector-avatar profile-selector-avatar-fallback">M</span>
+            )}
+            <span className="profile-selector-copy">
+              <span>Active profile</span>
+              <b>{activeProfileLabel}</b>
+              <small>{activeProfileMeta}</small>
+            </span>
+            <Icon name="chevronDown" size={15} />
+          </button>
+          {agentMenuOpen && (
+            <div className="profile-selector-menu" role="listbox" aria-label="Select active agent profile">
+              {(agents.length ? agents : activeProfile ? [activeProfile] : []).map((agent) => {
+                const active = agent.id === activeProfile?.id;
+                return (
+                  <button
+                    key={agent.id}
+                    className={"profile-selector-menu-item" + (active ? " on" : "")}
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    onClick={() => {
+                      select(agent.id);
+                      setView("mission");
+                      setAgentMenuOpen(false);
+                    }}
+                  >
+                    <AgentAvatar agent={agent} className="profile-selector-menu-avatar" />
+                    <span>
+                      <b>{agent.name}</b>
+                      <small>{agent.squad || agent.statusLabel || agent.model}</small>
+                    </span>
+                    {active && <Icon name="check" size={15} />}
+                  </button>
+                );
+              })}
+              {!agents.length && !activeProfile && <div className="profile-selector-empty">No agents available</div>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!collapsed && (
         <div className="settings-dock">
           {settingsOpen && (
             <div className="settings-menu" role="menu" aria-label="System menu">
               {permissions.accountIsAdmin && (
-                <div className="settings-mode-toggle" aria-label="Profile mode">
+                <div className="settings-mode-toggle settings-mode-toggle-two" aria-label="Profile mode">
                   <button
                     className={"settings-mode-toggle-button" + (uiMode === "workspace" ? " on" : "")}
                     aria-pressed={uiMode === "workspace"}
@@ -391,14 +485,6 @@ export function NavRail() {
                     type="button"
                   >
                     User
-                  </button>
-                  <button
-                    className={"settings-mode-toggle-button" + (uiMode === "expert" ? " on" : "")}
-                    aria-pressed={uiMode === "expert"}
-                    onClick={switchToExpertMode}
-                    type="button"
-                  >
-                    Expert
                   </button>
                   <button
                     className={"settings-mode-toggle-button" + (uiMode === "admin" ? " on" : "")}

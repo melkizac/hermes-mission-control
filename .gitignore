@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.tsbuildinfo
+graphify-out/
 .env
 .env.*
 .DS_Store

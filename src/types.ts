@@ -610,10 +610,23 @@ export interface AgentRuntimeAccount {
   notes?: string;
   configured?: boolean;
   secret_status?: string;
+  auth_label?: string;
+  auth_type?: string;
+  auth_source?: string;
+  auth_active?: boolean;
+  auth_status?: string;
+  health?: string;
+  last_error_code?: string;
+  last_error_class?: string;
+  last_error_reason?: string;
 }
 
 export interface AgentRuntimeAssignment {
   agent_id: string;
+  hermes_profile?: string;
+  provider?: string;
+  model?: string;
+  credential_label?: string;
   account_id: string;
   model_id: string;
   reasoning: string;
@@ -621,6 +634,9 @@ export interface AgentRuntimeAssignment {
   updated_at?: string;
   updated_by?: string;
   note?: string;
+  applied?: boolean;
+  gateway_restarted?: boolean;
+  smoke_test?: { ok?: boolean; error?: string; response?: string; returncode?: number } | boolean | null;
 }
 
 export interface AgentRuntimeSwitcher {
@@ -926,6 +942,20 @@ export interface AuditSessionDetailResponse {
   messages: AuditMessage[];
 }
 
+export interface AutomationUsage {
+  job_id?: string;
+  date?: string;
+  run_count: number;
+  message_count: number;
+  tool_call_count: number;
+  input_tokens: number;
+  output_tokens: number;
+  tokens: number;
+  estimated_cost_usd: number;
+  total_estimated_cost_usd?: number;
+  last_run_at?: string | null;
+}
+
 export interface AutomationRun {
   id: string;
   title: string;
@@ -978,6 +1008,7 @@ export interface AutomationRoutine {
   recent_runs: AutomationRun[];
   recent_outputs: AutomationOutput[];
   run_count: number;
+  usage: AutomationUsage;
   workflow_template_id?: string;
   workflowName?: string;
   taskBoardTenant?: string;
@@ -1031,10 +1062,14 @@ export interface AutomationsResponse {
     platform?: number;
     workspace?: number;
     personal?: number;
+    usage?: AutomationUsage;
+    daily_spend?: AutomationUsage[];
   };
   states: string[];
   workflow_routines?: AutomationRoutine[];
   routine_summary?: Record<string, number>;
+  usage_by_job?: Record<string, AutomationUsage>;
+  daily_spend?: AutomationUsage[];
   error?: string;
 }
 
