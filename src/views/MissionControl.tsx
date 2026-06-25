@@ -1007,8 +1007,8 @@ export function MissionControl() {
     voiceShouldListenRef.current = false;
     recognitionRef.current?.stop();
     if (!instruction) {
-      setVoiceStatus("idle");
-      setVoiceMessage("Voice input stopped. No transcript was captured.");
+      setVoiceStatus("ready");
+      setVoiceMessage("No transcript was captured. Tap the orb and try again.");
       return;
     }
     updateDraft(instruction);
@@ -1026,8 +1026,8 @@ export function MissionControl() {
   function stopVoiceInput() {
     voiceShouldListenRef.current = false;
     recognitionRef.current?.stop();
-    setVoiceStatus("idle");
-    setVoiceMessage("Voice input stopped.");
+    setVoiceStatus("ready");
+    setVoiceMessage("Voice input stopped. Tap the orb to speak again.");
   }
 
   function startVoiceInput() {
@@ -1085,10 +1085,11 @@ export function MissionControl() {
         try {
           recognition.start();
         } catch {
-          setVoiceStatus("idle");
+          setVoiceStatus("ready");
+          setVoiceMessage("Voice input paused. Tap the orb to speak again.");
         }
       } else {
-        setVoiceStatus((current) => (current === "listening" ? "idle" : current));
+        setVoiceStatus((current) => (current === "listening" ? "ready" : current));
       }
     };
 
@@ -1160,7 +1161,7 @@ export function MissionControl() {
                 : "Voice screen ready. Tap to record another voice message.";
       const voiceTitle = voiceStatus === "listening" ? "Tap to send voice message" : voiceStatus === "speaking" ? "Tap to stop voice reply" : voiceReplyNeedsTap ? "Tap to play voice reply" : "Voice screen";
       const primaryInstruction = voiceStatus === "listening"
-        ? "Tap anywhere to finish and send"
+        ? (voiceTranscript ? "Tap anywhere to send" : "Listening...")
         : voiceStatus === "sending"
           ? "Waiting for Melkizac"
           : voiceStatus === "speaking"
