@@ -362,7 +362,7 @@ input, select, textarea { font-family: inherit; }
 .top-approval-notification { position: fixed; top: 18px; right: 18px; z-index: 120; width: 34px; height: 34px; border: 0; border-radius: 999px; background: transparent; color: #0b6f66; display: grid; place-items: center; box-shadow: none; }
 .top-approval-notification:hover,
 .top-approval-notification.on { color: #0b6f66; background: transparent; box-shadow: none; }
-.top-approval-notification .utility-dock-badge { top: -5px; right: -3px; min-width: 20px; height: 20px; font-size: 11px; }
+.top-approval-notification .utility-dock-badge { top: 1px; right: 0; min-width: 16px; height: 16px; padding: 0 4px; font-size: 9px; box-shadow: 0 0 0 1px #fff; }
 .settings-dock { position: relative; margin: 0 12px 14px; flex: 0 0 auto; }
 .settings-trigger,
 .settings-menu-item { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: transparent; color: var(--ink2); text-align: left; font-size: 13px; font-weight: 650; border-radius: 10px; padding: 9px 10px; text-decoration: none; }
