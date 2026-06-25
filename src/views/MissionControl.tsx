@@ -6,13 +6,11 @@ import { Icon } from "../components/Icon";
 import { cachedJsonRequest } from "../services/queryCache";
 import { buildChatIntentPreview, confidenceFromScore, routeChatIntent, serializeChatIntentDecision } from "../services/chatIntentRouter";
 import type { ChatIntentDecision, ChatIntentPreview, ChatIntentNextAction, ChatIntentType, ChatMissionContext, ChatRoutineContext, ChatWorkflowContext } from "../services/chatIntentRouter";
-import type { Attachment, AutomationsResponse, BoardResponse, BoardTask, Message, ProjectRecord, ProjectsResponse, ReplyContext, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
+import type { Attachment, AutomationsResponse, BoardResponse, BoardTask, Message, ModelRoutingSelection, ProjectRecord, ProjectsResponse, ReplyContext, RouterConfig, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
 
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
 type ChatPermissionMode = "ask-critical" | "full-policy" | "draft-only";
-type ChatModelMode = "auto" | "gpt-55-medium" | "fast" | "deep";
-
 type ChatIntentRoutingActionId =
   | "send_to_agent"
   | "create_task"
@@ -170,13 +168,6 @@ const permissionModeOptions: Array<{ value: ChatPermissionMode; label: string; p
   { value: "draft-only", label: "Draft only", promptLabel: "Draft only" },
 ];
 
-const modelModeOptions: Array<{ value: ChatModelMode; label: string; promptLabel: string }> = [
-  { value: "auto", label: "AUTO", promptLabel: "AUTO — Melkizac decides" },
-  { value: "gpt-55-medium", label: "5.5 Medium", promptLabel: "5.5 Medium" },
-  { value: "fast", label: "Fast", promptLabel: "Fast" },
-  { value: "deep", label: "Deep", promptLabel: "Deep reasoning" },
-];
-
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${window.location.protocol}//${window.location.host}${path}`;
   const headers = new Headers(init?.headers);
@@ -309,9 +300,9 @@ function isRenderableChatMessage(message: Message) {
   return (message.role === "user" || message.role === "agent") && Boolean(message.text?.trim() || message.attachments?.length || message.artifact);
 }
 
-function chatMessageLabel(message: Message, agentName = "Melkizac") {
+function chatMessageLabel(message: Message) {
   if (message.role === "user") return "You";
-  return agentName;
+  return "Melkizac";
 }
 
 function chatMessageTime(message: Message) {
@@ -335,7 +326,7 @@ function visibleChatText(message: Message) {
 }
 
 
-function mainChatReplyContext(message: Message, agentName = "Melkizac"): ReplyContext {
+function mainChatReplyContext(message: Message): ReplyContext {
   const text = visibleChatText(message)
     || message.artifact?.preview
     || message.artifact?.filename
@@ -344,7 +335,7 @@ function mainChatReplyContext(message: Message, agentName = "Melkizac"): ReplyCo
   return {
     id: message.id,
     role: message.role,
-    author: chatMessageLabel(message, agentName),
+    author: chatMessageLabel(message),
     text: text.slice(0, 2000),
     at: chatMessageTime(message),
   };
@@ -458,7 +449,7 @@ function formatRunDuration(ms: number) {
 }
 
 export function MissionControl() {
-  const { agents, approvals, selected, selectedId, sendToAgent, uploadAttachmentToAgent, setView, stopProcessingForAgent, refreshAgent } = useStore();
+  const { agents, approvals, sendToAgent, uploadAttachmentToAgent, setView, stopProcessingForAgent, refreshAgent, getModelRouter } = useStore();
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -471,7 +462,9 @@ export function MissionControl() {
   const [workflowContextLoaded, setWorkflowContextLoaded] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [permissionMode, setPermissionMode] = useState<ChatPermissionMode>("full-policy");
-  const [modelMode, setModelMode] = useState<ChatModelMode>("gpt-55-medium");
+  const [modelMode, setModelMode] = useState(() => window.localStorage.getItem("hmc:model-selection") || "auto");
+  const [modelRouterConfig, setModelRouterConfig] = useState<RouterConfig | null>(null);
+  const [modelRouterLoading, setModelRouterLoading] = useState(false);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [hasStartedMainChat, setHasStartedMainChat] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>("idle");
@@ -605,19 +598,21 @@ export function MissionControl() {
       .map((workItem) => ({ id: workItem.id, title: workItem.title, status: workItem.status })),
     [recentTasks],
   );
-  const selectedModel = modelModeOptions.find((option) => option.value === modelMode) ?? modelModeOptions[0];
+  const enabledModels = useMemo(() => (modelRouterConfig?.models ?? []).filter((model) => model.enabled), [modelRouterConfig]);
+  const selectedModel = enabledModels.find((model) => model.id === modelMode) ?? null;
+  const selectedModelLabel = selectedModel ? (selectedModel.label || selectedModel.model) : "Auto";
+  const selectedModelPromptLabel = selectedModel
+    ? `${selectedModel.label || selectedModel.model} · ${selectedModel.tier}${selectedModel.authorized ? "" : " · key missing"}`
+    : modelRouterConfig?.enabled === false
+      ? "Default Hermes model"
+      : "AUTO - Melkizac decides";
   const selectedPermission = permissionModeOptions.find((option) => option.value === permissionMode) ?? permissionModeOptions[0];
-  const activeAgent = selected ?? agents.find((agent) => agent.id === selectedId) ?? agents.find((agent) => agent.id === "default") ?? agents[0];
-  const activeAgentId = activeAgent?.id ?? "default";
-  const activeAgentName = activeAgent?.name || "Melkizac";
-  const selectedModelPromptLabel = selectedModel.value === "auto" ? `AUTO — ${activeAgentName} decides` : selectedModel.promptLabel;
-  const activeAgentRole = activeAgent?.squad || "Agent";
-  const activeAgentInitials = activeAgent?.initials || activeAgentName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "ME";
   const greeting = singaporeDaypartGreeting();
   const heroPrompt = selectedProject ? `What should we work on in “${projectLabel(selectedProject)}”?` : `${greeting}, Melverick!`;
+  const melkizac = agents.find((agent) => agent.id === "default") ?? agents[0];
   const mainChatMessages = useMemo(
-    () => (activeAgent?.messages ?? []).filter(isRenderableChatMessage).slice(-80),
-    [activeAgent?.messages],
+    () => (melkizac?.messages ?? []).filter(isRenderableChatMessage).slice(-80),
+    [melkizac?.messages],
   );
   const pendingMainMessageAlreadyVisible = useMemo(
     () => Boolean(pendingMainMessage && mainChatMessages.some((message) => message.role === "user" && visibleChatText(message) === pendingMainMessage.text)),
@@ -625,7 +620,7 @@ export function MissionControl() {
   );
   const visiblePendingMainMessage = pendingMainMessageAlreadyVisible ? null : pendingMainMessage;
   const activeMainBackendRequestId = useMemo(() => {
-    const activeIds = new Set(activeAgent?.processingRequests ?? []);
+    const activeIds = new Set(melkizac?.processingRequests ?? []);
     if (!activeIds.size) return null;
     const activeUserRequests = [...mainChatMessages]
       .reverse()
@@ -634,11 +629,11 @@ export function MissionControl() {
       const completed = mainChatMessages.some((message) => message.requestId === userMessage.requestId && (message.role === "agent" || message.role === "system"));
       if (!completed) return userMessage.requestId ?? null;
     }
-    return activeAgent?.processingRequests?.[0] ?? null;
-  }, [activeAgent?.processingRequests, mainChatMessages]);
+    return melkizac?.processingRequests?.[0] ?? null;
+  }, [mainChatMessages, melkizac?.processingRequests]);
   const activeMainBackendRequestDetail = useMemo(
-    () => (activeAgent?.processingRequestDetails ?? []).find((item) => item.id === activeMainBackendRequestId),
-    [activeAgent?.processingRequestDetails, activeMainBackendRequestId],
+    () => (melkizac?.processingRequestDetails ?? []).find((item) => item.id === activeMainBackendRequestId),
+    [activeMainBackendRequestId, melkizac?.processingRequestDetails],
   );
   const activeMainBackendUserMessage = useMemo(
     () => mainChatMessages.find((message) => message.role === "user" && message.requestId === activeMainBackendRequestId),
@@ -653,6 +648,57 @@ export function MissionControl() {
   const isMainChatProcessing = sending || Boolean(routingActionBusy) || Boolean(activeMainBackendRequestId);
   const shouldShowMainChatTranscript = hasStartedMainChat || Boolean(visiblePendingMainMessage) || Boolean(activeMainBackendRequestId);
   const processingElapsedLabel = effectiveProcessingStartedAt ? formatRunDuration(processingNow - effectiveProcessingStartedAt) : "0:00";
+
+  const ensureModelRouter = useCallback(async () => {
+    if (modelRouterConfig || modelRouterLoading) return modelRouterConfig;
+    setModelRouterLoading(true);
+    let alive = true;
+    try {
+      const cfg = await getModelRouter();
+      if (!alive) return cfg;
+      setModelRouterConfig(cfg);
+      const exists = modelMode === "auto" || (cfg.models ?? []).some((model) => model.enabled && model.id === modelMode);
+      if (!exists) setModelMode("auto");
+      return cfg;
+    } catch {
+      if (alive) setModelRouterConfig(null);
+      return null;
+    } finally {
+      if (alive) setModelRouterLoading(false);
+    }
+  }, [getModelRouter, modelMode, modelRouterConfig, modelRouterLoading]);
+
+  useEffect(() => {
+    let alive = true;
+    setModelRouterLoading(true);
+    void getModelRouter()
+      .then((cfg) => {
+        if (!alive) return;
+        setModelRouterConfig(cfg);
+        const exists = modelMode === "auto" || (cfg.models ?? []).some((model) => model.enabled && model.id === modelMode);
+        if (!exists) setModelMode("auto");
+      })
+      .catch(() => {
+        if (alive) setModelRouterConfig(null);
+      })
+      .finally(() => {
+        if (alive) setModelRouterLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [getModelRouter, modelMode]);
+
+  useEffect(() => {
+    window.localStorage.setItem("hmc:model-selection", modelMode);
+  }, [modelMode]);
+
+  async function resolveMainModelRouting(): Promise<ModelRoutingSelection> {
+    if (modelMode === "auto") return { mode: "auto" };
+    const cfg = modelRouterConfig ?? await ensureModelRouter();
+    const manualModel = (cfg?.models ?? []).find((model) => model.enabled && model.id === modelMode);
+    return manualModel ? { mode: "manual", modelId: manualModel.id } : { mode: "auto" };
+  }
 
   function scrollToLatestMainChatMessage() {
     window.requestAnimationFrame(() => {
@@ -680,9 +726,9 @@ export function MissionControl() {
     // detail endpoint. client.sendMessage() already reconciles the active turn
     // through /messages/status; this fallback detail refresh is only for an
     // orphaned backend request discovered outside the local send lifecycle.
-    const poll = window.setInterval(() => void refreshAgent(activeAgentId).catch(() => undefined), 3000);
+    const poll = window.setInterval(() => void refreshAgent("default").catch(() => undefined), 3000);
     return () => window.clearInterval(poll);
-  }, [activeAgentId, activeMainBackendRequestId, refreshAgent, sending]);
+  }, [activeMainBackendRequestId, refreshAgent, sending]);
 
   useEffect(() => {
     if (sending || routingActionBusy || !hasStartedMainChat) return;
@@ -690,11 +736,11 @@ export function MissionControl() {
     if (!localRequestId) return;
     const persistedUser = mainChatMessages.some((message) => message.role === "user" && message.requestId === localRequestId);
     const completed = mainChatMessages.some((message) => message.requestId === localRequestId && (message.role === "agent" || message.role === "system"));
-    const stillActive = Boolean(activeAgent?.processingRequests?.includes(localRequestId));
+    const stillActive = Boolean(melkizac?.processingRequests?.includes(localRequestId));
     if (persistedUser && !completed && !stillActive) {
-      void refreshAgent(activeAgentId).catch(() => undefined);
+      void refreshAgent("default").catch(() => undefined);
     }
-  }, [activeAgent?.processingRequests, activeAgentId, hasStartedMainChat, mainChatMessages, refreshAgent, routingActionBusy, sending]);
+  }, [hasStartedMainChat, mainChatMessages, melkizac?.processingRequests, refreshAgent, routingActionBusy, sending]);
 
   useEffect(() => {
     const wasInVoiceMode = previousVoiceStatusRef.current !== "idle";
@@ -859,7 +905,7 @@ export function MissionControl() {
     if (!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) {
       setVoiceReplyNeedsTap(false);
       setVoiceStatus("ready");
-      setVoiceMessage(`${activeAgentName} replied. This browser cannot play spoken replies, so the text is shown below.`);
+      setVoiceMessage("Melkizac replied. This browser cannot play spoken replies, so the text is shown below.");
       setSpokenMessageId(String(message.id));
       return;
     }
@@ -876,7 +922,7 @@ export function MissionControl() {
       setVoiceReplyNeedsTap(false);
       setSpeechPlaying(true);
       setVoiceStatus("speaking");
-      setVoiceMessage(`${activeAgentName} is speaking in a Jarvis-style voice. Tap the animation to stop.`);
+      setVoiceMessage("Melkizac is speaking in a Jarvis-style voice. Tap the animation to stop.");
       startVoiceVisualPulse(utterance.rate, utterance.pitch);
     };
     utterance.onboundary = (event) => {
@@ -908,12 +954,12 @@ export function MissionControl() {
       stopVoiceVisualPulse();
       setVoiceStatus("ready");
       setVoiceReplyNeedsTap(true);
-      setVoiceMessage(`${activeAgentName} replied. Tap the animation to play the voice reply.`);
+      setVoiceMessage("Melkizac replied. Tap the animation to play the voice reply.");
     };
     setSpokenMessageId(String(message.id));
     setSpeechPlaying(true);
     setVoiceStatus("speaking");
-    setVoiceMessage(userStarted ? "Starting Jarvis-style voice reply…" : `${activeAgentName} replied. Speaking now in a Jarvis-style voice…`);
+    setVoiceMessage(userStarted ? "Starting Jarvis-style voice reply…" : "Melkizac replied. Speaking now in a Jarvis-style voice…");
     setVoiceReplyNeedsTap(false);
     startVoiceVisualPulse(utterance.rate, utterance.pitch);
     try {
@@ -923,7 +969,7 @@ export function MissionControl() {
       stopVoiceVisualPulse();
       setVoiceStatus("ready");
       setVoiceReplyNeedsTap(true);
-      setVoiceMessage(`${activeAgentName} replied. Tap the animation to play the voice reply.`);
+      setVoiceMessage("Melkizac replied. Tap the animation to play the voice reply.");
       return;
     }
     voiceSpeechStartTimerRef.current = window.setTimeout(() => {
@@ -932,7 +978,7 @@ export function MissionControl() {
         stopVoiceVisualPulse();
         setVoiceStatus("ready");
         setVoiceReplyNeedsTap(true);
-        setVoiceMessage(`${activeAgentName} replied. Tap the animation to play the voice reply.`);
+        setVoiceMessage("Melkizac replied. Tap the animation to play the voice reply.");
       }
     }, 3000);
   }
@@ -973,7 +1019,7 @@ export function MissionControl() {
     const latestAgentMessage = [...mainChatMessages].reverse().find((message) => message.role === "agent");
     setVoiceReplyBaselineId(latestAgentMessage ? String(latestAgentMessage.id) : "");
     setVoiceStatus("sending");
-    setVoiceMessage(`Sent to ${activeAgentName}. Keeping voice screen open for the reply.`);
+    setVoiceMessage("Sent to Melkizac. Keeping voice screen open for the reply.");
     void submitInstruction(instruction, { preserveDraft: false, keepVoiceScreen: true });
   }
 
@@ -1004,7 +1050,7 @@ export function MissionControl() {
     setVoiceReplyNeedsTap(false);
     pendingVoiceReplyRef.current = null;
     setVoiceStatus("listening");
-    setVoiceMessage(`Listening… speak your instruction to ${activeAgentName}.`);
+    setVoiceMessage("Listening… speak your instruction to Melkizac.");
 
     recognition.onresult = (event) => {
       let finalText = "";
@@ -1103,15 +1149,15 @@ export function MissionControl() {
         }
       };
       const label = voiceStatus === "listening"
-        ? (voiceTranscript ? `Voice captured: ${voiceTranscript}. Tap to send this voice message to ${activeAgentName}.` : `Listening. Tap when finished to send this voice message to ${activeAgentName}.`)
+        ? (voiceTranscript ? `Voice captured: ${voiceTranscript}. Tap to send this voice message to Melkizac.` : "Listening. Tap when finished to send this voice message to Melkizac.")
         : voiceStatus === "sending"
-          ? `Voice message sent. Waiting for ${activeAgentName} reply.`
+          ? "Voice message sent. Waiting for Melkizac reply."
           : voiceStatus === "speaking"
-            ? `${activeAgentName} is speaking: ${voiceReplyText}. The animation is responding to reply tone, pitch, and speed. Tap to stop voice reply.`
+            ? `Melkizac is speaking: ${voiceReplyText}. The animation is responding to reply tone, pitch, and speed. Tap to stop voice reply.`
             : voiceReplyNeedsTap
-              ? `${activeAgentName} replied: ${voiceReplyText}. Tap to play the voice reply.`
+              ? `Melkizac replied: ${voiceReplyText}. Tap to play the voice reply.`
               : voiceReplyText
-                ? `${activeAgentName} replied: ${voiceReplyText}. Tap to record another voice message.`
+                ? `Melkizac replied: ${voiceReplyText}. Tap to record another voice message.`
                 : "Voice screen ready. Tap to record another voice message.";
       const voiceTitle = voiceStatus === "listening" ? "Tap to send voice message" : voiceStatus === "speaking" ? "Tap to stop voice reply" : voiceReplyNeedsTap ? "Tap to play voice reply" : "Voice screen";
       return (
@@ -1217,7 +1263,7 @@ export function MissionControl() {
       if (!item.file) {
         throw new Error(`${item.name} was selected in the browser but is no longer available to upload. Please attach it again.`);
       }
-      uploaded.push(await uploadAttachmentToAgent(activeAgentId, item.file));
+      uploaded.push(await uploadAttachmentToAgent("default", item.file));
     }
     return uploaded;
   }
@@ -1243,7 +1289,7 @@ export function MissionControl() {
       launch_workflow: decision.intentType === "workflow",
       recommend_routine: decision.intentType === "routine_recommendation" || decision.intentType === "modify_routine",
       one_time_reply: decision.intentType === "one_time_reply",
-      agent_id: decision.intentType === "project" || decision.intentType === "kanban_task" ? "devops" : activeAgentId,
+      agent_id: decision.intentType === "project" || decision.intentType === "kanban_task" ? "devops" : "melkizac",
       tools_required: decision.matchedContext.toolsRequired?.length ? decision.matchedContext.toolsRequired : ["kanban"],
       skills_required: decision.matchedContext.skillsRequired ?? [],
       evidence_required: decision.matchedContext.evidenceRequired ?? true,
@@ -1352,7 +1398,7 @@ export function MissionControl() {
         matchedContext: { approvalRequired: false },
         confidence: "high",
         nextAction: "proceed",
-        reason: `Direct agent conversation; ${activeAgentName} owns intent and next-action selection.`,
+        reason: "Direct agent conversation; Melkizac owns intent and next-action selection.",
       };
     }
     const workflowContext = shouldHydrateWorkflowContext(instruction) ? await ensureWorkflowContext() : workflows;
@@ -1428,14 +1474,14 @@ export function MissionControl() {
   async function runRoutingActionFor(
     current: { instruction: string; decision: ChatIntentDecision; preview: ChatIntentPreview },
     action: ChatIntentRoutingActionId,
-    options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; speakReply?: boolean } = {},
+    options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection; speakReply?: boolean } = {},
   ) {
     if (routingActionBusy) return;
     const { speakReply = false, ...sendOptions } = options;
     if (action === "clarify") {
       setRoutingActionMessage(null);
       setRoutingActionError(null);
-      const newMessages = await sendToAgent(activeAgentId, composeClarificationContext(current.instruction, current.decision, current.preview), activeMainUploadedAttachmentsRef.current, sendOptions);
+      const newMessages = await sendToAgent("default", composeClarificationContext(current.instruction, current.decision, current.preview), activeMainUploadedAttachmentsRef.current, sendOptions);
       const directReply = [...newMessages].reverse().find((message) => message.role === "agent" && visibleChatText(message).trim());
       if (speakReply && directReply) speakAgentReply(directReply);
       updateDraft("");
@@ -1448,7 +1494,7 @@ export function MissionControl() {
     setRoutingActionError(null);
     try {
       if (action === "send_to_agent") {
-        const newMessages = await sendToAgent(activeAgentId, composeInstructionContext(current.instruction, current.decision), activeMainUploadedAttachmentsRef.current, sendOptions);
+        const newMessages = await sendToAgent("default", composeInstructionContext(current.instruction, current.decision), activeMainUploadedAttachmentsRef.current, sendOptions);
         const directReply = [...newMessages].reverse().find((message) => message.role === "agent" && visibleChatText(message).trim());
         if (speakReply && directReply) speakAgentReply(directReply);
         updateDraft("");
@@ -1491,7 +1537,7 @@ export function MissionControl() {
             type: "workspace",
             routine_type: "workspace",
             workspace_id: selectedProject?.id,
-            agent_id: current.decision.matchedContext.approvalRequired ? activeAgentId : "devops",
+            agent_id: current.decision.matchedContext.approvalRequired ? "melkizac" : "devops",
             schedule: "draft - not scheduled",
             trigger_status: "disabled",
             status: "draft",
@@ -1621,6 +1667,7 @@ export function MissionControl() {
       if (controller.signal.aborted) return;
       const preview = buildChatIntentPreview(intentDecision);
       const routed = { instruction, decision: intentDecision, preview };
+      const modelRouting = await resolveMainModelRouting();
       // Keep the router silent by default. The agent/router decides the path;
       // users see only chat replies, clarification questions, compact task cards,
       // or real Approval Gates when policy requires them.
@@ -1631,6 +1678,7 @@ export function MissionControl() {
         signal: controller.signal,
         requestId,
         replyTo: activeReplyTo ?? undefined,
+        modelRouting,
         speakReply: options.keepVoiceScreen === true,
       });
       if (options.keepVoiceScreen) setVoiceStatus("ready");
@@ -1642,9 +1690,9 @@ export function MissionControl() {
         const message = err instanceof Error ? err.message : "Failed to send message.";
         const maybeCompleted = /bad gateway|gateway|timeout|network|failed to fetch|502|503|504/i.test(message);
         if (maybeCompleted) {
-          setError(`Connection dropped while ${activeAgentName} was processing. Refreshing the latest chat instead of putting the sent message back in the composer…`);
+          setError("Connection dropped while Melkizac was processing. Refreshing the latest chat instead of putting the sent message back in the composer…");
           for (const delay of [1200, 3000, 6000, 10000]) {
-            window.setTimeout(() => void refreshAgent(activeAgentId).catch(() => undefined), delay);
+            window.setTimeout(() => void refreshAgent("default").catch(() => undefined), delay);
           }
         } else {
           updateDraft(instruction);
@@ -1679,8 +1727,8 @@ export function MissionControl() {
     setRoutingActionMessage(null);
     setRoutingActionError("Stopping current message…");
     try {
-      await stopProcessingForAgent(activeAgentId, requestId);
-      await refreshAgent(activeAgentId).catch(() => undefined);
+      await stopProcessingForAgent("default", requestId);
+      await refreshAgent("default").catch(() => undefined);
       setRoutingActionError("Stopped the current message before it finished processing.");
     } catch (err) {
       setRoutingActionError(err instanceof Error ? `Stopped locally, but backend stop failed: ${err.message}` : "Stopped locally, but backend stop failed.");
@@ -1704,10 +1752,11 @@ export function MissionControl() {
             <span aria-hidden="true" />
           </button>
           <label className="clean-chat-model-button clean-chat-top-model-select" aria-label="AI model selector">
-            <strong>{selectedModel.label === "AUTO" ? activeAgentName : selectedModel.label}</strong>
-            <span>{selectedModel.value === "auto" ? "Auto" : ""}</span>
-            <select value={modelMode} onChange={(event) => setModelMode(event.target.value as ChatModelMode)}>
-              {modelModeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            <strong>{modelMode === "auto" ? "Melkizac" : selectedModelLabel}</strong>
+            <span>{modelMode === "auto" ? "Auto" : ""}</span>
+            <select value={selectedModel ? selectedModel.id : "auto"} onChange={(event) => setModelMode(event.target.value)} onFocus={() => void ensureModelRouter()} onPointerDown={() => void ensureModelRouter()}>
+              <option value="auto">{modelRouterLoading ? "Auto · loading models..." : "Auto"}</option>
+              {enabledModels.map((model) => <option key={model.id} value={model.id}>{(model.label || model.model)} · {model.tier}{model.authorized ? "" : " · key missing"}</option>)}
             </select>
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <path d="M7 10l5 5 5-5" />
@@ -1731,7 +1780,7 @@ export function MissionControl() {
             value={draft}
             onChange={(event) => updateDraft(event.target.value)}
             onKeyDown={handleComposerKeyDown}
-            placeholder={`Ask ${activeAgentName}`}
+            placeholder="Ask Melkizac"
             rows={2}
           />
 
@@ -1773,8 +1822,9 @@ export function MissionControl() {
 
             <div className="clean-chat-right-controls">
               <label className="clean-select">
-                <select value={modelMode} onChange={(event) => setModelMode(event.target.value as ChatModelMode)} aria-label="AI model selector">
-                  {modelModeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                <select value={selectedModel ? selectedModel.id : "auto"} onChange={(event) => setModelMode(event.target.value)} onFocus={() => void ensureModelRouter()} onPointerDown={() => void ensureModelRouter()} aria-label="AI model selector">
+                  <option value="auto">{modelRouterLoading ? "Auto · loading models..." : "Auto"}</option>
+                  {enabledModels.map((model) => <option key={model.id} value={model.id}>{(model.label || model.model)} · {model.tier}{model.authorized ? "" : " · key missing"}</option>)}
                 </select>
               </label>
               {renderVoiceReplyControl()}
@@ -1806,27 +1856,27 @@ export function MissionControl() {
     </div>
   ) : (
     <div className="clean-chat-page main-chat-surface">
-      <section className="main-chat-shell" aria-label={`${activeAgentName} chat conversation`}>
+      <section className="main-chat-shell" aria-label="Melkizac chat conversation">
         <header className="main-chat-header">
           <div className="main-chat-header-identity">
-            <span className="main-chat-avatar">{activeAgentInitials}</span>
+            <span className="main-chat-avatar">ME</span>
             <div>
-              <h1>{activeAgentName} — {activeAgentRole}</h1>
+              <h1>Melkizac — All Groups Agent</h1>
               <p>{selectedProject ? projectLabel(selectedProject) : "Main Chat"}</p>
             </div>
-            <span className="main-chat-status"><i /> {activeAgent?.statusLabel || "Active"} · {activeAgent?.activityState || "active"}</span>
+            <span className="main-chat-status"><i /> {melkizac?.statusLabel || "Active"} · {melkizac?.activityState || "active"}</span>
           </div>
-          <button className="main-chat-details" type="button" aria-label={`Open ${activeAgentName} details`}>Details</button>
+          <button className="main-chat-details" type="button" aria-label="Open Melkizac details">Details</button>
         </header>
 
-        <main ref={mainChatHistoryRef} className={`main-chat-history ${voiceStatus !== "idle" ? "voice-mode" : ""}`} aria-label={voiceStatus !== "idle" ? "Voice input activation" : `${activeAgentName} conversation history`}>
+        <main ref={mainChatHistoryRef} className={`main-chat-history ${voiceStatus !== "idle" ? "voice-mode" : ""}`} aria-label={voiceStatus !== "idle" ? "Voice input activation" : "Melkizac conversation history"}>
           {voiceStatus !== "idle" ? (
             renderVoiceActivation("full")
           ) : mainChatMessages.length === 0 && !visiblePendingMainMessage ? (
             <div className="main-chat-empty-state">
-              <span className="main-chat-avatar">{activeAgentInitials}</span>
-              <strong>Starting the {activeAgentName} conversation…</strong>
-              <p>Your message will appear here while {activeAgentName} responds.</p>
+              <span className="main-chat-avatar">ME</span>
+              <strong>Starting the Melkizac conversation…</strong>
+              <p>Your message will appear here while Melkizac responds.</p>
             </div>
           ) : (
             <>
@@ -1834,14 +1884,14 @@ export function MissionControl() {
                 const isUser = message.role === "user";
                 return (
                   <article className={`main-chat-row ${isUser ? "user" : "agent"}`} key={`${message.id}-${message.role}`}>
-                    {!isUser && <span className="main-chat-avatar">{activeAgentInitials}</span>}
+                    {!isUser && <span className="main-chat-avatar">ME</span>}
                     <div className="main-chat-message-stack">
                       <div className="main-chat-meta">
-                        <strong>{chatMessageLabel(message, activeAgentName)}</strong>
+                        <strong>{chatMessageLabel(message)}</strong>
                         <span>{chatSessionLabel(message)}</span>
                         <time>{chatMessageTime(message)}</time>
                         <span className="main-chat-message-actions">
-                          <button className="replymsg main-chat-action" type="button" onClick={() => setMainChatReplyTo(mainChatReplyContext(message, activeAgentName))} aria-label="Reply using this message as context" title="Reply using this message as context">
+                          <button className="replymsg main-chat-action" type="button" onClick={() => setMainChatReplyTo(mainChatReplyContext(message))} aria-label="Reply using this message as context" title="Reply using this message as context">
                             <Icon name="reply" size={13} />
                             <span>Reply</span>
                           </button>
@@ -1894,13 +1944,13 @@ export function MissionControl() {
                 </article>
               )}
               {isMainChatProcessing && (
-                <div className="processing-inline main-chat-processing-inline" role="status" aria-live="polite" aria-label={`${activeAgentName} is processing your message`}>
+                <div className="processing-inline main-chat-processing-inline" role="status" aria-live="polite" aria-label="Melkizac is processing your message">
                   <span className="processing-inline-dots" aria-hidden="true">
                     <span />
                     <span />
                     <span />
                   </span>
-                  <span>{activeAgentName} is processing…</span>
+                  <span>Melkizac is processing…</span>
                   <span className="processing-inline-timer" aria-label={`Elapsed processing time ${processingElapsedLabel}`} title="Elapsed processing time">
                     {processingElapsedLabel}
                   </span>
@@ -1913,7 +1963,7 @@ export function MissionControl() {
 
         <form className="main-chat-composer" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
           <div className="mobile-composer-prompt">
-            {selectedProject ? `What should we work on in ${projectLabel(selectedProject)}?` : `What should ${activeAgentName} work on?`}
+            {selectedProject ? `What should we work on in ${projectLabel(selectedProject)}?` : "What should Melkizac work on?"}
           </div>
           {routingActionMessage && <div className="main-chat-route-status success">{routingActionMessage}</div>}
           {routingActionError && <div className="main-chat-route-status error">{routingActionError}</div>}
@@ -1953,7 +2003,7 @@ export function MissionControl() {
             value={draft}
             onChange={(event) => updateDraft(event.target.value)}
             onKeyDown={handleComposerKeyDown}
-            placeholder={isMainChatProcessing ? `${activeAgentName} is processing…` : `Send a task or message to ${activeAgentName}...`}
+            placeholder={isMainChatProcessing ? "Melkizac is processing…" : "Send a task or message to Melkizac..."}
             disabled={isMainChatProcessing}
             rows={2}
           />
@@ -2008,8 +2058,9 @@ export function MissionControl() {
 
             <div className="main-chat-right-controls">
               <label className="clean-select">
-                <select value={modelMode} onChange={(event) => setModelMode(event.target.value as ChatModelMode)} aria-label="AI model selector">
-                  {modelModeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                <select value={selectedModel ? selectedModel.id : "auto"} onChange={(event) => setModelMode(event.target.value)} onFocus={() => void ensureModelRouter()} onPointerDown={() => void ensureModelRouter()} aria-label="AI model selector">
+                  <option value="auto">{modelRouterLoading ? "Auto · loading models..." : "Auto"}</option>
+                  {enabledModels.map((model) => <option key={model.id} value={model.id}>{(model.label || model.model)} · {model.tier}{model.authorized ? "" : " · key missing"}</option>)}
                 </select>
               </label>
               {renderVoiceReplyControl()}

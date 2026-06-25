@@ -8127,6 +8127,92 @@ def project_chat_session_record(session_id):
     return indexed.get(session_id)
 
 
+def project_chat_session_messages_payload(session_id, identity=None, limit=500):
+    session_id = str(session_id or '').strip()
+    if not session_id:
+        return {'ok': False, 'error': 'session_id is required'}, 400
+    if not STATE_DB.exists():
+        return {'ok': False, 'error': 'session not found'}, 404
+    try:
+        con = sqlite3.connect(f'file:{STATE_DB}?mode=ro', uri=True, timeout=2)
+        con.row_factory = sqlite3.Row
+        session = con.execute(
+            'SELECT id,title,source,model,started_at FROM sessions WHERE id=?',
+            (session_id,),
+        ).fetchone()
+        if not session:
+            con.close()
+            return {'ok': False, 'error': 'session not found'}, 404
+        rows = con.execute("""
+            SELECT id,session_id,role,content,tool_calls,tool_name,timestamp
+            FROM messages
+            WHERE session_id=?
+              AND role IN ('user','assistant','tool')
+              AND content IS NOT NULL AND trim(content) != ''
+            ORDER BY timestamp ASC, id ASC
+            LIMIT ?
+        """, (session_id, int(limit or 500))).fetchall()
+        con.close()
+    except Exception as exc:
+        return {'ok': False, 'error': str(exc) or 'Unable to load session messages'}, 500
+
+    project_map = {}
+    try:
+        indexed = project_session_text_index({session_id}, limit=1)
+        project_map, _ = session_project_assignments(indexed.values())
+    except Exception:
+        project_map = {}
+    assigned = project_map.get(session_id) or {}
+    project_id = assigned.get('project_id')
+    project_name = assigned.get('project_name')
+    source = session['source'] or 'unknown'
+    source_label = display_source_label(source)
+    messages = []
+    for r in rows:
+        role = r['role'] or 'system'
+        content = r['content'] or ''
+        if role == 'user':
+            content = visible_user_message_from_cli_prompt(content)
+        if role == 'tool':
+            ui_role = 'system'
+            text = f"Tool result {r['tool_name'] or ''}: {trim(content, 900)}"
+        elif role == 'assistant':
+            ui_role = 'agent'
+            text = content
+        else:
+            ui_role = 'user'
+            text = content
+        messages.append({
+            'id': f"session-{session_id}-{r['id']}",
+            'role': ui_role,
+            'text': text,
+            'at': f"{source_label} · {rel_time(r['timestamp'])}",
+            'ts': float(r['timestamp'] or 0),
+            'source': source,
+            'sessionId': session_id,
+            'projectId': project_id,
+            'projectName': project_name,
+        })
+    return {
+        'ok': True,
+        'session': {
+            'id': session['id'],
+            'title': human_session_title({
+                'id': session['id'],
+                'title': session['title'],
+                'source': source,
+            }),
+            'source': source,
+            'model': session['model'] or '—',
+            'started_at': iso(session['started_at']),
+            'project_id': project_id,
+            'project_name': project_name,
+        },
+        'messages': messages,
+        'summary': {'messages': len(messages)},
+    }, 200
+
+
 def project_chat_link_payload(payload, identity=None, *, link_source='canonical', confidence=1.0):
     project_id = safe_id(payload.get('project_id') or payload.get('projectId') or '')
     session_id = str(payload.get('session_id') or payload.get('sessionId') or '').strip()
@@ -18372,6 +18458,18 @@ def demo_response_for_get(path, query='', headers=None):
     if path == '/api/project-chats':
         sessions = [{'id': s['id'], 'title': s['title'], 'project_id': 'demo-project', 'project_name': 'Demo Project', 'source': s['source'], 'model': s['model'], 'started_at': s['started_at'], 'messages': s['message_count'], 'tools': s['tool_call_count'], 'tokens': s['total_tokens']} for s in demo_audit_payload()['sessions']]
         return {'projects': [{'id': 'demo-project', 'name': 'Demo Project', 'sessions': len(sessions)}], 'sessions': sessions, 'summary': {'projects': 1, 'sessions': len(sessions)}}, 200
+    if path.startswith('/api/project-chats/') and path.endswith('/messages'):
+        sid = unquote(path.strip('/').split('/')[2]) if len(path.strip('/').split('/')) >= 3 else 'demo-session'
+        now = time.time()
+        return {
+            'ok': True,
+            'session': {'id': sid, 'title': 'Demo chat', 'source': 'demo', 'model': 'demo', 'started_at': demo_now(), 'project_id': 'demo-project', 'project_name': 'Demo Project'},
+            'messages': [
+                {'id': f'demo-{sid}-user', 'role': 'user', 'text': 'Show this saved conversation.', 'at': 'Demo · now', 'ts': now - 60, 'source': 'demo', 'sessionId': sid, 'projectId': 'demo-project', 'projectName': 'Demo Project'},
+                {'id': f'demo-{sid}-agent', 'role': 'agent', 'text': 'This is a demo saved chat session message.', 'at': 'Demo · now', 'ts': now - 40, 'source': 'demo', 'sessionId': sid, 'projectId': 'demo-project', 'projectName': 'Demo Project'},
+            ],
+            'summary': {'messages': 2},
+        }, 200
     if path == '/api/files':
         q = parse_qs(query)
         root_id = (q.get('root') or ['outputs'])[0] or 'outputs'
@@ -20176,6 +20274,16 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(list_projects(parse_qs(parsed.query), current_identity_from_cookie(self.headers.get('Cookie', ''))))
         elif parsed.path == '/api/project-chats':
             self.send_json(project_chat_sessions_payload(parse_qs(parsed.query), current_identity_from_cookie(self.headers.get('Cookie', ''))))
+        elif parsed.path.startswith('/api/project-chats/') and parsed.path.endswith('/messages'):
+            parts = parsed.path.strip('/').split('/')
+            session_id = unquote(parts[2]) if len(parts) >= 3 else ''
+            q = parse_qs(parsed.query)
+            try:
+                limit = min(max(int((q.get('limit') or ['500'])[0]), 20), 1000)
+            except Exception:
+                limit = 500
+            result, status = project_chat_session_messages_payload(session_id, current_identity_from_cookie(self.headers.get('Cookie', '')), limit=limit)
+            self.send_json(result, status)
         elif parsed.path == '/api/files':
             result, status = file_browser_payload(parse_qs(parsed.query), current_identity_from_cookie(self.headers.get('Cookie', '')))
             self.send_json(result, status)

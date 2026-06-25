@@ -15,7 +15,6 @@ export interface UiPermissions {
 
 export const adminOnlyViews = new Set<ViewKey>([
   "runtimes",
-  "capabilities",
   "costs",
   "agent-platform-admin",
   "users-workspaces",
@@ -24,18 +23,19 @@ export const adminOnlyViews = new Set<ViewKey>([
   "desktop-gateway",
   "approval-policy",
   "quota",
-  "settings",
 ]);
 
 export const workspaceViews = new Set<ViewKey>([
   "mission",
   "dashboard",
+  "operations",
   "delegate-work",
   "workflow-library",
   "profile",
   "agents",
   "agent-voice",
   "agent-org",
+  "capabilities",
   "skills",
   "memory",
   "reflections",
@@ -50,6 +50,7 @@ export const workspaceViews = new Set<ViewKey>([
   "browser-ops",
   "audit",
   "models",
+  "settings",
   "usage",
   "research-runs",
 ]);
@@ -86,6 +87,7 @@ export function viewLabelForRole(role: UserRole, view: ViewKey, fallback: string
   if (isAdminRole(role)) return fallback;
   const labels: Partial<Record<ViewKey, string>> = {
     agents: "My Agents",
+    operations: "Operations",
     "agent-voice": "Agent Voice",
     "delegate-work": "Delegate Work",
     "workflow-library": "Workflow Library",
@@ -98,11 +100,12 @@ export function viewLabelForRole(role: UserRole, view: ViewKey, fallback: string
     automations: "Routines",
     "browser-ops": "Browser Activity",
     "research-runs": "Research Runs",
-    capabilities: "Capability Registry",
+    capabilities: "Capability Hub",
     plugins: "Plugins",
     "second-brain": "Workspace Knowledge",
     audit: "My Audit / Evidence",
     usage: "Usage remaining",
+    settings: "Settings",
   };
   return labels[view] ?? fallback;
 }

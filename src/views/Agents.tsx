@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "../services/store";
-import { Roster } from "../components/Roster";
 import { ChatThread } from "../components/ChatThread";
 import { ContextPanel } from "../components/ContextPanel";
 import { WorkerTranscriptDrawer } from "../components/WorkerTranscriptDrawer";
@@ -137,20 +136,14 @@ function AgentRateLimitsDrawer({ agent, onClose }: { agent: Agent; onClose: () =
 }
 
 export function Agents() {
-  const { selected, loading } = useStore();
+  const { agents, selected, loading, selectedId, select } = useStore();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [workerLogOpen, setWorkerLogOpen] = useState(false);
   const [rateLimitsOpen, setRateLimitsOpen] = useState(false);
   const [projectChats, setProjectChats] = useState<ProjectChatResponse | null>(null);
-  const [selectedProjectId, setSelectedProjectId] = useState("all");
+  const [manageProfilesOpen, setManageProfilesOpen] = useState(() => window.sessionStorage.getItem("hmc:agents-manage-mode") === "true");
+  const selectedProjectId = "all";
   const [selectedSessionId, setSelectedSessionId] = useState("all");
-  const [projectChatError, setProjectChatError] = useState<string | null>(null);
-  const [projectChatsHydrating, setProjectChatsHydrating] = useState(false);
-
-  const projectSessions = useMemo(
-    () => (projectChats?.sessions ?? []).filter((session) => selectedProjectId === "all" || session.project_id === selectedProjectId),
-    [projectChats, selectedProjectId],
-  );
 
   useEffect(() => {
     const close = (event: KeyboardEvent) => {
@@ -168,19 +161,13 @@ export function Agents() {
     let alive = true;
     const cancelHydration = scheduleProgressiveHydration(() => {
       if (!alive) return;
-      setProjectChatsHydrating(true);
       void fetchProjectChats()
         .then((data) => {
           if (!alive) return;
           setProjectChats(data);
-          setProjectChatError(null);
         })
         .catch((err) => {
-          if (!alive) return;
-          setProjectChatError(err instanceof Error ? err.message : "Could not load project chats");
-        })
-        .finally(() => {
-          if (alive) setProjectChatsHydrating(false);
+          console.warn("Could not load project chats", err);
         });
     });
     return () => {
@@ -190,26 +177,48 @@ export function Agents() {
   }, [selected?.id, selected?.sessionCount]);
 
   useEffect(() => {
-    setSelectedSessionId("all");
-  }, [selectedProjectId]);
+    const openManage = () => setManageProfilesOpen(true);
+    const openChat = () => setManageProfilesOpen(false);
+    const openChatSession = (event: Event) => {
+      const sessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId;
+      if (!sessionId) return;
+      const session = projectChats?.sessions.find((item) => item.id === sessionId);
+      if (session) {
+        const needle = [session.project_owner, session.project_name, session.source, session.origin].filter(Boolean).join(" ").toLowerCase();
+        const matchedAgent = agents.find((agent) => needle.includes(agent.id.toLowerCase()) || needle.includes(agent.name.toLowerCase()));
+        if (matchedAgent) select(matchedAgent.id);
+      }
+      setManageProfilesOpen(false);
+      setSelectedSessionId(sessionId);
+    };
+    window.addEventListener("hmc:open-manage-profiles", openManage);
+    window.addEventListener("hmc:agents-chat-mode", openChat);
+    window.addEventListener("hmc:open-chat-session", openChatSession);
+    return () => {
+      window.removeEventListener("hmc:open-manage-profiles", openManage);
+      window.removeEventListener("hmc:agents-chat-mode", openChat);
+      window.removeEventListener("hmc:open-chat-session", openChatSession);
+    };
+  }, [agents, projectChats, select]);
 
-  useEffect(() => {
-    if (selectedSessionId !== "all" && !projectSessions.some((session) => session.id === selectedSessionId)) {
-      setSelectedSessionId("all");
-    }
-  }, [projectSessions, selectedSessionId]);
+  const activeAgent = selected ?? agents.find((agent) => agent.id === selectedId) ?? agents[0];
+
+  if (manageProfilesOpen) {
+    return (
+      <div className="mc agents-drawer-first agents-no-roster" data-deeplink-target="manage-profiles">
+        {activeAgent ? (
+          <ContextPanel agent={activeAgent} />
+        ) : (
+          <div className="center mc-empty">
+            {loading ? "Loading agents..." : "Select a profile to manage."}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
-    <div className="mc agents-drawer-first" data-deeplink-target="agent-chat">
-      <Roster
-        projectChats={projectChats}
-        selectedProjectId={selectedProjectId}
-        selectedSessionId={selectedSessionId}
-        onProjectChange={setSelectedProjectId}
-        onSessionChange={setSelectedSessionId}
-        projectChatError={projectChatError}
-        projectChatsHydrating={projectChatsHydrating}
-      />
+    <div className="mc agents-drawer-first agents-no-roster" data-deeplink-target="agent-chat">
       {selected ? (
         <>
           <ChatThread
@@ -254,7 +263,7 @@ export function Agents() {
         </>
       ) : (
         <div className="center mc-empty">
-          {loading ? "Loading agents…" : "Select an agent from the roster to begin."}
+          {loading ? "Loading agents…" : "Select an active profile from the left rail to begin."}
         </div>
       )}
     </div>
