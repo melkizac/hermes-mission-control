@@ -107,25 +107,11 @@ type RailStatus = {
   gateway?: { running?: boolean };
 };
 
-type InboxSummary = { drafted?: number; ready?: number };
-type InboxItem = { status?: string };
-type InboxPayload = { summary?: InboxSummary; items?: InboxItem[] };
-
 async function requestStatus(): Promise<RailStatus> {
   const url = `${window.location.protocol}//${window.location.host}/api/status`;
   const res = await fetch(url, { credentials: "include", headers: { Accept: "application/json" } });
   if (!res.ok) throw new Error(res.statusText);
   return res.json() as Promise<RailStatus>;
-}
-
-async function requestApprovalCount(fallbackCount: number): Promise<number> {
-  const url = `${window.location.protocol}//${window.location.host}/api/inbox`;
-  const res = await fetch(url, { credentials: "include", headers: { Accept: "application/json" } });
-  if (!res.ok) throw new Error(res.statusText);
-  const inbox = await res.json() as InboxPayload;
-  if (inbox.summary) return Number(inbox.summary.drafted ?? 0) + Number(inbox.summary.ready ?? 0);
-  if (!Array.isArray(inbox.items)) return fallbackCount;
-  return inbox.items.filter((item) => item.status === "drafted" || item.status === "ready").length;
 }
 
 async function requestProjectChats(): Promise<ProjectChatResponse | null> {
@@ -148,10 +134,9 @@ function sessionTimeLabel(value?: string) {
 }
 
 export function NavRail() {
-  const { view, setView, uiMode, approvals, agents, selected, selectedId, permissions, setUiMode, select } = useStore();
+  const { view, setView, uiMode, agents, selected, selectedId, permissions, setUiMode, select } = useStore();
   const [status, setStatus] = useState<RailStatus | null>(null);
   const [projectChats, setProjectChats] = useState<ProjectChatResponse | null>(null);
-  const [approvalCount, setApprovalCount] = useState(approvals.length);
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const [chatsCollapsed, setChatsCollapsed] = useState(() => window.localStorage.getItem("hmc-nav-chats-collapsed") === "true");
   const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem("hmc-nav-collapsed") === "true");
@@ -183,27 +168,6 @@ export function NavRail() {
       window.clearInterval(interval);
     };
   }, []);
-
-  useEffect(() => {
-    let alive = true;
-    const load = async () => {
-      try {
-        const next = await requestApprovalCount(approvals.length);
-        if (alive) setApprovalCount(next);
-      } catch {
-        if (alive) setApprovalCount(approvals.length);
-      }
-    };
-    const timer = window.setTimeout(() => {
-      void load();
-    }, 20000);
-    const interval = window.setInterval(load, 60000);
-    return () => {
-      alive = false;
-      window.clearTimeout(timer);
-      window.clearInterval(interval);
-    };
-  }, [approvals.length]);
 
   useEffect(() => {
     if (uiMode === "admin") return;
@@ -240,7 +204,6 @@ export function NavRail() {
   const activeProfile = selected ?? agents.find((agent) => agent.id === selectedId) ?? agents[0];
   const activeProfileLabel = activeProfile?.name ?? "Melkizac";
   const activeProfileMeta = activeProfile?.squad || activeProfile?.statusLabel || "Active profile";
-  const approvalBadge = approvalCount > 99 ? "99+" : String(approvalCount);
 
   useEffect(() => {
     const activeGroup = visibleGroups.find((group) => group.items.some((item) => isRouteItem(item) && item.key === view));
@@ -331,10 +294,7 @@ export function NavRail() {
             {(collapsed || !collapsedGroups[group.label] ? group.items : []).map((it) => {
               const active = isRouteItem(it) && view === it.key;
               const key = navItemKey(it);
-              const approvalBadge = isRouteItem(it) && it.key === "approvals" && approvalCount > 0
-                ? (approvalCount > 99 ? "99+" : String(approvalCount))
-                : null;
-              const collapsedTitle = collapsed && approvalBadge ? `${it.label} (${approvalBadge})` : collapsed ? it.label : undefined;
+              const collapsedTitle = collapsed ? it.label : undefined;
               if (isLinkItem(it)) {
                 return (
                   <a key={key} className="nitem" href={it.href} data-tooltip={it.label} title={collapsed ? it.label : undefined}>
@@ -360,7 +320,6 @@ export function NavRail() {
                 >
                   <Icon name={it.icon} size={17} />
                   <span className="nav-text">{it.label}</span>
-                  {approvalBadge && <span className="pill" aria-label={`${approvalBadge} pending approvals`}>{approvalBadge}</span>}
                 </button>
               );
             })}
@@ -424,19 +383,6 @@ export function NavRail() {
             <Icon name="settings" size={18} />
           </button>
         </div>
-      )}
-
-      {approvalCount > 0 && (
-        <button
-          className={"top-approval-notification" + (view === "approvals" ? " on" : "")}
-          type="button"
-          onClick={() => setView("approvals")}
-          aria-label={`Approvals, ${approvalBadge} pending`}
-          title="Approvals"
-        >
-          <Icon name="approvals" size={20} />
-          <span className="utility-dock-badge">{approvalBadge}</span>
-        </button>
       )}
 
       {!collapsed && (

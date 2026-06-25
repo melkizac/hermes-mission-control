@@ -180,12 +180,14 @@ export function Approvals() {
           <span className="stub-tag">APPROVAL GATE</span>
           <div className="hero-title-with-help">
             <h1>Approval Gates</h1>
+            <div className="projects-control projects-control-refresh-only inbox-title-refresh">
+              <button className="task-icon-action dark" aria-label="Refresh approvals" title="Refresh approvals" onClick={() => void load("manual")}>
+                <Icon name="refresh" size={18} />
+              </button>
+            </div>
             <InfoTooltip label="About approval gates">Approve or reject external-facing and irreversible agent actions. Email alerts, blockers, and “needs attention” items belong on the Task Board instead.</InfoTooltip>
           </div>
         </div>
-        <button className="task-icon-action dark" aria-label="Refresh approvals" title="Refresh approvals" onClick={() => void load("manual")}>
-          <Icon name="refresh" size={18} />
-        </button>
       </header>
 
       <section className="inbox-metrics">

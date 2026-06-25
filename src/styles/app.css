@@ -2342,6 +2342,11 @@ input, select, textarea { font-family: inherit; }
 .inbox-hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
 .inbox-hero h1 { font-size: 29px; letter-spacing: -0.7px; margin: 4px 0 6px; }
 .inbox-hero p { max-width: 860px; color: var(--muted); font-size: 13.5px; line-height: 1.55; }
+.inbox-hero > div { width: 100%; min-width: 0; }
+.inbox-hero .hero-title-with-help { width: 100%; }
+.inbox-hero .hero-title-with-help h1 { order: 1; }
+.inbox-hero .hero-title-with-help .info-tooltip { order: 2; }
+.inbox-title-refresh { order: 3; margin-left: auto; }
 .inbox-metrics { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 14px; margin-bottom: 16px; }
 .inbox-metric { background: #fff; border: 1px solid #e1e7ef; border-radius: 18px; padding: 16px 18px; box-shadow: 0 14px 40px rgba(20,26,38,.05); }
 .inbox-metric span { display: block; color: #8a99b2; font-size: 11px; letter-spacing: .18em; text-transform: uppercase; font-weight: 800; }

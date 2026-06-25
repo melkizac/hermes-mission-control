@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { StoreProvider, useStore } from "./services/store";
 import { adminOnlyViews, canAccessView, safeDefaultViewForRole } from "./services/uiPermissions";
 import { NavRail } from "./components/NavRail";
+import { Icon } from "./components/Icon";
 import { MissionControl } from "./views/MissionControl";
 import { Dashboard } from "./views/Dashboard";
 import { Agents } from "./views/Agents";
@@ -42,6 +43,59 @@ const docsPaths = new Set(["/mission-control-docs", "/mission-control-guide", "/
 const publicPaths = new Set(["/", "/login"]);
 const standaloneAgentVoicePaths = new Set(["/agent-voice"]);
 
+type InboxSummary = { drafted?: number; ready?: number };
+type InboxItem = { status?: string };
+type InboxPayload = { summary?: InboxSummary; items?: InboxItem[] };
+
+async function requestApprovalCount(fallbackCount: number): Promise<number> {
+  const res = await fetch(`${window.location.protocol}//${window.location.host}/api/inbox`, { credentials: "include", headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(res.statusText);
+  const inbox = await res.json() as InboxPayload;
+  if (inbox.summary) return Number(inbox.summary.drafted ?? 0) + Number(inbox.summary.ready ?? 0);
+  if (!Array.isArray(inbox.items)) return fallbackCount;
+  return inbox.items.filter((item) => item.status === "drafted" || item.status === "ready").length;
+}
+
+function TopApprovalNotification() {
+  const { view, setView, approvals } = useStore();
+  const [approvalCount, setApprovalCount] = useState(approvals.length);
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const next = await requestApprovalCount(approvals.length);
+        if (alive) setApprovalCount(next);
+      } catch {
+        if (alive) setApprovalCount(approvals.length);
+      }
+    };
+    void load();
+    const interval = window.setInterval(load, 60000);
+    return () => {
+      alive = false;
+      window.clearInterval(interval);
+    };
+  }, [approvals.length]);
+
+  if (approvalCount <= 0) return null;
+
+  const approvalBadge = approvalCount > 99 ? "99+" : String(approvalCount);
+
+  return (
+    <button
+      className={"top-approval-notification" + (view === "approvals" ? " on" : "")}
+      type="button"
+      onClick={() => setView("approvals")}
+      aria-label={`Approvals, ${approvalBadge} pending`}
+      title="Approvals"
+    >
+      <Icon name="bell" size={20} />
+      <span className="utility-dock-badge">{approvalBadge}</span>
+    </button>
+  );
+}
+
 function Shell() {
   // Preserve auth-flash regression contract: const { view, setView, me, loading } = useStore();
   const { view, setView, applyDeepLinkTarget, uiMode, me, loading, permissions } = useStore();
@@ -80,6 +134,7 @@ function Shell() {
   if (shouldRenderMobileChatOnly) {
     return (
       <div className="shell mobile-chat-only-shell">
+        <TopApprovalNotification />
         <main className="main mobile-chat-only-main">
           <MissionControl />
         </main>
@@ -90,6 +145,7 @@ function Shell() {
   return (
     <div className="shell">
       <NavRail />
+      <TopApprovalNotification />
       <main className="main">
         {!canRenderView && <AdminOnlyNotice onGoHome={() => setView(safeDefaultViewForRole(me?.user.role))} />}
         {canRenderView && view === "mission" && <MissionControl />}
