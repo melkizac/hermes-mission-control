@@ -6746,7 +6746,7 @@ button.voice-activation {
   justify-items: center;
   align-content: center;
   gap: clamp(14px, 2.2vh, 24px);
-  padding: clamp(18px, 4vw, 46px);
+  padding: max(76px, calc(56px + env(safe-area-inset-top))) clamp(18px, 4vw, 46px) max(34px, env(safe-area-inset-bottom));
   text-align: center;
   cursor: pointer;
   user-select: none;
@@ -6767,7 +6767,7 @@ button.voice-activation {
   position: relative;
   z-index: 2;
   width: min(92vw, 1120px);
-  min-height: min(72vh, 720px);
+  min-height: min(62vh, 650px);
   display: grid;
   place-items: center;
   isolation: isolate;
@@ -6827,8 +6827,8 @@ button.voice-activation {
   font-size: 15px;
 }
 
-.voice-cosmic-hud.top-left { top: 8%; left: 0; }
-.voice-cosmic-hud.top-right { top: 8%; right: 0; text-align: right; }
+.voice-cosmic-hud.top-left { top: 0; left: 0; }
+.voice-cosmic-hud.top-right { top: 0; right: 0; text-align: right; }
 
 .voice-cosmic-prompt {
   position: absolute;
@@ -6864,12 +6864,12 @@ button.voice-activation {
 }
 
 @media (max-width: 760px) {
-  .voice-activation.full-window { padding: 18px 14px; }
-  .voice-cosmic-stage { width: 100%; min-height: 76vh; }
+  .voice-activation.full-window { padding: max(76px, calc(56px + env(safe-area-inset-top))) 14px max(24px, env(safe-area-inset-bottom)); }
+  .voice-cosmic-stage { width: 100%; min-height: 68vh; }
   .voice-core-orb { width: min(92vw, 520px); height: min(54vh, 460px); min-width: 280px; min-height: 280px; }
   .voice-cosmic-hud { padding: 8px 10px; }
-  .voice-cosmic-hud.top-left { top: 8%; left: 4px; }
-  .voice-cosmic-hud.top-right { top: 8%; right: 4px; }
+  .voice-cosmic-hud.top-left { top: 0; left: 4px; }
+  .voice-cosmic-hud.top-right { top: 0; right: 4px; }
   .voice-cosmic-hud span { font-size: 9px; }
   .voice-cosmic-hud b { font-size: 12px; }
   .voice-cosmic-prompt { bottom: 6%; padding: 12px 10px; }
@@ -6879,8 +6879,8 @@ button.voice-activation {
 
 .voice-return-to-text {
   position: absolute;
-  top: max(16px, env(safe-area-inset-top));
-  left: max(16px, env(safe-area-inset-left));
+  top: max(22px, calc(16px + env(safe-area-inset-top)));
+  left: max(22px, calc(16px + env(safe-area-inset-left)));
   z-index: 5;
   width: 46px;
   height: 46px;
