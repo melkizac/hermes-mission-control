@@ -90,7 +90,7 @@ function TopApprovalNotification() {
       aria-label={`Approvals, ${approvalBadge} pending`}
       title="Approvals"
     >
-      <Icon name="bell" size={20} />
+      <Icon name="bell" size={14} />
       <span className="utility-dock-badge">{approvalBadge}</span>
     </button>
   );
