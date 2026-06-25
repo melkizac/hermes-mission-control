@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useRef } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 
 type DrawerWidth = "standard" | "wide" | "narrow";
 
@@ -39,6 +39,7 @@ export function SlideOverDrawer<Tab extends string = string>({
   ariaLabel,
   dataDeepLinkTarget,
 }: SlideOverDrawerProps<Tab>) {
+  const [tabsOverflow, setTabsOverflow] = useState(false);
   const tabRailRef = useRef<HTMLElement | null>(null);
   const scrollTabs = (direction: -1 | 1) => {
     tabRailRef.current?.scrollBy({ left: direction * 220, behavior: "smooth" });
@@ -51,6 +52,20 @@ export function SlideOverDrawer<Tab extends string = string>({
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [onClose]);
+
+  useEffect(() => {
+    const rail = tabRailRef.current;
+    if (!rail || !tabs?.length) return undefined;
+    const syncOverflow = () => setTabsOverflow(rail.scrollWidth > rail.clientWidth + 2);
+    syncOverflow();
+    const resizeObserver = new ResizeObserver(syncOverflow);
+    resizeObserver.observe(rail);
+    window.addEventListener("resize", syncOverflow);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", syncOverflow);
+    };
+  }, [tabs?.length]);
 
   return (
     <div className="mc-drawer-layer" role="dialog" aria-modal="true" aria-label={ariaLabel || closeLabel.replace(/^Close /, "") || "Details"} data-deeplink-target={dataDeepLinkTarget}>
@@ -66,7 +81,7 @@ export function SlideOverDrawer<Tab extends string = string>({
         </header>
 
         {tabs && tabs.length > 0 && activeTab && onTabChange && (
-          <div className="mc-drawer-tab-rail" aria-label="Detail sections">
+          <div className={`mc-drawer-tab-rail ${tabsOverflow ? "has-overflow" : "no-overflow"}`} aria-label="Detail sections">
             <button className="mc-drawer-tab-arrow" type="button" aria-label="Scroll tabs left" onClick={() => scrollTabs(-1)}>‹</button>
             <nav className="mc-drawer-tabs" ref={tabRailRef}>
               {tabs.map((item) => (

@@ -2705,7 +2705,7 @@ input, select, textarea { font-family: inherit; }
 .drawer-tabs button.on { color:#111827; background:transparent; border-color:transparent; box-shadow:none; }
 .drawer-tabs button.on::after { content:""; position:absolute; left:0; right:0; bottom:-7px; height:3px; border-radius:999px; background:#111827; }
 .drawer-tabs button.on em { background:#e2e5ea; color:#111827; }
-@media (max-width: 760px) { .drawer-tab-rail { grid-template-columns:38px minmax(0,1fr) 38px; gap:8px; } .drawer-tab-arrow { width:34px; height:34px; font-size:27px; } .drawer-tabs { gap:24px; } .drawer-tabs button { font-size:14px; } }
+@media (max-width: 760px) { .drawer-tab-rail { grid-template-columns:38px minmax(0,1fr) 38px; gap:8px; } .drawer-tab-rail.no-overflow { grid-template-columns:minmax(0,1fr); gap:0; } .drawer-tab-arrow { width:34px; height:34px; font-size:27px; } .drawer-tabs { gap:24px; } .drawer-tabs button { font-size:14px; } }
 .queue-pills { display:flex; flex-wrap:wrap; gap:7px; margin: 10px 0; }
 .queue-pills span { background:#f8fafc; border:1px solid #e8ebf2; border-radius:999px; padding:7px 10px; font-size:12px; font-weight:900; color:#344054; }
 .ops-grid { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:14px; }
@@ -3592,6 +3592,11 @@ input, select, textarea { font-family: inherit; }
   margin: 14px -2px 18px;
   padding: 3px 0;
 }
+.mc-drawer-tab-rail.no-overflow {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+.mc-drawer-tab-rail.no-overflow .mc-drawer-tab-arrow { display: none; }
 .mc-drawer-tab-arrow {
   width: 38px;
   height: 38px;
@@ -3656,6 +3661,7 @@ input, select, textarea { font-family: inherit; }
 .mc-drawer-tabs button.on::after { content: ""; position: absolute; left: 0; right: 0; bottom: -7px; height: 3px; border-radius: 999px; background: #111827; }
 @media (max-width: 760px) {
   .mc-drawer-tab-rail { grid-template-columns: 38px minmax(0, 1fr) 38px; gap: 8px; }
+  .mc-drawer-tab-rail.no-overflow { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .mc-drawer-tab-arrow { width: 34px; height: 34px; font-size: 27px; }
   .mc-drawer-tabs { gap: 24px; }
   .mc-drawer-tabs button { font-size: 14px; }
