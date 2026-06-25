@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type React from "react";
-import voiceHudReference from "../assets/voice-hud-reference.jpg";
 import { useStore } from "../services/store";
 import { Icon } from "../components/Icon";
+import { VoiceCoreOrb } from "../components/VoiceCoreOrb";
 import { cachedJsonRequest } from "../services/queryCache";
 import { buildChatIntentPreview, confidenceFromScore, routeChatIntent, serializeChatIntentDecision } from "../services/chatIntentRouter";
 import type { ChatIntentDecision, ChatIntentPreview, ChatIntentNextAction, ChatIntentType, ChatMissionContext, ChatRoutineContext, ChatWorkflowContext } from "../services/chatIntentRouter";
@@ -1119,9 +1119,8 @@ export function MissionControl() {
       "--voice-ray-duration": `${Math.max(0.65, 1.2 / voiceVisual.rate).toFixed(2)}s`,
       "--voice-particle-duration": `${Math.max(1, 1.8 / voiceVisual.rate).toFixed(2)}s`,
     } as React.CSSProperties;
-    const orb = (
+    const cssOrb = (
       <div className="voice-jarvis-orb" aria-hidden="true">
-        <img className="voice-orb-reference-image" src={voiceHudReference} alt="" />
         <span className="voice-reference-glow" />
         <span className="voice-ring ring-one" />
         <span className="voice-ring ring-two" />
@@ -1160,6 +1159,16 @@ export function MissionControl() {
                 ? `Melkizac replied: ${voiceReplyText}. Tap to record another voice message.`
                 : "Voice screen ready. Tap to record another voice message.";
       const voiceTitle = voiceStatus === "listening" ? "Tap to send voice message" : voiceStatus === "speaking" ? "Tap to stop voice reply" : voiceReplyNeedsTap ? "Tap to play voice reply" : "Voice screen";
+      const primaryInstruction = voiceStatus === "listening"
+        ? "Tap anywhere to finish and send"
+        : voiceStatus === "sending"
+          ? "Waiting for Melkizac"
+          : voiceStatus === "speaking"
+            ? "Tap anywhere to stop voice"
+            : voiceReplyNeedsTap
+              ? "Tap anywhere to play reply"
+              : "Tap anywhere to speak";
+      const secondaryInstruction = voiceTranscript || voiceReplyText || voiceMessage;
       return (
         <div
           className={`voice-activation full-window ${voiceStatus} ${speechPlaying ? "voice-speaking" : ""} voice-deactivate-hitarea`}
@@ -1186,7 +1195,21 @@ export function MissionControl() {
               <path d="M20 12H9" />
             </svg>
           </button>
-          {orb}
+          <div className="voice-cosmic-stage">
+            <VoiceCoreOrb energy={voiceVisual.energy} pitch={voiceVisual.pitch} rate={voiceVisual.rate} className="voice-core-orb-chat" />
+            <div className="voice-cosmic-hud top-left">
+              <span>Primary agent</span>
+              <b>Melkizac</b>
+            </div>
+            <div className="voice-cosmic-hud top-right">
+              <span>Voice mode</span>
+              <b>{voiceStatus === "listening" ? "Listening" : voiceStatus === "speaking" ? "Speaking" : voiceStatus === "sending" ? "Processing" : "Ready"}</b>
+            </div>
+            <div className="voice-cosmic-prompt">
+              <strong>{primaryInstruction}</strong>
+              <span>{secondaryInstruction}</span>
+            </div>
+          </div>
         </div>
       );
     }
@@ -1198,7 +1221,7 @@ export function MissionControl() {
         aria-label={voiceTranscript ? `Voice captured: ${voiceTranscript}` : voiceMessage}
         style={voiceStyle}
       >
-        {orb}
+        {cssOrb}
       </div>
     );
   }
