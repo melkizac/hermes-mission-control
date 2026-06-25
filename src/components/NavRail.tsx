@@ -52,7 +52,6 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
 ];
 
 const workspaceUtilityItems: NavRouteItem[] = [
-  { key: "approvals", label: "Approvals", icon: "approvals" },
   { key: "agent-org", label: "Org Chart", icon: "agentOrg" },
   { key: "capabilities", label: "Capabilities", icon: "setup" },
 ];
@@ -241,6 +240,7 @@ export function NavRail() {
   const activeProfile = selected ?? agents.find((agent) => agent.id === selectedId) ?? agents[0];
   const activeProfileLabel = activeProfile?.name ?? "Melkizac";
   const activeProfileMeta = activeProfile?.squad || activeProfile?.statusLabel || "Active profile";
+  const approvalBadge = approvalCount > 99 ? "99+" : String(approvalCount);
 
   useEffect(() => {
     const activeGroup = visibleGroups.find((group) => group.items.some((item) => isRouteItem(item) && item.key === view));
@@ -397,15 +397,12 @@ export function NavRail() {
         <div className="utility-dock" aria-label="Utilities">
           {workspaceUtilityItems.map((item) => {
             const active = view === item.key;
-            const approvalBadge = item.key === "approvals" && approvalCount > 0
-              ? (approvalCount > 99 ? "99+" : String(approvalCount))
-              : null;
             return (
               <button
                 key={item.key}
                 className={"utility-dock-button" + (active ? " on" : "")}
                 type="button"
-                aria-label={approvalBadge ? `${item.label}, ${approvalBadge} pending` : item.label}
+                aria-label={item.label}
                 title={item.label}
                 data-tooltip={item.label}
                 onClick={() => {
@@ -413,7 +410,6 @@ export function NavRail() {
                 }}
               >
                 <Icon name={item.icon} size={18} />
-                {approvalBadge && <span className="utility-dock-badge">{approvalBadge}</span>}
               </button>
             );
           })}
@@ -428,6 +424,19 @@ export function NavRail() {
             <Icon name="settings" size={18} />
           </button>
         </div>
+      )}
+
+      {approvalCount > 0 && (
+        <button
+          className={"top-approval-notification" + (view === "approvals" ? " on" : "")}
+          type="button"
+          onClick={() => setView("approvals")}
+          aria-label={`Approvals, ${approvalBadge} pending`}
+          title="Approvals"
+        >
+          <Icon name="approvals" size={20} />
+          <span className="utility-dock-badge">{approvalBadge}</span>
+        </button>
       )}
 
       {!collapsed && (
