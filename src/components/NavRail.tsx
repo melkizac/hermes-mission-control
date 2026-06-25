@@ -33,7 +33,6 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
     items: [
       { key: "agents", label: "Chat", icon: "chat" },
       { key: "projects", label: "Projects", icon: "projects" },
-      { key: "files", label: "Files", icon: "folder" },
       { key: "board", label: "Task Board", icon: "board" },
       { key: "operations", label: "Automations", icon: "automations" },
     ],
@@ -52,6 +51,7 @@ const simplifiedWorkspaceGroups: NavGroup[] = [
 ];
 
 const workspaceUtilityItems: NavRouteItem[] = [
+  { key: "files", label: "Files", icon: "folder" },
   { key: "agent-org", label: "Org Chart", icon: "agentOrg" },
   { key: "capabilities", label: "Capabilities", icon: "setup" },
 ];
