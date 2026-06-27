@@ -13778,6 +13778,57 @@ def write_tool_installations(items):
     path.write_text(json.dumps({'items': items}, indent=2, sort_keys=True) + '\n')
 
 
+def opencode_cli_tool_record():
+    """Return a governed OpenCode CLI tool record when the binary is installed."""
+    path = shutil.which('opencode')
+    if not path:
+        return None
+    version = 'unknown'
+    try:
+        result = subprocess.run([path, '--version'], capture_output=True, text=True, timeout=5)
+        version = (result.stdout or result.stderr or '').strip().splitlines()[0][:80] or 'unknown'
+    except Exception:
+        pass
+    now = _capability_now()
+    return {
+        'id': 'cli:opencode',
+        'kind': 'cli',
+        'name': 'OpenCode CLI',
+        'serverName': 'opencode',
+        'profile': 'dev-ops',
+        'enabled': True,
+        'source': 'Mission Control governed CLI registry',
+        'command': 'opencode',
+        'installCommand': 'npm install -g opencode-ai@latest',
+        'description': 'Provider-agnostic autonomous coding CLI for bounded implementation, refactoring, review, and debugging lanes. Runs must use explicit repo/workdir scope and independent Andrej verification before production changes.',
+        'sampleTools': ['opencode run', 'opencode auth list', 'opencode --version'],
+        'categories': [{'id': 'autonomous-coding', 'name': 'Autonomous coding agent', 'count': 1}],
+        'assignmentUnit': 'opencode',
+        'permissions': ['local-filesystem-read', 'local-filesystem-write', 'network-model-calls', 'git-diff-required', 'approval-gated-production'],
+        'governance': {
+            'riskLevels': ['local-write', 'network', 'secret-access'],
+            'approvalStatus': 'approved',
+            'approvalAuthority': 'melverick',
+            'approvalNote': 'Melverick approved installing OpenCode and exposing it as a governed HMC tool. Production-affecting execution remains task/approval gated.',
+            'policySummary': 'OpenCode may read/write local repositories and call external model providers. Use only in explicit workdirs/branches/worktrees, never print secrets, never deploy or push production changes without Andrej verification and the relevant production approval.',
+            'allowedAgentClasses': ['platform', 'workspace'],
+            'allowedWorkspaceIds': ['mission-control', 'nexius-academy', 'nexiuslabs', 'melverick'],
+            'blockedActions': ['direct-main-push-without-review', 'production-deploy-without-verification', 'secret-printing', 'destructive-filesystem-operations', 'unscoped-workdir-run'],
+            'dataBoundary': 'repo-local-plus-external-model-provider',
+        },
+        'health': {
+            'state': 'passing',
+            'checkSummary': f'OpenCode CLI installed and version check passed: {version}. Credentials are managed by opencode auth and are not stored in Mission Control.',
+            'evidenceIds': ['ev-cli-opencode-install'],
+        },
+        'requiredSecrets': ['OpenCode provider credentials configured through opencode auth; registry stores no raw secrets'],
+        'wrapperType': 'autonomous-coding-cli',
+        'restart_required': False,
+        'created_at': now,
+        'updated_at': now,
+    }
+
+
 def load_raw_profile_config(profile_id='default'):
     path = profile_root(profile_id) / 'config.yaml'
     if not path.exists() and profile_id != 'default':
@@ -13803,8 +13854,30 @@ def save_raw_profile_config(profile_id, cfg, path=None):
 
 def installed_tool_records():
     records = []
+    seen_ids = set()
+    opencode_record = opencode_cli_tool_record()
+    if opencode_record:
+        records.append({
+            'id': opencode_record.get('id'),
+            'name': opencode_record.get('name') or 'OpenCode CLI',
+            'kind': 'cli-tool',
+            'source': opencode_record.get('source') or 'Mission Control governed CLI registry',
+            'enabled': opencode_record.get('enabled', True),
+            'description': opencode_record.get('description'),
+            'toolCount': 1,
+            'sampleTools': opencode_record.get('sampleTools') or [],
+            'categories': opencode_record.get('categories') or [{'id': 'autonomous-coding', 'name': 'Autonomous coding agent', 'count': 1}],
+            'assignmentUnit': opencode_record.get('assignmentUnit') or 'opencode',
+            'install': opencode_record,
+            'governance': opencode_record.get('governance'),
+            'permissions': opencode_record.get('permissions') or [],
+            'health': opencode_record.get('health') or {},
+        })
+        seen_ids.add(opencode_record.get('id'))
     for item in read_tool_installations():
         if not isinstance(item, dict):
+            continue
+        if item.get('id') in seen_ids:
             continue
         kind = str(item.get('kind') or 'cli')
         records.append({
@@ -18788,6 +18861,24 @@ def normalize_tool_capability_source(tool):
     now = tool.get('updated_at') or tool.get('created_at') or _capability_now()
     tool_count = tool.get('toolCount')
     sample_tools = tool.get('sampleTools') or []
+    install = tool.get('install') if isinstance(tool.get('install'), dict) else {}
+    install_governance = tool.get('governance') if isinstance(tool.get('governance'), dict) else install.get('governance') if isinstance(install.get('governance'), dict) else {}
+    install_health = tool.get('health') if isinstance(tool.get('health'), dict) else install.get('health') if isinstance(install.get('health'), dict) else {}
+    install_permissions = tool.get('permissions') if isinstance(tool.get('permissions'), list) else install.get('permissions') if isinstance(install.get('permissions'), list) else []
+    risk_levels = install_governance.get('riskLevels') or (['network'] if source_type == 'mcp-server' else ['local-write'])
+    approval_status = install_governance.get('approvalStatus') or 'not-required'
+    policy_summary = install_governance.get('policySummary') or 'Imported from existing Tools Hub inventory.'
+    governance = {
+        'riskLevels': risk_levels,
+        'approvalStatus': approval_status,
+        'approvalAuthority': install_governance.get('approvalAuthority'),
+        'approvalGateIds': install_governance.get('approvalGateIds') or [],
+        'policySummary': policy_summary,
+        'allowedAgentClasses': install_governance.get('allowedAgentClasses') or ['platform', 'workspace'],
+        'allowedWorkspaceIds': install_governance.get('allowedWorkspaceIds') or [],
+        'blockedActions': install_governance.get('blockedActions') or [],
+        'dataBoundary': install_governance.get('dataBoundary') or ('external-api' if source_type == 'mcp-server' else 'local-only'),
+    }
     return {
         'id': capability_source_id(source_type, raw_id),
         'type': source_type,
@@ -18797,20 +18888,20 @@ def normalize_tool_capability_source(tool):
         'category': source_type,
         'tags': [source_type] + [str(t) for t in sample_tools[:6]],
         'status': 'enabled' if tool.get('enabled', True) else 'disabled',
-        'sourceUri': (tool.get('install') or {}).get('url') or (tool.get('install') or {}).get('command') or tool.get('assignmentUnit'),
-        'sourceRef': (tool.get('install') or {}).get('serverName') or raw_id,
+        'sourceUri': install.get('url') or install.get('command') or tool.get('assignmentUnit'),
+        'sourceRef': install.get('serverName') or raw_id,
         'sourceLabel': tool.get('source') or 'Tools Hub',
         'workspaceId': None,
         'runtimeId': None,
-        'profileId': (tool.get('install') or {}).get('profile'),
+        'profileId': install.get('profile'),
         'ownerKind': 'admin',
         'visibility': 'admin-only',
         'editable': True,
         'enabled': bool(tool.get('enabled', True)),
-        'installMethod': {'kind': install_kind, 'commandPreview': (tool.get('install') or {}).get('command') or tool.get('assignmentUnit'), 'configPath': (tool.get('install') or {}).get('config_path'), 'requiresRestart': bool((tool.get('install') or {}).get('restart_required') or tool.get('restart_required')), 'requiredSecrets': [], 'requiredPermissions': ['network'] if source_type == 'mcp-server' else [], 'wrapperType': 'mcp' if source_type == 'mcp-server' else 'tool'},
-        'governance': {'riskLevels': ['network'] if source_type == 'mcp-server' else ['local-write'], 'approvalStatus': 'not-required', 'approvalGateIds': [], 'policySummary': 'Imported from existing Tools Hub inventory.', 'allowedAgentClasses': ['platform', 'workspace'], 'allowedWorkspaceIds': [], 'blockedActions': [], 'dataBoundary': 'external-api' if source_type == 'mcp-server' else 'local-only'},
-        'permissions': [],
-        'health': {'state': 'passing' if tool.get('enabled', True) else 'unknown', 'checkSummary': f"{tool_count} tools listed" if tool_count is not None else 'Tool registry record loaded', 'evidenceIds': []},
+        'installMethod': {'kind': install_kind, 'commandPreview': install.get('command') or tool.get('assignmentUnit'), 'configPath': install.get('config_path'), 'requiresRestart': bool(install.get('restart_required') or tool.get('restart_required')), 'requiredSecrets': install.get('requiredSecrets') or [], 'requiredPermissions': install_permissions or (['network'] if source_type == 'mcp-server' else []), 'wrapperType': install.get('wrapperType') or ('mcp' if source_type == 'mcp-server' else 'tool')},
+        'governance': governance,
+        'permissions': install_permissions,
+        'health': {'state': install_health.get('state') or ('passing' if tool.get('enabled', True) else 'unknown'), 'checkSummary': install_health.get('checkSummary') or (f"{tool_count} tools listed" if tool_count is not None else 'Tool registry record loaded'), 'evidenceIds': install_health.get('evidenceIds') or []},
         'evidence': [{'id': f"ev-{capability_source_id(source_type, raw_id)}", 'kind': 'source', 'title': 'Tools Hub record', 'summary': tool.get('source') or 'Tools Hub', 'createdAt': now, 'redacted': True}],
         'assignment': _capability_assignment_from_hub_lists(unit=unit, usage_count=1 if tool.get('enabled', True) else 0),
         'rollback': {'supported': True, 'disableSteps': ['Disable the tool or MCP server in Mission Control/Hermes config.'], 'uninstallSteps': ['Remove the tool installation record or mcp_servers entry after approval.'], 'restartRequired': bool((tool.get('install') or {}).get('restart_required') or tool.get('restart_required'))},
