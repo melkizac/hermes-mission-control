@@ -629,6 +629,8 @@ export interface AgentRuntimeAssignment {
   credential_label?: string;
   account_id: string;
   model_id: string;
+  valid_account_ids?: string[];
+  valid_model_ids?: string[];
   reasoning: string;
   apply_mode: string;
   updated_at?: string;

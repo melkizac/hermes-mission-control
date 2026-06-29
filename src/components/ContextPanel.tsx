@@ -89,22 +89,22 @@ export function ContextPanel({
       setRuntimeStatus("This agent is not present in the runtime assignment registry yet.");
       return;
     }
-    const requestedModel = runtimeSwitcher.models.find((model) => model.id === (changes.model_id || current.model_id));
-    const fallbackModel = runtimeSwitcher.models.find((model) => model.enabled && model.authorized && model.provider === "openai-codex")
-      ?? runtimeSwitcher.models.find((model) => model.enabled && model.provider === "openai-codex")
-      ?? runtimeSwitcher.models.find((model) => model.enabled && model.authorized)
-      ?? runtimeSwitcher.models.find((model) => model.enabled);
+    const validModelIds = new Set(current.valid_model_ids || []);
+    const validAccountIds = new Set(current.valid_account_ids || []);
+    const modelPool = runtimeSwitcher.models.filter((model) => model.enabled && model.authorized && (validModelIds.size === 0 || validModelIds.has(model.id)));
+    const requestedModel = modelPool.find((model) => model.id === (changes.model_id || current.model_id));
+    const fallbackModel = modelPool.find((model) => model.provider === "openai-codex")
+      ?? modelPool[0];
     const selectedModel = requestedModel ?? fallbackModel;
     if (!selectedModel) {
       setRuntimeStatus("No authorised Hermes model is available for this agent.");
       return;
     }
-    const requestedAccount = runtimeSwitcher.accounts.find((account) => account.id === (changes.account_id || current.account_id));
+    const accountPool = runtimeSwitcher.accounts.filter((account) => (validAccountIds.size === 0 || validAccountIds.has(account.id)) && account.provider === selectedModel.provider);
+    const requestedAccount = accountPool.find((account) => account.id === (changes.account_id || current.account_id));
     const selectedAccount = requestedAccount && (!selectedModel.provider || requestedAccount.provider === selectedModel.provider)
       ? requestedAccount
-      : runtimeSwitcher.accounts.find((account) => account.provider === selectedModel.provider && account.configured && account.health !== "dead/revoked")
-        ?? runtimeSwitcher.accounts.find((account) => account.provider === selectedModel.provider)
-        ?? runtimeSwitcher.accounts[0];
+      : accountPool[0];
     if (!selectedAccount) {
       setRuntimeStatus("Choose a Codex account before assigning this runtime.");
       return;
@@ -162,7 +162,6 @@ export function ContextPanel({
   const runtimeAccounts = runtimeSwitcher?.accounts ?? [];
   const authorizedModels = runtimeModels.filter((model) => model.enabled && model.authorized);
   const assignedModel = runtimeModels.find((model) => model.id === runtimeAssignment?.model_id);
-  const assignedAccount = runtimeAccounts.find((account) => account.id === runtimeAssignment?.account_id);
 
   if (collapsed) {
     return (
@@ -209,7 +208,6 @@ export function ContextPanel({
             <AgentRuntimeAccountControl
               agent={agent}
               assignment={runtimeAssignment}
-              assignedAccount={assignedAccount}
               assignedModel={assignedModel}
               accounts={runtimeAccounts}
               authorizedModels={authorizedModels}
@@ -569,10 +567,15 @@ function credentialHealthLabel(account?: AgentRuntimeAccount) {
   return account.auth_active ? "active for this profile" : "healthy";
 }
 
+function isUsableRuntimeAccount(account?: AgentRuntimeAccount) {
+  if (!account) return false;
+  const health = credentialHealthLabel(account).toLowerCase();
+  return !health.includes("dead") && !health.includes("revoked") && !health.includes("missing") && !health.includes("rate-limited");
+}
+
 function AgentRuntimeAccountControl({
   agent,
   assignment,
-  assignedAccount,
   assignedModel,
   accounts,
   authorizedModels,
@@ -582,7 +585,6 @@ function AgentRuntimeAccountControl({
 }: {
   agent: Agent;
   assignment?: AgentRuntimeAssignment;
-  assignedAccount?: AgentRuntimeAccount;
   assignedModel?: RouterModel;
   accounts: AgentRuntimeAccount[];
   authorizedModels: RouterModel[];
@@ -590,15 +592,22 @@ function AgentRuntimeAccountControl({
   status: string;
   onChange: (changes: Partial<AgentRuntimeAssignment & { smoke_test: boolean }>) => void;
 }) {
+  const validModelIds = new Set(assignment?.valid_model_ids || []);
+  const validAccountIds = new Set(assignment?.valid_account_ids || []);
   const modelMap = new Map<string, RouterModel>();
   for (const model of authorizedModels.length ? authorizedModels : []) {
+    if (validModelIds.size > 0 && !validModelIds.has(model.id)) continue;
     const key = `${model.provider || ""}::${model.model || model.id}`;
-    if (!modelMap.has(key) || model.id === assignment?.model_id) modelMap.set(key, model);
+    if (!modelMap.has(key)) modelMap.set(key, model);
   }
   const modelOptions = Array.from(modelMap.values());
-  const selectedModel = modelOptions.find((model) => model.id === assignment?.model_id) || assignedModel || modelOptions[0];
-  const accountOptions = accounts.filter((account) => !selectedModel?.provider || account.provider === selectedModel.provider);
-  const selectedAccount = accountOptions.find((account) => account.id === assignment?.account_id) || assignedAccount || accountOptions[0];
+  const selectedModel = modelOptions.find((model) => model.id === assignment?.model_id) || modelOptions[0];
+  const accountOptions = accounts.filter((account) => {
+    if (validAccountIds.size > 0 && !validAccountIds.has(account.id)) return false;
+    if (selectedModel?.provider && account.provider !== selectedModel.provider) return false;
+    return isUsableRuntimeAccount(account);
+  });
+  const selectedAccount = accountOptions.find((account) => account.id === assignment?.account_id) || accountOptions[0];
   const providerLabel = selectedModel?.provider || selectedAccount?.provider || assignedModel?.provider || "runtime provider";
   const modelLabel = selectedModel?.model || assignment?.model || assignedModel?.model || "model";
   const credentialLabel = assignment?.credential_label || selectedAccount?.auth_label || selectedAccount?.label || "credential";
@@ -630,20 +639,18 @@ function AgentRuntimeAccountControl({
           }}
         >
           <option value="">Choose Codex account</option>
-          {accountOptions.map((account) => {
-            const health = credentialHealthLabel(account);
-            const unavailable = health.toLowerCase().includes("dead") || health.toLowerCase().includes("revoked") || health.toLowerCase().includes("missing");
-            return (
-              <option key={account.id} value={account.id} disabled={unavailable}>
-                {account.auth_label || account.label}
-              </option>
-            );
-          })}
+          {accountOptions.map((account) => (
+            <option key={account.id} value={account.id}>
+              {account.auth_label || account.label}
+            </option>
+          ))}
         </select>
       </label>
       <p className="mini-note">
-        Current route: {providerLabel}/{modelLabel} via {credentialLabel}. Account changes update the selected Hermes profile credential priority; active sessions keep their existing runtime unless restart/new-session mode is selected.
+        Current route: {providerLabel}/{modelLabel} via {credentialLabel}. Only credentials that exist in this agent profile and are healthy are shown.
       </p>
+      {modelOptions.length === 0 && <p className="mini-note err">No valid model is authorised for this agent profile.</p>}
+      {modelOptions.length > 0 && accountOptions.length === 0 && <p className="mini-note err">No healthy credential is available for the selected model provider in this agent profile.</p>}
       <div className="runtime-action-row">
         <button className="btn ghost" type="button" disabled={saving || !selectedModel || !selectedAccount} onClick={() => onChange({ smoke_test: true })}>Run smoke test</button>
         <button className="btn ghost" type="button" disabled={saving || !selectedModel || !selectedAccount} onClick={() => onChange({ apply_mode: "restart_gateway" })}>Apply + restart gateway</button>
