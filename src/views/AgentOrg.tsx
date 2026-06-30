@@ -272,21 +272,10 @@ function orgIdentityDocsToFiles(agent: OrgAgent): ConfigFile[] {
     editable: doc.editable,
   }));
   if (files.length) return files;
-  const fallback = `${agent.role}. ${agent.summary || "No registry summary provided yet."}`;
-  return [{
-    name: "Registry identity.md",
-    label: `No SOUL.md, identity.md, USER.md, AGENTS.md, or CLAUDE.md file reported for ${agent.profile || "default"}`,
-    kind: "soul",
-    content: fallback,
-    sizeBytes: fallback.length,
-    updatedAt: "—",
-    scope: "registry",
-    editable: false,
-  }];
+  return [];
 }
 
 function orgAgentToContextAgent(agent: OrgAgent): Agent {
-  const profileId = agent.profile || agent.id || "default";
   const skillDetails: SkillDetail[] = agent.skills_detail.length ? agent.skills_detail : agent.skills.map((name) => ({ name }));
   const mappedTasks: Agent["tasks"] = agent.tasks.map((task) => ({
     id: task.id,
@@ -310,15 +299,15 @@ function orgAgentToContextAgent(agent: OrgAgent): Agent {
     initials: initials(agent.name),
     color: "var(--accent, #111827)",
     avatarUrl: agent.avatar_url,
-    model: agent.profile_details?.model_routing?.model || agent.runtime || "runtime default",
+    model: agent.profile_details?.model_routing?.model || agent.runtime || "Not reported",
     status: orgStatusToAgentStatus(agent.status),
-    availability: agent.status === "active" ? "online" : "offline",
-    activityState: agent.status === "active" ? "active" : "sleeping",
+    availability: agent.profile_details ? (agent.status === "active" ? "online" : "offline") : undefined,
+    activityState: agent.profile_details ? (agent.status === "active" ? "active" : "sleeping") : undefined,
     statusLabel: agent.status,
     statusDetail: agent.summary || agent.role,
     activity: agent.summary || agent.role,
     lastActive: agent.lastActivity ? formatSingaporeShort(agent.lastActivity) : "no recent run",
-    profilePath: agent.profile_details?.profile_path || `~/.hermes/profiles/${profileId}`,
+    profilePath: agent.profile_details?.profile_path || agent.profile || "Not reported",
     uptime: agent.mode,
     sessionCount: agent.profile_details?.sessions?.count ?? agent.runs.length,
     skills: skillDetails.map((skill, index) => ({ id: `${agent.id}-skill-${skill.name}-${index}`, name: skill.name, category: skill.category || skill.source || "profile", source: skill.source })),

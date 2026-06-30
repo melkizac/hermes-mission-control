@@ -134,7 +134,7 @@ export function ContextPanel({
   };
 
   useEffect(() => {
-    if (tab === "profile" || tab === "tools") void loadCapabilityMatrix();
+    if (tab === "tools") void loadCapabilityMatrix();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent.id, tab]);
 
@@ -204,67 +204,12 @@ export function ContextPanel({
     >
         {tab === "overview" && (
           <>
-            <div className="sec-l">Runtime</div>
-            <AgentRuntimeAccountControl
-              agent={agent}
-              assignment={runtimeAssignment}
-              assignedModel={assignedModel}
-              accounts={runtimeAccounts}
-              authorizedModels={authorizedModels}
-              saving={runtimeSaving}
-              status={runtimeStatus}
-              onChange={(next) => void saveRuntimeAssignment(next)}
-            />
-            <Info k="Profile" v={<span className="mono">{agent.profilePath}</span>} />
+            <div className="sec-l">Current state</div>
             <Info k="Status" v={<span className={agent.status === "active" || agent.status === "working" ? "hi" : ""}>{agent.statusLabel || cap(agent.status)}</span>} />
             <Info k="Availability" v={agent.availability || "—"} />
             <Info k="Activity" v={agent.activityState || agent.statusDetail || "—"} />
-            <Info k="Uptime" v={agent.uptime} />
             <Info k="Sessions" v={String(agent.sessionCount)} />
             <Info k="Last active" v={agent.lastActive} />
-
-            <div className="detail-stats">
-              <div>
-                <b>{identityFiles.length}</b>
-                <span>identity files</span>
-              </div>
-              <div>
-                <b>{agent.skills.length}</b>
-                <span>assigned skills</span>
-              </div>
-              <div>
-                <b>{agent.tasks.length}</b>
-                <span>tasks</span>
-              </div>
-            </div>
-
-            <div className="sec-l">Identity files</div>
-            {identityFiles.slice(0, 5).map((f) => (
-              <FileRow key={`${f.scope || "profile"}-${f.name}`} file={f} disabled={!canEditFile(f)} onOpen={() => { if (canEditFile(f)) setEditing(f); }} />
-            ))}
-            {identityFiles.length === 0 && <div className="empty">No identity files found for this profile.</div>}
-
-            <div className="sec-l">Skills · {agent.skills.length}</div>
-            <div className="skills">
-              {agent.skills.slice(0, 16).map((s) => (
-                <span className="skill" key={s.id}>
-                  {s.name}
-                  {canEditAgent && (
-                    <span className="x" onClick={() => void removeSkill(s.id)} title="Remove">
-                      ×
-                    </span>
-                  )}
-                </span>
-              ))}
-              {canEditAgent ? (
-                <span className="skill add" onClick={onAddSkill}>
-                  + Add skill
-                </span>
-              ) : (
-                <span className="skill readonly">Read-only workspace selection</span>
-              )}
-            </div>
-            {agent.skills.length > 16 && <div className="mini-note">+ {agent.skills.length - 16} more skills in the Skills tab.</div>}
 
             <div className="sec-l">AI insights</div>
             <div className="aicard">
@@ -289,21 +234,23 @@ export function ContextPanel({
           <>
             <div className="sec-l">Profile runtime</div>
             <p className="mini-note">Hermes profile = isolated runtime identity/configuration. Secret values are never shown here.</p>
-            <Info k="Profile" v={<span className="mono">{agent.profile_details?.profile_id || agent.id}</span>} />
+            <AgentRuntimeAccountControl
+              agent={agent}
+              assignment={runtimeAssignment}
+              assignedModel={assignedModel}
+              accounts={runtimeAccounts}
+              authorizedModels={authorizedModels}
+              saving={runtimeSaving}
+              status={runtimeStatus}
+              onChange={(next) => void saveRuntimeAssignment(next)}
+            />
+            <Info k="Profile ID" v={<span className="mono">{agent.profile_details?.profile_id || agent.id}</span>} />
+            <Info k="Profile path" v={<span className="mono">{agent.profilePath}</span>} />
             <Info k="Identity" v={agent.profile_details?.identity?.name || agent.name} />
-            <Info k="Provider" v={assignedModel?.provider || agent.profile_details?.model_routing?.provider || "runtime default"} />
-            <Info k="Assigned model" v={<span className="mono">{assignedModel?.model || agent.profile_details?.model_routing?.model || agent.model}</span>} />
-            <Info k="Toolsets" v={String(agent.profile_details?.toolsets?.length ?? agent.tools?.length ?? 0)} />
-            <Info k="Skills" v={String(agent.skills.length)} />
+            <Info k="Uptime" v={agent.uptime} />
             <Info k="Memory" v={`${agent.profile_details?.memory?.entries ?? 0} entries`} />
-            <Info k="Sessions" v={String(agent.profile_details?.sessions?.count ?? agent.sessionCount)} />
             <Info k="Plugins" v={`${agent.profile_details?.plugins?.enabled ?? 0}/${agent.profile_details?.plugins?.total ?? 0} enabled`} />
-            <Info k="Routines" v={String(agent.profile_details?.routines?.count ?? agent.tasks.length)} />
             <Info k="Gateway channels" v={`${(agent.profile_details?.gateway?.channels ?? []).filter((c) => c.enabled).length}/${agent.profile_details?.gateway?.channels?.length ?? 0} enabled`} />
-            <Info k="Credential scope" v={(agent.profile_details?.environment?.env_files?.length ?? 0) ? `${agent.profile_details?.environment?.env_files?.length} env file(s), values hidden` : "No env file reported"} />
-
-            <div className="sec-l">Workspace capability matrix</div>
-            <CapabilityMatrixSummary row={capabilityRow} loading={capabilityLoading} error={capabilityError} message={capabilityMessage} />
 
             <div className="sec-l">Gateway / channels</div>
             <div className="skills detail-skills">
@@ -325,12 +272,6 @@ export function ContextPanel({
             {(agent.profile_details?.environment?.env_files ?? []).map((file) => <Info key={file.name} k={file.name} v={`${file.status} · ${file.variable_count} variables · ${file.sensitive_count} sensitive names hidden`} />)}
             {!(agent.profile_details?.environment?.env_files ?? []).length && <div className="empty">No profile env file reported.</div>}
             <p className="mini-note">{agent.profile_details?.environment?.policy || "Names and values are hidden; only readiness counts are shown."}</p>
-
-            <div className="sec-l">Config files</div>
-            <div className="skills detail-skills">
-              {(agent.profile_details?.config_files ?? []).map((file) => <span className="skill" key={file.name}>{file.name}<em>{file.kind || "config"}</em></span>)}
-              {!(agent.profile_details?.config_files ?? []).length && <span className="skill readonly">No profile config files reported</span>}
-            </div>
           </>
         )}
 
@@ -570,7 +511,22 @@ function credentialHealthLabel(account?: AgentRuntimeAccount) {
 function isUsableRuntimeAccount(account?: AgentRuntimeAccount) {
   if (!account) return false;
   const health = credentialHealthLabel(account).toLowerCase();
-  return !health.includes("dead") && !health.includes("revoked") && !health.includes("missing") && !health.includes("rate-limited");
+  return !health.includes("dead") && !health.includes("revoked") && !health.includes("missing");
+}
+
+function credentialHealthTone(account?: AgentRuntimeAccount) {
+  const health = credentialHealthLabel(account).toLowerCase();
+  if (!account || health.includes("dead") || health.includes("revoked") || health.includes("missing")) return "bad";
+  if (health.includes("rate-limited") || health.includes("expired") || health.includes("warning")) return "warn";
+  if (health.includes("active")) return "active";
+  return "ok";
+}
+
+function runtimeRouteLabel(model?: RouterModel, account?: AgentRuntimeAccount, assignment?: AgentRuntimeAssignment, assignedModel?: RouterModel) {
+  const provider = model?.provider || account?.provider || assignedModel?.provider || assignment?.provider || "provider";
+  const modelName = model?.model || assignment?.model || assignedModel?.model || "model";
+  const credential = assignment?.credential_label || account?.auth_label || account?.label || "credential";
+  return `${credential} -> ${provider}/${modelName}`;
 }
 
 function AgentRuntimeAccountControl({
@@ -611,13 +567,40 @@ function AgentRuntimeAccountControl({
   const providerLabel = selectedModel?.provider || selectedAccount?.provider || assignedModel?.provider || "runtime provider";
   const modelLabel = selectedModel?.model || assignment?.model || assignedModel?.model || "model";
   const credentialLabel = assignment?.credential_label || selectedAccount?.auth_label || selectedAccount?.label || "credential";
+  const modelMeta = [
+    selectedModel?.provider,
+    selectedModel?.tier,
+    selectedModel?.cost_weight ? `cost weight ${selectedModel.cost_weight}` : null,
+  ].filter(Boolean).join(" / ");
+  const modelBestFor = selectedModel?.best_for?.slice(0, 2).join(", ");
+  const accountMeta = [
+    selectedAccount?.provider,
+    selectedAccount?.auth_type,
+    selectedAccount?.billing_owner,
+  ].filter(Boolean).join(" / ");
+  const accountHealth = credentialHealthLabel(selectedAccount);
+  const ready = Boolean(selectedModel && selectedAccount);
+  const healthyAccountCount = accountOptions.filter((account) => credentialHealthTone(account) === "ok" || credentialHealthTone(account) === "active").length;
   return (
     <div className="agent-model-assignment credential-routing">
-      <label className="agent-model-selector">
+      <div className="runtime-route-summary">
+        <div>
+          <span>Current route</span>
+          <b>{runtimeRouteLabel(selectedModel, selectedAccount, assignment, assignedModel)}</b>
+        </div>
+        <em className={ready ? "ready" : "blocked"}>{ready ? "Ready" : "Needs setup"}</em>
+      </div>
+      <label className="agent-model-selector runtime-route-field">
         <span>Model for {agent.name}</span>
+        <div className="runtime-select-shell">
+          <div className="runtime-select-copy">
+            <b>{modelLabel}</b>
+            <small>{modelMeta || "No authorised model selected"}</small>
+          </div>
         <select
           value={selectedModel?.id || ""}
           disabled={saving || modelOptions.length === 0}
+          aria-label={`Model for ${agent.name}`}
           onChange={(event) => onChange({ model_id: event.target.value })}
         >
           <option value="">Choose model</option>
@@ -627,12 +610,24 @@ function AgentRuntimeAccountControl({
             </option>
           ))}
         </select>
+        </div>
+        <div className="credential-health-row">
+          <span className={selectedModel?.authorized ? "credential-health active" : "credential-health warn"}>{selectedModel?.authorized ? "Authorized" : "Needs authorization"}</span>
+          {modelBestFor && <span className="credential-health">{modelBestFor}</span>}
+          {selectedModel?.secret_status && <span className="credential-health">{selectedModel.secret_status}</span>}
+        </div>
       </label>
-      <label className="agent-model-selector">
+      <label className="agent-model-selector runtime-route-field">
         <span>Codex account for {agent.name}</span>
+        <div className="runtime-select-shell">
+          <div className="runtime-select-copy">
+            <b>{credentialLabel}</b>
+            <small>{accountMeta || "No healthy account selected"}</small>
+          </div>
         <select
           value={selectedAccount?.id || ""}
           disabled={saving || accountOptions.length === 0}
+          aria-label={`Codex account for ${agent.name}`}
           onChange={(event) => {
             const account = accountOptions.find((item) => item.id === event.target.value);
             onChange({ account_id: event.target.value, credential_label: account?.auth_label || account?.label });
@@ -645,12 +640,19 @@ function AgentRuntimeAccountControl({
             </option>
           ))}
         </select>
+        </div>
+        <div className="credential-health-row">
+          <span className={`credential-health ${credentialHealthTone(selectedAccount)}`}>{accountHealth}</span>
+          {selectedAccount?.auth_active && <span className="credential-health active">Connected</span>}
+          {accountOptions.length > 1 && <span className="credential-health">{accountOptions.length} profile credentials</span>}
+          {accountOptions.length === 1 && healthyAccountCount === 1 && <span className="credential-health">Only profile credential</span>}
+        </div>
       </label>
       <p className="mini-note">
-        Current route: {providerLabel}/{modelLabel} via {credentialLabel}. Only credentials that exist in this agent profile and are healthy are shown.
+        This route uses {credentialLabel} to access {providerLabel}/{modelLabel}. Only credentials that exist in this agent profile and are healthy are shown.
       </p>
       {modelOptions.length === 0 && <p className="mini-note err">No valid model is authorised for this agent profile.</p>}
-      {modelOptions.length > 0 && accountOptions.length === 0 && <p className="mini-note err">No healthy credential is available for the selected model provider in this agent profile.</p>}
+      {modelOptions.length > 0 && accountOptions.length === 0 && <p className="mini-note err">No selectable credential is available for the selected model provider in this agent profile.</p>}
       <div className="runtime-action-row">
         <button className="btn ghost" type="button" disabled={saving || !selectedModel || !selectedAccount} onClick={() => onChange({ smoke_test: true })}>Run smoke test</button>
         <button className="btn ghost" type="button" disabled={saving || !selectedModel || !selectedAccount} onClick={() => onChange({ apply_mode: "restart_gateway" })}>Apply + restart gateway</button>

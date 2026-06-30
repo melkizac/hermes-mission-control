@@ -17,10 +17,11 @@ function categoryFor(plugin: PluginHubRecord) {
 }
 
 function sourceLabel(value?: string) {
-  const raw = String(value || "bundled").toLowerCase();
+  if (!value) return "Source not reported";
+  const raw = String(value).toLowerCase();
   if (raw.includes("bundled")) return "Hermes bundled";
   if (raw.includes("user") || raw.includes("git")) return "User installed";
-  return value || "Hermes";
+  return value;
 }
 
 function statusLabel(plugin: PluginHubRecord) {

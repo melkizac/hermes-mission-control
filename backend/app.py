@@ -10389,6 +10389,14 @@ def read_agent_runtime_switcher(identity=None):
             canonical_model = next((m for m in models if m.get('provider') == 'openai-codex' and m.get('model') == selected_model_row.get('model') and not any(token in str(m.get('id') or '').lower() for token in ('codex-nexius', 'codex-nexiuslabs', 'codex-melverick'))), None)
             if canonical_model and canonical_model.get('id'):
                 model_id = canonical_model.get('id')
+        saved_valid_account_ids = [
+            safe_id(item) for item in (saved.get('valid_account_ids') or saved.get('validAccountIds') or [])
+            if safe_id(item) in account_ids
+        ]
+        saved_valid_model_ids = [
+            safe_id(item) for item in (saved.get('valid_model_ids') or saved.get('validModelIds') or [])
+            if safe_id(item) in model_ids
+        ]
         assignments[aid] = {
             **base,
             'hermes_profile': str(saved.get('hermes_profile') or runtime_agent_profile(aid, identity))[:120],
@@ -10397,6 +10405,8 @@ def read_agent_runtime_switcher(identity=None):
             'credential_label': str(saved.get('credential_label') or '')[:120],
             'account_id': account_id,
             'model_id': model_id,
+            'valid_account_ids': saved_valid_account_ids or base.get('valid_account_ids') or [],
+            'valid_model_ids': saved_valid_model_ids or base.get('valid_model_ids') or [],
             'reasoning': str(saved.get('reasoning') or base.get('reasoning') or 'balanced')[:40],
             'apply_mode': str(saved.get('apply_mode') or saved.get('applyMode') or 'next_session')[:40],
             'updated_at': str(saved.get('updated_at') or '')[:80],

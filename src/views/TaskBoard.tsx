@@ -817,11 +817,9 @@ function TaskDetailDrawer({ task, tab, setTab, comment, setComment, onClose, onM
 }
 
 type TaskCockpitSignal = { label: string; value: string; detail: string; tone?: "good" | "warn" | "muted" | "needs-human" };
-type TaskCockpitArtifact = { id: string; title: string; meta: string; status: string };
 type TaskCockpitTimelineItem = { id: string; label: string; summary: string; time: string };
 type TaskExecutionCockpitModel = {
   signals: TaskCockpitSignal[];
-  artifacts: TaskCockpitArtifact[];
   timeline: TaskCockpitTimelineItem[];
   evidenceGateLabel: string;
   approvalLabel: string;
@@ -841,14 +839,6 @@ function TaskExecutionCockpitOverview({ model }: { model: TaskExecutionCockpitMo
         ))}
       </div>
       <div className="task-cockpit-preview-grid">
-        <section className="task-cockpit-preview-card" aria-label="Artifact preview">
-          <div className="task-cockpit-preview-head"><span className="stub-tag">Artifact preview</span><b>{model.artifacts.length ? `${model.artifacts.length} shown` : "None yet"}</b></div>
-          {model.artifacts.length > 0 ? (
-            <div className="task-cockpit-artifact-list">
-              {model.artifacts.map((artifact) => <span key={artifact.id}><b>{artifact.title}</b><small>{artifact.meta} · {artifact.status}</small></span>)}
-            </div>
-          ) : <p>No artifact chips yet. Full outputs and proof stay in Outputs and Evidence.</p>}
-        </section>
         <section className="task-cockpit-preview-card" aria-label="Recent execution timeline">
           <div className="task-cockpit-preview-head"><span className="stub-tag">Recent execution timeline</span><b>{model.timeline.length ? `${model.timeline.length} signals` : "Waiting"}</b></div>
           {model.timeline.length > 0 ? (
@@ -863,7 +853,6 @@ function TaskExecutionCockpitOverview({ model }: { model: TaskExecutionCockpitMo
 }
 
 function buildOverviewExecutionCockpit(task: BoardTask, projectData: ProjectDrawerData): TaskExecutionCockpitModel {
-  const artifacts = getTaskArtifactPreview(task, projectData.outputs);
   const approval = getTaskApprovalGateSummary(task);
   const evidenceGate = getTaskEvidenceGateSummary(task);
   const timeline = getTaskExecutionTimelinePreview(task);
@@ -873,7 +862,6 @@ function buildOverviewExecutionCockpit(task: BoardTask, projectData: ProjectDraw
       : `${projectData.reasonLabel}: ${projectData.nextAction}`
     : "No human approval is blocking the current agent path.";
   return {
-    artifacts,
     timeline,
     evidenceGateLabel: evidenceGate.value,
     approvalLabel: approval.value,
@@ -883,22 +871,11 @@ function buildOverviewExecutionCockpit(task: BoardTask, projectData: ProjectDraw
       { label: "Owner", value: task.assignee || "unassigned", detail: `Project: ${projectData.displayProjectId}`, tone: "muted" },
       { label: "Next action", value: projectData.needsHuman ? "Needs operator" : "Agent-operable", detail: projectData.nextAction, tone: projectData.needsHuman ? "needs-human" : "good" },
       { label: "Evidence gate", value: evidenceGate.value, detail: evidenceGate.detail, tone: evidenceGate.blocked ? "warn" : "good" },
-      { label: "Artifacts surfaced", value: `${artifacts.length}/${projectData.outputs.length}`, detail: artifacts.length ? "Latest/high-value chips shown here; full list remains in Outputs/Evidence." : "No outputs attached yet.", tone: artifacts.length ? "good" : "muted" },
+      { label: "Outputs", value: String(projectData.outputs.length), detail: projectData.outputs.length ? "Open Outputs for deliverables and artifacts." : "No outputs attached yet.", tone: projectData.outputs.length ? "good" : "muted" },
       { label: "Approval gates", value: approval.value, detail: approval.detail, tone: approval.pendingCount > 0 ? "needs-human" : "muted" },
       { label: "Latest run signal", value: timeline[0]?.label || "No signal yet", detail: timeline[0]?.summary || "Run tree, handoffs, evidence, and events will populate this preview.", tone: timeline.length ? "good" : "muted" },
     ],
   };
-}
-
-function getTaskArtifactPreview(task: BoardTask, outputs: DrawerRecord[]): TaskCockpitArtifact[] {
-  const detailArtifacts = task.mission_result?.artifacts.map((artifact) => artifact as unknown as DrawerRecord) ?? [];
-  const normalized = (outputs.length ? outputs : detailArtifacts).map((output, index) => normalizeOutputArtifact(output, index));
-  return normalized.slice(0, 4).map((artifact) => ({
-    id: artifact.id,
-    title: artifact.title,
-    meta: [artifact.kind, artifact.format, artifact.version].filter(Boolean).join(" · ") || "artifact",
-    status: artifact.qaStatus || artifact.redactionStatus || "available",
-  }));
 }
 
 function getTaskApprovalGateSummary(task: BoardTask) {
@@ -1273,15 +1250,6 @@ function ReleaseLaneTab({ task }: { task: BoardTask }) {
   );
 }
 
-function taskStageStatus(status: BoardStatus) {
-  if (status === "done") return "done";
-  if (status === "running") return "running";
-  if (status === "blocked") return status;
-  if (status === "review") return "queued";
-  if (status === "ready" || status === "todo" || status === "scheduled") return "ready";
-  return "not_started";
-}
-
 function taskHasPendingApprovalGate(task: BoardTask) {
   const gates = task.mission_result?.approvalGates ?? task.result_details?.approval_gates ?? [];
   return gates.some((gate) => gate.status === "pending" || gate.status === "changes-requested");
@@ -1475,12 +1443,11 @@ function getProjectDrawerData(task: BoardTask): ProjectDrawerData {
   const rawEvidence = asRecordArray(details.evidence);
   const projectId = (task.tenant || task.mission_result?.workItem.projectId || task.workflow_template_id || task.id).replace(/^project:/, "");
   const workflowType = getString(details, ["workflow_type", "workflowType"], task.workflow_template_id || (task.tenant?.startsWith("project:") ? "project_workflow" : "kanban_task"));
-  const fallbackProgress = task.status === "done" ? 100 : task.status === "running" ? 55 : task.status === "blocked" ? 35 : task.status === "review" ? 70 : task.status === "ready" ? 45 : 15;
   const sources = asRecordArray(details.sources).map(normalizeProjectSource);
   const outputs = rawOutputs.length ? rawOutputs : artifacts;
   const insight = deriveTaskDrawerInsight(task, projectId);
   const explicitProgress = hasExplicitProgress(summary);
-  const progress = Math.max(0, Math.min(100, getNumber(summary, ["progress_percent", "progress", "progressPercent"], fallbackProgress)));
+  const progress = explicitProgress ? Math.max(0, Math.min(100, getNumber(summary, ["progress_percent", "progress", "progressPercent"], 0))) : 0;
   const stages = asRecordArray(details.stages).map((stage, index) => ({
     id: getString(stage, ["id", "stage", "key"], `stage_${index + 1}`),
     label: getString(stage, ["label", "title", "stage"], `Stage ${index + 1}`),
@@ -1488,12 +1455,6 @@ function getProjectDrawerData(task: BoardTask): ProjectDrawerData {
     owner: getString(stage, ["owner", "agent", "tool"], "agent"),
     evidence: getString(stage, ["evidence", "evidence_ref", "evidenceRef"], ""),
   }));
-  const derivedStages = stages.length ? stages : [
-    { id: "intent_understood", label: "Intent understood", status: "done", owner: "melkizac" },
-    { id: "project_linked", label: task.tenant ? "Project linked" : "Project missing", status: task.tenant ? "done" : "blocked", owner: "mission-control" },
-    { id: "current_task", label: task.title, status: taskStageStatus(task.status), owner: task.assignee || "unassigned", evidence: task.result ? "result attached" : undefined },
-    { id: "verification", label: "QA / verification", status: task.status === "done" ? "done" : "pending", owner: "operator" },
-  ];
   return {
     projectId,
     displayProjectId: insight.projectName,
@@ -1502,7 +1463,7 @@ function getProjectDrawerData(task: BoardTask): ProjectDrawerData {
     currentStage: pendingTag(task.status),
     nextAction: insight.nextAction,
     progress,
-    progressKnown: explicitProgress || ["running", "review", "done"].includes(task.status),
+    progressKnown: explicitProgress,
     needsHuman: shouldSurfaceNeedsYou(task),
     reasonLabel: insight.reasonLabel,
     sources,
@@ -1515,7 +1476,7 @@ function getProjectDrawerData(task: BoardTask): ProjectDrawerData {
       citation_required: sources.length > 0 ? "track citation health per source" : "not specified",
       model_policy: task.model_override || "default Mission Control routing",
     },
-    stages: derivedStages,
+    stages,
   };
 }
 
@@ -1550,6 +1511,7 @@ function WorkflowStageList({ stages }: { stages: ProjectDrawerData["stages"] }) 
   return (
     <section className="task-section workflow-stage-list">
       <h3>Workflow timeline</h3>
+      {stages.length === 0 && <div className="empty">No workflow stages were reported by Hermes for this task.</div>}
       <div className="workflow-stage-grid">
         {stages.map((stage) => <div className={`workflow-stage-item stage-${stage.status}`} key={stage.id}><span>{stage.status}</span><b>{stage.label}</b><small>{stage.owner}{stage.evidence ? ` · ${stage.evidence}` : ""}</small></div>)}
       </div>
