@@ -73,6 +73,7 @@ def seed_state_db(app):
         [
             ("chat-hmc", "Discuss HMC runs activity", "telegram", "gpt", now + 1, 2, 0, 10, 20),
             ("chat-nexius", "Nexius Academy lead form follow-up", "telegram", "gpt", now + 2, 2, 0, 10, 20),
+            ("chat-web-ui", "Mission Control web chat follow-up", "web-ui", "gpt", now + 4, 2, 0, 10, 20),
             ("cron-nightly", "cron_monitor", "cron", "gpt", now + 3, 1, 0, 1, 1),
         ],
     )
@@ -83,6 +84,8 @@ def seed_state_db(app):
             ("m2", "chat-hmc", "assistant", "Mission Control can index chats by project.", now + 1),
             ("m3", "chat-nexius", "user", "academy.nexiuslabs.com SkillsFuture leads need follow-up", now + 2),
             ("m4", "chat-nexius", "assistant", "Nexius lead operations noted.", now + 2),
+            ("m6", "chat-web-ui", "user", "Keep the Hermes Mission Control chat tab active", now + 4),
+            ("m7", "chat-web-ui", "assistant", "Pinned chat tabs should show explicit web UI chats.", now + 4),
             ("m5", "cron-nightly", "assistant", "scheduled monitor", now + 3),
         ],
     )
@@ -92,6 +95,10 @@ def seed_state_db(app):
 
 def admin_identity():
     return {"user": {"email": "melverick", "role": "admin", "name": "Melverick"}, "role": "admin"}
+
+
+def user_identity():
+    return {"user": {"email": "operator@example.com", "role": "user", "name": "Operator"}, "workspace": {"id": "ws_operator"}}
 
 
 def test_project_chat_linking_supports_many_to_many_canonical_links_and_rejects_runs(tmp_path, monkeypatch):
@@ -125,6 +132,7 @@ def test_project_chat_linking_supports_many_to_many_canonical_links_and_rejects_
     assert [item["id"] for item in mission["sessions"]] == ["chat-hmc"]
     assert [item["id"] for item in nexius["sessions"]].count("chat-hmc") == 1
     assert sum(1 for item in all_chats["sessions"] if item["id"] == "chat-hmc" and item["link_source"] == "canonical") == 2
+    assert any(item["id"] == "chat-web-ui" for item in all_chats["sessions"])
     assert all(item.get("human_initiated") for item in all_chats["sessions"])
     assert all(item["id"] != "cron-nightly" for item in all_chats["sessions"])
 
@@ -159,3 +167,39 @@ def test_project_chat_confirm_suggestion_promotes_deterministic_suggestion_to_ca
     after = app.project_chat_sessions_payload({"project": ["nexius-leads"]})
     relink_candidate = next(item for item in after["sessions"] if item["id"] == "chat-nexius")
     assert relink_candidate["link_source"] == "suggested"
+
+
+def test_project_chat_sessions_filter_human_sources_before_recent_limit(tmp_path, monkeypatch):
+    app = load_backend_app(tmp_path, monkeypatch)
+    seed_state_db(app)
+    con = sqlite3.connect(app.STATE_DB)
+    now = 1_700_000_000
+    con.executemany(
+        "INSERT INTO sessions (id,title,source,model,started_at,message_count,tool_call_count,input_tokens,output_tokens) VALUES (?,?,?,?,?,?,?,?,?)",
+        [(f"cron-crowd-{i}", f"cron_crowd_{i}", "cron", "gpt", now + 100 + i, 1, 0, 1, 1) for i in range(300)],
+    )
+    con.commit()
+    con.close()
+
+    payload = app.project_chat_sessions_payload({})
+    ids = [item["id"] for item in payload["sessions"]]
+
+    assert "chat-hmc" in ids
+    assert "chat-nexius" in ids
+    assert all(not item["id"].startswith("cron-crowd-") for item in payload["sessions"])
+
+
+def test_project_chat_sessions_return_scoped_human_chats_for_non_admin_user(tmp_path, monkeypatch):
+    app = load_backend_app(tmp_path, monkeypatch)
+    seed_state_db(app)
+    monkeypatch.setattr(app, "list_workspace_projects", lambda _filters, _identity: {
+        "projects": [{"id": "mission-control", "name": "Hermes Mission Control", "sessions": 0, "status": "active"}],
+    })
+
+    payload = app.project_chat_sessions_payload({}, user_identity())
+    ids = [item["id"] for item in payload["sessions"]]
+
+    assert "chat-hmc" in ids
+    assert "chat-nexius" not in ids
+    assert payload["projects"][0]["id"] == "mission-control"
+    assert payload["summary"]["sessions"] == len(payload["sessions"])

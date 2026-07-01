@@ -1934,7 +1934,7 @@ def status_from_session(row):
     return 'completed'
 
 
-HUMAN_CHAT_SOURCES = {'telegram', 'whatsapp', 'signal', 'imessage', 'cli', 'tui', 'hmc_chat', 'web_chat', 'api_server'}
+HUMAN_CHAT_SOURCES = {'telegram', 'whatsapp', 'signal', 'imessage', 'cli', 'tui', 'hmc_chat', 'web_chat', 'web-ui', 'web_ui', 'api_server'}
 SCHEDULED_RUN_SOURCES = {'cron', 'scheduler', 'schedule'}
 WORKER_RUN_SOURCES = {'kanban', 'kanban_worker', 'worker', 'task_worker'}
 DELEGATION_RUN_SOURCES = {'delegate_task', 'delegation', 'subagent', 'sub_agent'}
@@ -1976,6 +1976,8 @@ def classify_run_trace(record):
         'cli': 'CLI',
         'tui': 'CLI',
         'api_server': 'API server',
+        'web-ui': 'Web UI',
+        'web_ui': 'Web UI',
         'cron': 'Scheduler',
     }.get(source, source.replace('_', ' ').title() if source else 'Unknown')
     return {
@@ -7762,12 +7764,18 @@ def recent_project_sessions(limit=24):
         return []
 
 
-def project_session_text_index(session_ids=None, limit=250):
+def project_session_text_index(session_ids=None, limit=250, human_only=False):
     if not STATE_DB.exists():
         return {}
     try:
         con = sqlite3.connect(f'file:{STATE_DB}?mode=ro', uri=True, timeout=2)
         con.row_factory = sqlite3.Row
+        source_filter = tuple(sorted(HUMAN_CHAT_SOURCES)) if human_only else ()
+        source_clause = ''
+        source_params = []
+        if source_filter:
+            source_clause = f" AND lower(coalesce(s.source,'')) IN ({','.join('?' for _ in source_filter)})"
+            source_params = list(source_filter)
         if session_ids:
             ids = [str(x) for x in session_ids if x]
             if not ids:
@@ -7778,18 +7786,23 @@ def project_session_text_index(session_ids=None, limit=250):
                        substr(group_concat(substr(COALESCE(m.content,''),1,900),'\n'),1,12000) AS transcript
                 FROM sessions s
                 LEFT JOIN messages m ON m.session_id=s.id AND m.role IN ('user','assistant')
-                WHERE s.id IN ({placeholders})
+                WHERE s.id IN ({placeholders}){source_clause}
                 GROUP BY s.id
-            """, ids).fetchall()
+            """, ids + source_params).fetchall()
         else:
+            inner_source_clause = ''
+            inner_source_params = []
+            if source_filter:
+                inner_source_clause = f" WHERE lower(coalesce(source,'')) IN ({','.join('?' for _ in source_filter)})"
+                inner_source_params = list(source_filter)
             rows = con.execute("""
                 SELECT s.id,s.title,s.source,s.model,s.started_at,s.message_count,s.tool_call_count,s.input_tokens,s.output_tokens,
                        substr(group_concat(substr(COALESCE(m.content,''),1,900),'\n'),1,12000) AS transcript
-                FROM (SELECT * FROM sessions ORDER BY started_at DESC LIMIT ?) s
+                FROM (SELECT * FROM sessions{inner_source_clause} ORDER BY started_at DESC LIMIT ?) s
                 LEFT JOIN messages m ON m.session_id=s.id AND m.role IN ('user','assistant')
                 GROUP BY s.id
                 ORDER BY s.started_at DESC
-            """, (limit,)).fetchall()
+            """.format(inner_source_clause=inner_source_clause), inner_source_params + [limit]).fetchall()
         con.close()
     except Exception:
         return {}
@@ -8284,18 +8297,24 @@ def project_chat_suggestion_item(session, suggestion):
 
 
 def project_chat_sessions_payload(filters=None, identity=None):
-    if identity and not is_admin_identity(identity):
-        scoped = list_workspace_projects({}, identity).get('projects', [])
-        return {'projects': [{'id': p.get('id'), 'name': p.get('name'), 'sessions': 0, 'chats': 0, 'owner': p.get('owner'), 'status': p.get('status'), 'kanban_tenant': p.get('id')} for p in scoped], 'sessions': [], 'summary': {'projects': len(scoped), 'sessions': 0, 'chats': 0, 'canonical_links': 0, 'heuristic_links': 0}}
     filters = filters or {}
     q = (filters.get('q') or [''])[0].strip().lower()
     project_filter = (filters.get('project') or [''])[0].strip().lower()
+    scoped_project_ids = None
     try:
-        project_rows = list_projects({}).get('projects', [])
+        if identity and not is_admin_identity(identity):
+            project_rows = list_workspace_projects({}, identity).get('projects', [])
+            scoped_project_ids = {str(p.get('id') or '').lower() for p in project_rows if p.get('id')}
+        else:
+            project_rows = list_projects({}).get('projects', [])
     except Exception:
         project_rows = []
-    state_projects = read_state_project_records()
-    session_index = project_session_text_index(limit=250)
+        scoped_project_ids = set() if identity and not is_admin_identity(identity) else None
+    if scoped_project_ids is not None and project_filter and project_filter not in scoped_project_ids:
+        projects = [{'id': p.get('id'), 'name': p.get('name'), 'sessions': 0, 'chats': 0, 'owner': p.get('owner'), 'status': p.get('status'), 'kanban_tenant': p.get('id')} for p in project_rows]
+        return {'projects': projects, 'sessions': [], 'summary': {'projects': len(projects), 'sessions': 0, 'chats': 0, 'canonical_links': 0, 'suggested_links': 0, 'heuristic_links': 0}}
+    state_projects = {} if scoped_project_ids is not None else read_state_project_records()
+    session_index = project_session_text_index(limit=250, human_only=True)
     sessions = [session for session in session_index.values() if is_human_chat_trace(session)]
     session_ids = {session.get('id') for session in sessions if session.get('id')}
     canonical_links = [link for link in canonical_project_session_links(session_ids=session_ids, project_id=project_filter or None, limit=500) if is_human_chat_trace(link)]
@@ -8323,6 +8342,8 @@ def project_chat_sessions_payload(filters=None, identity=None):
                 clean = {**canonical, '_transcript': s.get('_transcript') or ''}
                 if project_filter and (clean.get('project_id') or '').lower() != project_filter:
                     continue
+                if scoped_project_ids is not None and (clean.get('project_id') or '').lower() not in scoped_project_ids:
+                    continue
                 if q and q not in text_blob(clean.get('title'), clean.get('project_name'), clean.get('source'), clean.get('model'), clean.get('summary'), s.get('_transcript')):
                     continue
                 out.append({k: v for k, v in clean.items() if not k.startswith('_')})
@@ -8342,6 +8363,8 @@ def project_chat_sessions_payload(filters=None, identity=None):
             clean = project_chat_suggestion_item(s, suggestion)
             if project_filter and (clean.get('project_id') or '').lower() != project_filter:
                 continue
+            if scoped_project_ids is not None and (clean.get('project_id') or '').lower() not in scoped_project_ids:
+                continue
             if q and q not in text_blob(clean.get('title'), clean.get('project_name'), clean.get('source'), clean.get('model'), clean.get('summary'), s.get('_transcript')):
                 continue
             out.append({k: v for k, v in clean.items() if not k.startswith('_')})
@@ -8353,6 +8376,8 @@ def project_chat_sessions_payload(filters=None, identity=None):
     projects = []
     for p in visible_projects:
         pid = p.get('id')
+        if scoped_project_ids is not None and str(pid or '').lower() not in scoped_project_ids:
+            continue
         state_record = state_projects.get(pid) or {}
         count = project_counts.get(pid, 0)
         projects.append({
@@ -18539,8 +18564,15 @@ def demo_response_for_get(path, query='', headers=None):
         return ({'runtime': runtime}, 200) if runtime else ({'error': 'runtime not found'}, 404)
     if path in ('/api/projects','/api/workspaces'): return demo_projects_payload(), 200
     if path == '/api/project-chats':
-        sessions = [{'id': s['id'], 'title': s['title'], 'project_id': 'demo-project', 'project_name': 'Demo Project', 'source': s['source'], 'model': s['model'], 'started_at': s['started_at'], 'messages': s['message_count'], 'tools': s['tool_call_count'], 'tokens': s['total_tokens']} for s in demo_audit_payload()['sessions']]
-        return {'projects': [{'id': 'demo-project', 'name': 'Demo Project', 'sessions': len(sessions)}], 'sessions': sessions, 'summary': {'projects': 1, 'sessions': len(sessions)}}, 200
+        base = [s for s in demo_audit_payload()['sessions'] if s.get('source') == 'demo-web']
+        extras = [
+            {'id': 'demo-session-research', 'title': 'Demo research follow-up', 'source': 'demo-web', 'model': 'demo-hermes-agent', 'started_at': demo_now(), 'message_count': 5, 'tool_call_count': 1, 'total_tokens': 1540},
+            {'id': 'demo-session-approval', 'title': 'Demo approval discussion', 'source': 'demo-web', 'model': 'demo-hermes-agent', 'started_at': demo_now(), 'message_count': 4, 'tool_call_count': 0, 'total_tokens': 920},
+            {'id': 'demo-session-project', 'title': 'Demo project handoff', 'source': 'demo-web', 'model': 'demo-hermes-agent', 'started_at': demo_now(), 'message_count': 7, 'tool_call_count': 2, 'total_tokens': 2110},
+            {'id': 'demo-session-status', 'title': 'Demo status check-in', 'source': 'demo-web', 'model': 'demo-hermes-agent', 'started_at': demo_now(), 'message_count': 3, 'tool_call_count': 0, 'total_tokens': 680},
+        ]
+        sessions = [{'id': s['id'], 'title': s['title'], 'project_id': 'demo-project', 'project_name': 'Demo Project', 'source': s['source'], 'model': s['model'], 'started_at': s['started_at'], 'messages': s['message_count'], 'tools': s['tool_call_count'], 'tokens': s['total_tokens'], 'human_initiated': True, 'origin': 'Demo Web', 'link_source': 'suggested', 'relationship_type': 'discussion'} for s in [*base, *extras][:5]]
+        return {'projects': [{'id': 'demo-project', 'name': 'Demo Project', 'sessions': len(sessions), 'chats': len(sessions)}], 'sessions': sessions, 'summary': {'projects': 1, 'sessions': len(sessions), 'chats': len(sessions), 'canonical_links': 0, 'suggested_links': len(sessions)}}, 200
     if path.startswith('/api/project-chats/') and path.endswith('/messages'):
         sid = unquote(path.strip('/').split('/')[2]) if len(path.strip('/').split('/')) >= 3 else 'demo-session'
         now = time.time()
