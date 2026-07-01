@@ -629,6 +629,8 @@ export interface AgentRuntimeAssignment {
   credential_label?: string;
   account_id: string;
   model_id: string;
+  valid_account_ids?: string[];
+  valid_model_ids?: string[];
   reasoning: string;
   apply_mode: string;
   updated_at?: string;
@@ -734,6 +736,14 @@ export interface ProjectChatResponse {
   projects: Array<{ id: string; name: string; sessions: number; chats?: number; owner?: string; status?: string; kanban_tenant?: string; kanban_board?: string }>;
   sessions: ProjectChatSession[];
   summary: { projects: number; sessions: number; chats?: number; canonical_links?: number; suggested_links?: number; heuristic_links?: number };
+  error?: string;
+}
+
+export interface ProjectChatMessagesResponse {
+  ok?: boolean;
+  session?: Partial<ProjectChatSession>;
+  messages: Message[];
+  summary?: { messages: number };
   error?: string;
 }
 
@@ -2608,6 +2618,7 @@ export type ViewKey =
   | "mission"
   | "dashboard"
   | "work"
+  | "operations"
   | "delegate-work"
   | "workflow-library"
   | "profile"

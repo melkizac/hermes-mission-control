@@ -2,10 +2,17 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useStore } from "../services/store";
 import { Icon } from "./Icon";
 import { AgentAvatar } from "./AgentAvatar";
-import type { Agent, Attachment, Message, ModelRoutingSelection, ProjectChatResponse, ReplyContext, RouterConfig } from "../types";
+import type { Agent, Attachment, Message, ModelRoutingSelection, ProjectChatMessagesResponse, ProjectChatResponse, ReplyContext, RouterConfig } from "../types";
 import { formatSingaporeTime } from "../utils/time";
 
 const ONE_DAY_SECONDS = 24 * 60 * 60;
+
+type AgentStartPermissionMode = "full-policy" | "ask-critical" | "draft-only";
+const agentStartPermissionOptions: Array<{ value: AgentStartPermissionMode; label: string }> = [
+  { value: "full-policy", label: "Full access" },
+  { value: "ask-critical", label: "Ask permission" },
+  { value: "draft-only", label: "Draft only" },
+];
 
 const statusPill: Record<string, { bg: string; fg: string; dot: string }> = {
   active: { bg: "var(--good-soft)", fg: "#0f7a37", dot: "#15a34a" },
@@ -95,6 +102,30 @@ function replyPreviewText(reply: ReplyContext) {
   return reply.text.replace(/\s+/g, " ").trim().slice(0, 220) || "Message without text";
 }
 
+function chatTabLabel(title?: string, fallback?: string) {
+  return (title || fallback || "Untitled chat").replace(/\s+/g, " ").trim();
+}
+
+function chatTabInitial(sessionTitle: string) {
+  return sessionTitle.trim().charAt(0).toUpperCase() || "C";
+}
+
+const PINNED_CHAT_TABS_KEY = "hmc:pinned-chat-tabs";
+const PENDING_OPEN_CHAT_SESSION_KEY = "hmc:pending-open-chat-session";
+
+function readPinnedChatTabIds() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(PINNED_CHAT_TABS_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string" && id.trim().length > 0) : [];
+  } catch {
+    return [];
+  }
+}
+
+function pinChatTabId(ids: string[], sessionId: string) {
+  return [sessionId, ...ids.filter((id) => id !== sessionId)].slice(0, 80);
+}
+
 export function ChatThread({
   agent,
   onOpenDetails,
@@ -112,7 +143,7 @@ export function ChatThread({
   selectedProjectId?: string;
   selectedSessionId?: string;
 }) {
-  const { send, stopProcessing, uploadAttachment, refreshSelected, getModelRouter } = useStore();
+  const { send, stopProcessing, uploadAttachment, refreshSelected, getModelRouter, me } = useStore();
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [replyTo, setReplyTo] = useState<ReplyContext | null>(null);
@@ -128,6 +159,13 @@ export function ChatThread({
   const [lastSeenKey, setLastSeenKey] = useState<string | null | undefined>(undefined);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [agentActionMenuOpen, setAgentActionMenuOpen] = useState(false);
+  const [selectedChatTabId, setSelectedChatTabId] = useState<string>("start");
+  const [sessionMessages, setSessionMessages] = useState<Record<string, Message[]>>({});
+  const [sessionMessageLoading, setSessionMessageLoading] = useState<Record<string, boolean>>({});
+  const [sessionMessageErrors, setSessionMessageErrors] = useState<Record<string, string>>({});
+  const [startPermissionMode, setStartPermissionMode] = useState<AgentStartPermissionMode>("full-policy");
+  const [startProjectId, setStartProjectId] = useState("");
+  const [pinnedChatTabIds, setPinnedChatTabIds] = useState<string[]>(readPinnedChatTabIds);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -135,6 +173,7 @@ export function ChatThread({
   const activeRequestRef = useRef<{ id: string; agentId: string; controller: AbortController } | null>(null);
   const unreadRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const sessionMessageFetchesRef = useRef<Set<string>>(new Set());
   const p = statusPill[agent.status] || statusPill.degraded;
   const storageKey = `hmc:last-seen-message:${agent.id}`;
   const enabledModels = useMemo(() => (routerConfig?.models ?? []).filter((model) => model.enabled), [routerConfig]);
@@ -150,19 +189,38 @@ export function ChatThread({
     () => (projectChats?.sessions ?? []).filter((session) => selectedProjectId === "all" || session.project_id === selectedProjectId),
     [projectChats, selectedProjectId],
   );
+  const openChatTabs = useMemo(
+    () => {
+      const byId = new Map(projectSessions.filter((session) => session.human_initiated !== false).map((session) => [session.id, session]));
+      return pinnedChatTabIds.map((id) => byId.get(id)).filter((session): session is ProjectChatResponse["sessions"][number] => Boolean(session));
+    },
+    [pinnedChatTabIds, projectSessions],
+  );
+  const effectiveSelectedSessionId = selectedChatTabId === "start"
+    ? "all"
+    : selectedChatTabId === "all" || openChatTabs.some((session) => session.id === selectedChatTabId) || pinnedChatTabIds.includes(selectedChatTabId)
+    ? selectedChatTabId
+    : selectedSessionId;
   const scopedSessionIds = useMemo(() => new Set(projectSessions.map((session) => session.id)), [projectSessions]);
   const scopedMessages = useMemo(() => {
-    if (selectedSessionId !== "all") return agent.messages.filter((m) => m.sessionId === selectedSessionId || m.requestId?.includes(selectedSessionId));
+    if (effectiveSelectedSessionId !== "all") {
+      const loaded = agent.messages.filter((m) => m.sessionId === effectiveSelectedSessionId || m.requestId?.includes(effectiveSelectedSessionId));
+      const fetched = sessionMessages[effectiveSelectedSessionId] ?? [];
+      const byId = new Map<string, Message>();
+      for (const message of [...loaded, ...fetched]) byId.set(`${message.id}|${message.role}`, message);
+      return Array.from(byId.values());
+    }
     if (selectedProjectId !== "all") return agent.messages.filter((m) => m.projectId === selectedProjectId || (!m.projectId && (!m.sessionId || scopedSessionIds.has(m.sessionId))));
     return agent.messages;
-  }, [agent.messages, scopedSessionIds, selectedProjectId, selectedSessionId]);
+  }, [agent.messages, effectiveSelectedSessionId, scopedSessionIds, selectedProjectId, sessionMessages]);
   const activeProjectName = useMemo(
     () => projectChats?.projects.find((project) => project.id === selectedProjectId)?.name,
     [projectChats, selectedProjectId],
   );
+  const startProjectOptions = projectChats?.projects ?? [];
   const activeSession = useMemo(
-    () => projectSessions.find((session) => session.id === selectedSessionId),
-    [projectSessions, selectedSessionId],
+    () => projectSessions.find((session) => session.id === effectiveSelectedSessionId),
+    [effectiveSelectedSessionId, projectSessions],
   );
   const activeSessionTitle = activeSession?.title;
   const sortedMessages = useMemo(
@@ -203,6 +261,7 @@ export function ChatThread({
     [activeLocalRequest?.id, sortedMessages],
   );
   const visiblePendingMessage = pendingMessage?.agentId === agent.id && !pendingBackendUserVisible ? pendingMessage : null;
+  const showWelcomeStart = selectedChatTabId === "start" && !visiblePendingMessage && !activeBackendRequestId;
   const activeBackendStartedAt = activeBackendUserMessage?.ts
     ? activeBackendUserMessage.ts * 1000
     : activeBackendRequestDetail?.started_at
@@ -230,6 +289,77 @@ export function ChatThread({
   useLayoutEffect(() => {
     resizeComposerInput();
   }, [draft]);
+
+  useEffect(() => {
+    if (selectedSessionId !== "all") {
+      setPinnedChatTabIds((current) => pinChatTabId(current, selectedSessionId));
+      setSelectedChatTabId(selectedSessionId);
+    }
+  }, [selectedSessionId]);
+
+  useEffect(() => {
+    const pendingSessionId = window.sessionStorage.getItem(PENDING_OPEN_CHAT_SESSION_KEY);
+    if (!pendingSessionId) return;
+    window.sessionStorage.removeItem(PENDING_OPEN_CHAT_SESSION_KEY);
+    setPinnedChatTabIds((current) => pinChatTabId(current, pendingSessionId));
+    setSelectedChatTabId(pendingSessionId);
+  }, []);
+
+  useEffect(() => {
+    if (
+      effectiveSelectedSessionId === "all" ||
+      sessionMessages[effectiveSelectedSessionId] ||
+      sessionMessageFetchesRef.current.has(effectiveSelectedSessionId)
+    ) return;
+    const sessionId = effectiveSelectedSessionId;
+    let alive = true;
+    sessionMessageFetchesRef.current.add(sessionId);
+    setSessionMessageLoading((current) => ({ ...current, [sessionId]: true }));
+    setSessionMessageErrors((current) => {
+      const next = { ...current };
+      delete next[sessionId];
+      return next;
+    });
+    fetch(`${window.location.protocol}//${window.location.host}/api/project-chats/${encodeURIComponent(sessionId)}/messages`, {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({})) as ProjectChatMessagesResponse;
+        if (!res.ok || data.error) throw new Error(data.error || res.statusText || "Unable to load chat session");
+        return data.messages ?? [];
+      })
+      .then((messages) => {
+        if (!alive) return;
+        setSessionMessages((current) => ({ ...current, [sessionId]: messages }));
+      })
+      .catch((err) => {
+        if (!alive) return;
+        setSessionMessageErrors((current) => ({ ...current, [sessionId]: err instanceof Error ? err.message : "Unable to load chat session" }));
+      })
+      .finally(() => {
+        sessionMessageFetchesRef.current.delete(sessionId);
+        if (!alive) return;
+        setSessionMessageLoading((current) => ({ ...current, [sessionId]: false }));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [effectiveSelectedSessionId, sessionMessages]);
+
+  useEffect(() => {
+    window.localStorage.setItem(PINNED_CHAT_TABS_KEY, JSON.stringify(pinnedChatTabIds.slice(0, 80)));
+  }, [pinnedChatTabIds]);
+
+  useEffect(() => {
+    if (
+      selectedChatTabId === "start" ||
+      selectedChatTabId === "all" ||
+      openChatTabs.some((session) => session.id === selectedChatTabId) ||
+      (projectChats === null && pinnedChatTabIds.includes(selectedChatTabId))
+    ) return;
+    setSelectedChatTabId("start");
+  }, [openChatTabs, pinnedChatTabIds, projectChats, selectedChatTabId]);
 
   useEffect(() => {
     const onResize = () => resizeComposerInput();
@@ -370,6 +500,7 @@ export function ChatThread({
     setDraft("");
     setAttachments([]);
     setReplyTo(null);
+    setSelectedChatTabId("all");
     setPendingMessage({ agentId: agent.id, text, attachments: sentAttachments, replyTo: sentReplyTo ?? undefined });
     const startedAt = Date.now();
     setProcessingStartedAt({ agentId: agent.id, startedAt });
@@ -477,8 +608,62 @@ export function ChatThread({
     window.requestAnimationFrame(() => composerInputRef.current?.focus());
   };
 
+  function closeChatTab(sessionId: string) {
+    setPinnedChatTabIds((current) => current.filter((id) => id !== sessionId));
+    if (selectedChatTabId === sessionId) setSelectedChatTabId("all");
+  }
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const displayName = (me?.user?.name || "Melverick").split(/\s+/)[0] || "Melverick";
+
   return (
-    <div className="center" onPaste={handlePasteIntoChat}>
+    <div className={"center" + (showWelcomeStart ? " chat-start-mode" : "")} onPaste={handlePasteIntoChat}>
+      <div className="chat-session-tabs" role="tablist" aria-label="Open chat sessions">
+        {openChatTabs.length > 0 ? (
+          openChatTabs.map((session) => {
+            const label = chatTabLabel(session.title, session.project_name);
+            const active = effectiveSelectedSessionId === session.id;
+            return (
+              <div className={"chat-session-tab" + (active ? " on" : "")} key={session.id}>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent("hmc:open-chat-session", { detail: { sessionId: session.id } }));
+                    setPinnedChatTabIds((current) => pinChatTabId(current, session.id));
+                    setSelectedChatTabId(session.id);
+                  }}
+                  title={label}
+                >
+                  <span className="chat-session-tab-avatar">{chatTabInitial(label)}</span>
+                  <b>{label}</b>
+                </button>
+                <button type="button" className="chat-session-tab-close" onClick={() => closeChatTab(session.id)} aria-label={`Close ${label}`}>
+                  x
+                </button>
+              </div>
+            );
+          })
+        ) : (
+          <div className="chat-session-tabs-empty">No kept chats</div>
+        )}
+        <button
+          type="button"
+          className={"chat-session-tab-add" + (selectedChatTabId === "start" ? " on" : "")}
+          onClick={() => setSelectedChatTabId("start")}
+          aria-label="Start a new chat"
+          title="Start a new chat"
+        >
+          <Icon name="plus" size={16} />
+        </button>
+      </div>
+      {showWelcomeStart && (
+        <section className="chat-start-hero" aria-label="Start a new chat">
+          <h1>{greeting}, {displayName}!</h1>
+        </section>
+      )}
       <div className="chead">
         <AgentAvatar agent={agent} />
         <div className="nm">
@@ -550,13 +735,23 @@ export function ChatThread({
 
       <div className="thread scroll" ref={threadRef} onScroll={updateJumpButton}>
         <div className="divider">
-          {selectedSessionId !== "all"
-            ? `Session view · ${activeSessionTitle ?? selectedSessionId}${activeSession?.relationship_type ? ` · ${activeSession.relationship_type.replace(/[_-]+/g, " ")}` : ""}`
+          {effectiveSelectedSessionId !== "all"
+            ? `Session view · ${activeSessionTitle ?? effectiveSelectedSessionId}${activeSession?.relationship_type ? ` · ${activeSession.relationship_type.replace(/[_-]+/g, " ")}` : ""}`
             : selectedProjectId !== "all"
               ? `Project view · ${activeProjectName ?? selectedProjectId}`
               : "Global Command Chat · sorted into projects and sessions"}
         </div>
-        {sortedMessages.length === 0 && (
+        {sortedMessages.length === 0 && effectiveSelectedSessionId !== "all" && sessionMessageLoading[effectiveSelectedSessionId] && (
+          <div className="empty" style={{ marginTop: 30 }}>
+            Loading conversation...
+          </div>
+        )}
+        {sortedMessages.length === 0 && effectiveSelectedSessionId !== "all" && sessionMessageErrors[effectiveSelectedSessionId] && (
+          <div className="senderror" style={{ marginTop: 30 }}>
+            {sessionMessageErrors[effectiveSelectedSessionId]}
+          </div>
+        )}
+        {sortedMessages.length === 0 && !sessionMessageLoading[effectiveSelectedSessionId] && !sessionMessageErrors[effectiveSelectedSessionId] && (
           <div className="empty" style={{ marginTop: 30 }}>
             No messages yet. Send {agent.name} a task below.
           </div>
@@ -604,7 +799,7 @@ export function ChatThread({
         </button>
       )}
 
-      <div className="composer">
+      <div className={"composer" + (showWelcomeStart ? " agent-start-composer" : "")}>
         {error && <div className="senderror">{error}</div>}
         {replyTo && (
           <div className="reply-context" aria-label="Replying to selected message">
@@ -628,11 +823,88 @@ export function ChatThread({
             ))}
           </div>
         )}
+        {showWelcomeStart && (
+          <div className="clean-chat-composer agent-start-clean-composer">
+            <textarea
+              value={draft}
+              disabled={isProcessing || uploading}
+              rows={2}
+              placeholder={`Ask ${agent.name}`}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void submit();
+                }
+              }}
+            />
+            <div className="clean-chat-toolbar">
+              <div className="clean-chat-left-controls">
+                <label className="clean-chat-plus" title="Add document or image. Max 50MB">
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*,.txt,.md,.csv,.json,.yaml,.yml,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
+                    disabled={isProcessing || uploading || attachments.length >= 8}
+                    onChange={(e) => void onPickFiles(e.currentTarget.files)}
+                  />
+                  <span>+</span>
+                  <small>Add document or image · Max 50MB</small>
+                </label>
+                <label className="clean-select clean-permission-select agent-start-permission-select">
+                  <span aria-hidden="true">⊙</span>
+                  <select
+                    value={startPermissionMode}
+                    onChange={(e) => setStartPermissionMode(e.target.value as AgentStartPermissionMode)}
+                    aria-label="Permission mode"
+                    disabled={isProcessing || uploading}
+                  >
+                    {agentStartPermissionOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="clean-chat-right-controls">
+                <label className="clean-select agent-start-model-select" title={modelSelectorLabel}>
+                  <select
+                    value={selectedModel ? selectedModel.id : "auto"}
+                    onChange={(e) => setModelSelection(e.target.value)}
+                    onFocus={() => void ensureModelRouter()}
+                    onPointerDown={() => void ensureModelRouter()}
+                    disabled={isProcessing || uploading}
+                    aria-label="Select AI model for this message"
+                  >
+                    <option value="auto">{modelRouterLoading ? "Auto · loading models..." : "Auto"}</option>
+                    {enabledModels.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {(model.label || model.model)} · {model.tier}{model.authorized ? "" : " · key missing"}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button className="mic" type="button" disabled aria-label="Voice input unavailable" title="Voice input unavailable">
+                  <Icon name="mic" size={18} />
+                </button>
+                <button
+                  className={isProcessing ? "clean-chat-send stop-send" : "clean-chat-send"}
+                  type="button"
+                  onClick={() => (isProcessing ? void stopCurrentMessage() : void submit())}
+                  disabled={uploading || (!isProcessing && !draft.trim() && attachments.length === 0)}
+                  aria-label={isProcessing ? "Stop current message processing" : "Send message"}
+                  title={isProcessing ? "Stop current message processing" : "Send message"}
+                >
+                  {isProcessing ? "■" : "↑"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="cbox composer-card">
           <textarea
             ref={composerInputRef}
             className="composer-input"
-            placeholder={uploading ? "Uploading attachment…" : isProcessing ? `${agent.name} is processing…` : `Send a task or message to ${agent.name}…`}
+            placeholder={uploading ? "Uploading attachment…" : isProcessing ? `${agent.name} is processing…` : showWelcomeStart ? `Ask ${agent.name}` : `Send a task or message to ${agent.name}…`}
             value={draft}
             disabled={isProcessing || uploading}
             rows={1}
@@ -645,6 +917,7 @@ export function ChatThread({
             }}
           />
           <div className="composer-control-row">
+            <div className={showWelcomeStart ? "clean-chat-left-controls" : "agent-composer-left-controls"}>
             <button
               className="plus"
               type="button"
@@ -663,18 +936,34 @@ export function ChatThread({
               accept="image/*,.txt,.md,.csv,.json,.yaml,.yml,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
               onChange={(e) => void onPickFiles(e.currentTarget.files)}
             />
-            <div className="composer-spacer" />
+            {showWelcomeStart && (
+              <label className="clean-select clean-permission-select agent-start-permission-select">
+                <span aria-hidden="true">⊙</span>
+                <select
+                  value={startPermissionMode}
+                  onChange={(e) => setStartPermissionMode(e.target.value as AgentStartPermissionMode)}
+                  aria-label="Permission mode"
+                  disabled={isProcessing || uploading}
+                >
+                  {agentStartPermissionOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            </div>
+            <div className={showWelcomeStart ? "clean-chat-right-controls" : "agent-composer-right-controls"}>
             <label className="model-selector-row" title={modelSelectorLabel}>
               <span className="sr-only">Model</span>
               <select
-                value={selectedModel ? selectedModel.id : "auto"}
-                onChange={(e) => setModelSelection(e.target.value)}
+                  value={selectedModel ? selectedModel.id : "auto"}
+                  onChange={(e) => setModelSelection(e.target.value)}
                 onFocus={() => void ensureModelRouter()}
                 onPointerDown={() => void ensureModelRouter()}
                 disabled={isProcessing || uploading}
                 aria-label="Select AI model for this message"
               >
-                <option value="auto">{modelRouterLoading ? "Auto · loading models…" : "Auto"}</option>
+                <option value="auto">{modelRouterLoading ? "Auto · loading models..." : "Auto"}</option>
                 {enabledModels.map((model) => (
                   <option key={model.id} value={model.id}>
                     {(model.label || model.model)} · {model.tier}{model.authorized ? "" : " · key missing"}
@@ -695,9 +984,27 @@ export function ChatThread({
             >
               {isProcessing ? <Icon name="stop" size={15} /> : uploading ? "…" : <Icon name="send" size={18} />}
             </button>
+            </div>
           </div>
         </div>
       </div>
+      {showWelcomeStart && (
+        <div className="clean-project-strip agent-start-project-strip" aria-label="Project selector">
+          <span aria-hidden="true">▱</span>
+          <select
+            value={startProjectId}
+            onChange={(e) => setStartProjectId(e.target.value)}
+            aria-label="Project selector"
+            aria-busy={Boolean(projectChats === null)}
+            disabled={projectChats === null}
+          >
+            <option value="">{projectChats === null ? "Loading projects..." : "No Project selected"}</option>
+            {startProjectOptions.map((project) => (
+              <option key={project.id} value={project.id}>{project.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
     </div>
   );
 }

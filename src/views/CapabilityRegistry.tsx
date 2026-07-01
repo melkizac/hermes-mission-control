@@ -5,6 +5,11 @@ import { SlideOverDrawer } from "../components/SlideOverDrawer";
 import { Icon } from "../components/Icon";
 import { InfoTooltip } from "../components/InfoTooltip";
 import { buildMissionControlUrl } from "../services/deepLinks";
+import { SkillsHub } from "./SkillsHub";
+import { MemoryContext } from "./MemoryContext";
+import { ToolsHub } from "./ToolsHub";
+import { PluginsHub } from "./PluginsHub";
+import { Reflections } from "./Reflections";
 
 const client = new HttpHermesClient();
 
@@ -16,7 +21,7 @@ type RegistryTab = {
   hint: string;
 };
 
-const tabs: RegistryTab[] = [
+const registryTabs: RegistryTab[] = [
   { id: "installed", label: "Installed", hint: "Enabled, installed, registered, or approved capabilities ready for operators." },
   { id: "available", label: "Available/Pilots", hint: "Draft, assessing, intake, and pilot-ready sources that are not yet broadly enabled." },
   { id: "intake", label: "Intake Queue", hint: "Requested capability sources waiting for assessment, sandboxing, or approval." },
@@ -91,7 +96,54 @@ function isBroken(record: CapabilityRegistryRecord) {
   return brokenStatuses.has(record.status || "") || brokenHealth.has(record.health?.state || "") || approvalPending;
 }
 
+type CapabilityHubTab = "skills" | "memory" | "tools" | "plugins" | "reflections";
+
+const capabilityHubTabs: Array<{ id: CapabilityHubTab; label: string; icon: Parameters<typeof Icon>[0]["name"] }> = [
+  { id: "skills", label: "Skills", icon: "skills" },
+  { id: "memory", label: "Memory", icon: "memory" },
+  { id: "tools", label: "Tools", icon: "tools" },
+  { id: "plugins", label: "Plugins", icon: "plugins" },
+  { id: "reflections", label: "Reflections", icon: "reflections" },
+];
+
 export function CapabilityRegistry() {
+  const [hubTab, setHubTab] = useState<CapabilityHubTab>("skills");
+
+  return (
+    <div className="capability-hub-page scroll">
+      <section className="capability-hub-hero">
+        <div>
+          <span className="eyebrow">CAPABILITIES</span>
+          <h1>Capability Hub</h1>
+          <p>Browse, manage, and govern the building blocks Hermes agents can use.</p>
+        </div>
+      </section>
+      <nav className="capability-hub-tabs" aria-label="Capability sections">
+        {capabilityHubTabs.map((item) => (
+          <button
+            key={item.id}
+            className={hubTab === item.id ? "on" : ""}
+            type="button"
+            onClick={() => setHubTab(item.id)}
+            aria-pressed={hubTab === item.id}
+          >
+            <Icon name={item.icon} size={19} />
+            <span>{item.label}</span>
+          </button>
+        ))}
+      </nav>
+      <div className="capability-hub-panel">
+        {hubTab === "skills" && <SkillsHub />}
+        {hubTab === "memory" && <MemoryContext />}
+        {hubTab === "tools" && <ToolsHub />}
+        {hubTab === "plugins" && <PluginsHub />}
+        {hubTab === "reflections" && <Reflections />}
+      </div>
+    </div>
+  );
+}
+
+export function CapabilityRegistryPanel() {
   const [records, setRecords] = useState<CapabilityRegistryRecord[]>([]);
   const [intake, setIntake] = useState<CapabilityIntakeRecord[]>([]);
   const [summary, setSummary] = useState({ total: 0, enabled: 0, assigned: 0, awaitingApproval: 0, degraded: 0, requiringSecrets: 0 });
@@ -178,7 +230,7 @@ export function CapabilityRegistry() {
   const toolLikeCount = useMemo(() => records.filter((item) => governedToolLikeTypes.has(item.type)).length, [records]);
 
   const selectedRecord = useMemo(() => records.find((item) => item.id === selected), [records, selected]);
-  const activeTab = tabs.find((item) => item.id === tab) ?? tabs[0];
+  const activeTab = registryTabs.find((item) => item.id === tab) ?? registryTabs[0];
 
   return (
     <div className="skills-page capability-registry-page skills-drawer-first scroll">
@@ -207,7 +259,7 @@ export function CapabilityRegistry() {
       </section>
 
       <section className="capability-tabs" aria-label="Capability registry sections">
-        {tabs.map((item) => (
+        {registryTabs.map((item) => (
           <button key={item.id} className={tab === item.id ? "on" : ""} onClick={() => setTab(item.id)}>
             <span>{item.label}</span>
             <small>{item.id === "intake" ? compact(intakeSummary.total) : compact(countForTab(item.id, records))}</small>

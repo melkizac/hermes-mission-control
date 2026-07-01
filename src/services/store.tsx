@@ -17,7 +17,7 @@ import { initialDeepLinkTarget, parseMissionControlDeepLink, type MissionControl
 import { cachedJsonRequest } from "./queryCache";
 
 type UiMode = "workspace" | "admin";
-const defaultViewForUiMode = (mode: UiMode): ViewKey => mode === "admin" ? "settings" : "mission";
+const defaultViewForUiMode = (mode: UiMode): ViewKey => mode === "admin" ? "desktop-gateway" : "mission";
 
 // Production Mission Control talks to the same authenticated origin.
 const client: HermesClient = new HttpHermesClient();
@@ -76,7 +76,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [view, setRawView] = useState<ViewKey>(startingDeepLink.view ?? (startsInAdmin ? "settings" : "mission"));
+  const [view, setRawView] = useState<ViewKey>(startingDeepLink.view ?? (startsInAdmin ? "desktop-gateway" : "mission"));
   const [uiMode, setRawUiMode] = useState<UiMode>(startsInAdmin || (startingDeepLink.view && adminOnlyViews.has(startingDeepLink.view)) ? "admin" : "workspace");
   const [me, setMe] = useState<MissionControlMe | null>(null);
   const [loading, setLoading] = useState(true);

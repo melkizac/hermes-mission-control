@@ -162,11 +162,13 @@ export function FileSystem() {
           <div className="hero-title-with-help">
             <h1>File System</h1>
             <InfoTooltip label="About file access">Browse generated outputs, uploads, and Second Brain files directly from Mission Control. Download files without SSH/SFTP.</InfoTooltip>
+            <div className="projects-control projects-control-refresh-only fs-title-refresh">
+              <button className="task-icon-action dark" aria-label="Refresh files" title="Refresh files" onClick={() => void load()} disabled={loading}>
+                <Icon name="refresh" size={18} />
+              </button>
+            </div>
           </div>
         </div>
-        <button className="task-icon-action dark" aria-label="Refresh files" title="Refresh files" onClick={() => void load()} disabled={loading}>
-          <Icon name="refresh" size={18} />
-        </button>
       </header>
 
       <section className="fs-root-grid">

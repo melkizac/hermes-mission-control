@@ -1934,7 +1934,7 @@ def status_from_session(row):
     return 'completed'
 
 
-HUMAN_CHAT_SOURCES = {'telegram', 'whatsapp', 'signal', 'imessage', 'cli', 'tui', 'hmc_chat', 'web_chat', 'api_server'}
+HUMAN_CHAT_SOURCES = {'telegram', 'whatsapp', 'signal', 'imessage', 'cli', 'tui', 'hmc_chat', 'web_chat', 'web-ui', 'web_ui', 'api_server'}
 SCHEDULED_RUN_SOURCES = {'cron', 'scheduler', 'schedule'}
 WORKER_RUN_SOURCES = {'kanban', 'kanban_worker', 'worker', 'task_worker'}
 DELEGATION_RUN_SOURCES = {'delegate_task', 'delegation', 'subagent', 'sub_agent'}
@@ -1976,6 +1976,8 @@ def classify_run_trace(record):
         'cli': 'CLI',
         'tui': 'CLI',
         'api_server': 'API server',
+        'web-ui': 'Web UI',
+        'web_ui': 'Web UI',
         'cron': 'Scheduler',
     }.get(source, source.replace('_', ' ').title() if source else 'Unknown')
     return {
@@ -7762,12 +7764,18 @@ def recent_project_sessions(limit=24):
         return []
 
 
-def project_session_text_index(session_ids=None, limit=250):
+def project_session_text_index(session_ids=None, limit=250, human_only=False):
     if not STATE_DB.exists():
         return {}
     try:
         con = sqlite3.connect(f'file:{STATE_DB}?mode=ro', uri=True, timeout=2)
         con.row_factory = sqlite3.Row
+        source_filter = tuple(sorted(HUMAN_CHAT_SOURCES)) if human_only else ()
+        source_clause = ''
+        source_params = []
+        if source_filter:
+            source_clause = f" AND lower(coalesce(s.source,'')) IN ({','.join('?' for _ in source_filter)})"
+            source_params = list(source_filter)
         if session_ids:
             ids = [str(x) for x in session_ids if x]
             if not ids:
@@ -7778,18 +7786,23 @@ def project_session_text_index(session_ids=None, limit=250):
                        substr(group_concat(substr(COALESCE(m.content,''),1,900),'\n'),1,12000) AS transcript
                 FROM sessions s
                 LEFT JOIN messages m ON m.session_id=s.id AND m.role IN ('user','assistant')
-                WHERE s.id IN ({placeholders})
+                WHERE s.id IN ({placeholders}){source_clause}
                 GROUP BY s.id
-            """, ids).fetchall()
+            """, ids + source_params).fetchall()
         else:
+            inner_source_clause = ''
+            inner_source_params = []
+            if source_filter:
+                inner_source_clause = f" WHERE lower(coalesce(source,'')) IN ({','.join('?' for _ in source_filter)})"
+                inner_source_params = list(source_filter)
             rows = con.execute("""
                 SELECT s.id,s.title,s.source,s.model,s.started_at,s.message_count,s.tool_call_count,s.input_tokens,s.output_tokens,
                        substr(group_concat(substr(COALESCE(m.content,''),1,900),'\n'),1,12000) AS transcript
-                FROM (SELECT * FROM sessions ORDER BY started_at DESC LIMIT ?) s
+                FROM (SELECT * FROM sessions{inner_source_clause} ORDER BY started_at DESC LIMIT ?) s
                 LEFT JOIN messages m ON m.session_id=s.id AND m.role IN ('user','assistant')
                 GROUP BY s.id
                 ORDER BY s.started_at DESC
-            """, (limit,)).fetchall()
+            """.format(inner_source_clause=inner_source_clause), inner_source_params + [limit]).fetchall()
         con.close()
     except Exception:
         return {}
@@ -8127,6 +8140,92 @@ def project_chat_session_record(session_id):
     return indexed.get(session_id)
 
 
+def project_chat_session_messages_payload(session_id, identity=None, limit=500):
+    session_id = str(session_id or '').strip()
+    if not session_id:
+        return {'ok': False, 'error': 'session_id is required'}, 400
+    if not STATE_DB.exists():
+        return {'ok': False, 'error': 'session not found'}, 404
+    try:
+        con = sqlite3.connect(f'file:{STATE_DB}?mode=ro', uri=True, timeout=2)
+        con.row_factory = sqlite3.Row
+        session = con.execute(
+            'SELECT id,title,source,model,started_at FROM sessions WHERE id=?',
+            (session_id,),
+        ).fetchone()
+        if not session:
+            con.close()
+            return {'ok': False, 'error': 'session not found'}, 404
+        rows = con.execute("""
+            SELECT id,session_id,role,content,tool_calls,tool_name,timestamp
+            FROM messages
+            WHERE session_id=?
+              AND role IN ('user','assistant','tool')
+              AND content IS NOT NULL AND trim(content) != ''
+            ORDER BY timestamp ASC, id ASC
+            LIMIT ?
+        """, (session_id, int(limit or 500))).fetchall()
+        con.close()
+    except Exception as exc:
+        return {'ok': False, 'error': str(exc) or 'Unable to load session messages'}, 500
+
+    project_map = {}
+    try:
+        indexed = project_session_text_index({session_id}, limit=1)
+        project_map, _ = session_project_assignments(indexed.values())
+    except Exception:
+        project_map = {}
+    assigned = project_map.get(session_id) or {}
+    project_id = assigned.get('project_id')
+    project_name = assigned.get('project_name')
+    source = session['source'] or 'unknown'
+    source_label = display_source_label(source)
+    messages = []
+    for r in rows:
+        role = r['role'] or 'system'
+        content = r['content'] or ''
+        if role == 'user':
+            content = visible_user_message_from_cli_prompt(content)
+        if role == 'tool':
+            ui_role = 'system'
+            text = f"Tool result {r['tool_name'] or ''}: {trim(content, 900)}"
+        elif role == 'assistant':
+            ui_role = 'agent'
+            text = content
+        else:
+            ui_role = 'user'
+            text = content
+        messages.append({
+            'id': f"session-{session_id}-{r['id']}",
+            'role': ui_role,
+            'text': text,
+            'at': f"{source_label} · {rel_time(r['timestamp'])}",
+            'ts': float(r['timestamp'] or 0),
+            'source': source,
+            'sessionId': session_id,
+            'projectId': project_id,
+            'projectName': project_name,
+        })
+    return {
+        'ok': True,
+        'session': {
+            'id': session['id'],
+            'title': human_session_title({
+                'id': session['id'],
+                'title': session['title'],
+                'source': source,
+            }),
+            'source': source,
+            'model': session['model'] or '—',
+            'started_at': iso(session['started_at']),
+            'project_id': project_id,
+            'project_name': project_name,
+        },
+        'messages': messages,
+        'summary': {'messages': len(messages)},
+    }, 200
+
+
 def project_chat_link_payload(payload, identity=None, *, link_source='canonical', confidence=1.0):
     project_id = safe_id(payload.get('project_id') or payload.get('projectId') or '')
     session_id = str(payload.get('session_id') or payload.get('sessionId') or '').strip()
@@ -8198,18 +8297,24 @@ def project_chat_suggestion_item(session, suggestion):
 
 
 def project_chat_sessions_payload(filters=None, identity=None):
-    if identity and not is_admin_identity(identity):
-        scoped = list_workspace_projects({}, identity).get('projects', [])
-        return {'projects': [{'id': p.get('id'), 'name': p.get('name'), 'sessions': 0, 'chats': 0, 'owner': p.get('owner'), 'status': p.get('status'), 'kanban_tenant': p.get('id')} for p in scoped], 'sessions': [], 'summary': {'projects': len(scoped), 'sessions': 0, 'chats': 0, 'canonical_links': 0, 'heuristic_links': 0}}
     filters = filters or {}
     q = (filters.get('q') or [''])[0].strip().lower()
     project_filter = (filters.get('project') or [''])[0].strip().lower()
+    scoped_project_ids = None
     try:
-        project_rows = list_projects({}).get('projects', [])
+        if identity and not is_admin_identity(identity):
+            project_rows = list_workspace_projects({}, identity).get('projects', [])
+            scoped_project_ids = {str(p.get('id') or '').lower() for p in project_rows if p.get('id')}
+        else:
+            project_rows = list_projects({}).get('projects', [])
     except Exception:
         project_rows = []
-    state_projects = read_state_project_records()
-    session_index = project_session_text_index(limit=250)
+        scoped_project_ids = set() if identity and not is_admin_identity(identity) else None
+    if scoped_project_ids is not None and project_filter and project_filter not in scoped_project_ids:
+        projects = [{'id': p.get('id'), 'name': p.get('name'), 'sessions': 0, 'chats': 0, 'owner': p.get('owner'), 'status': p.get('status'), 'kanban_tenant': p.get('id')} for p in project_rows]
+        return {'projects': projects, 'sessions': [], 'summary': {'projects': len(projects), 'sessions': 0, 'chats': 0, 'canonical_links': 0, 'suggested_links': 0, 'heuristic_links': 0}}
+    state_projects = {} if scoped_project_ids is not None else read_state_project_records()
+    session_index = project_session_text_index(limit=250, human_only=True)
     sessions = [session for session in session_index.values() if is_human_chat_trace(session)]
     session_ids = {session.get('id') for session in sessions if session.get('id')}
     canonical_links = [link for link in canonical_project_session_links(session_ids=session_ids, project_id=project_filter or None, limit=500) if is_human_chat_trace(link)]
@@ -8237,6 +8342,8 @@ def project_chat_sessions_payload(filters=None, identity=None):
                 clean = {**canonical, '_transcript': s.get('_transcript') or ''}
                 if project_filter and (clean.get('project_id') or '').lower() != project_filter:
                     continue
+                if scoped_project_ids is not None and (clean.get('project_id') or '').lower() not in scoped_project_ids:
+                    continue
                 if q and q not in text_blob(clean.get('title'), clean.get('project_name'), clean.get('source'), clean.get('model'), clean.get('summary'), s.get('_transcript')):
                     continue
                 out.append({k: v for k, v in clean.items() if not k.startswith('_')})
@@ -8256,6 +8363,8 @@ def project_chat_sessions_payload(filters=None, identity=None):
             clean = project_chat_suggestion_item(s, suggestion)
             if project_filter and (clean.get('project_id') or '').lower() != project_filter:
                 continue
+            if scoped_project_ids is not None and (clean.get('project_id') or '').lower() not in scoped_project_ids:
+                continue
             if q and q not in text_blob(clean.get('title'), clean.get('project_name'), clean.get('source'), clean.get('model'), clean.get('summary'), s.get('_transcript')):
                 continue
             out.append({k: v for k, v in clean.items() if not k.startswith('_')})
@@ -8267,6 +8376,8 @@ def project_chat_sessions_payload(filters=None, identity=None):
     projects = []
     for p in visible_projects:
         pid = p.get('id')
+        if scoped_project_ids is not None and str(pid or '').lower() not in scoped_project_ids:
+            continue
         state_record = state_projects.get(pid) or {}
         count = project_counts.get(pid, 0)
         projects.append({
@@ -10303,6 +10414,14 @@ def read_agent_runtime_switcher(identity=None):
             canonical_model = next((m for m in models if m.get('provider') == 'openai-codex' and m.get('model') == selected_model_row.get('model') and not any(token in str(m.get('id') or '').lower() for token in ('codex-nexius', 'codex-nexiuslabs', 'codex-melverick'))), None)
             if canonical_model and canonical_model.get('id'):
                 model_id = canonical_model.get('id')
+        saved_valid_account_ids = [
+            safe_id(item) for item in (saved.get('valid_account_ids') or saved.get('validAccountIds') or [])
+            if safe_id(item) in account_ids
+        ]
+        saved_valid_model_ids = [
+            safe_id(item) for item in (saved.get('valid_model_ids') or saved.get('validModelIds') or [])
+            if safe_id(item) in model_ids
+        ]
         assignments[aid] = {
             **base,
             'hermes_profile': str(saved.get('hermes_profile') or runtime_agent_profile(aid, identity))[:120],
@@ -10311,6 +10430,8 @@ def read_agent_runtime_switcher(identity=None):
             'credential_label': str(saved.get('credential_label') or '')[:120],
             'account_id': account_id,
             'model_id': model_id,
+            'valid_account_ids': saved_valid_account_ids or base.get('valid_account_ids') or [],
+            'valid_model_ids': saved_valid_model_ids or base.get('valid_model_ids') or [],
             'reasoning': str(saved.get('reasoning') or base.get('reasoning') or 'balanced')[:40],
             'apply_mode': str(saved.get('apply_mode') or saved.get('applyMode') or 'next_session')[:40],
             'updated_at': str(saved.get('updated_at') or '')[:80],
@@ -13692,6 +13813,57 @@ def write_tool_installations(items):
     path.write_text(json.dumps({'items': items}, indent=2, sort_keys=True) + '\n')
 
 
+def opencode_cli_tool_record():
+    """Return a governed OpenCode CLI tool record when the binary is installed."""
+    path = shutil.which('opencode')
+    if not path:
+        return None
+    version = 'unknown'
+    try:
+        result = subprocess.run([path, '--version'], capture_output=True, text=True, timeout=5)
+        version = (result.stdout or result.stderr or '').strip().splitlines()[0][:80] or 'unknown'
+    except Exception:
+        pass
+    now = _capability_now()
+    return {
+        'id': 'cli:opencode',
+        'kind': 'cli',
+        'name': 'OpenCode CLI',
+        'serverName': 'opencode',
+        'profile': 'dev-ops',
+        'enabled': True,
+        'source': 'Mission Control governed CLI registry',
+        'command': 'opencode',
+        'installCommand': 'npm install -g opencode-ai@latest',
+        'description': 'Provider-agnostic autonomous coding CLI for bounded implementation, refactoring, review, and debugging lanes. Runs must use explicit repo/workdir scope and independent Andrej verification before production changes.',
+        'sampleTools': ['opencode run', 'opencode auth list', 'opencode --version'],
+        'categories': [{'id': 'autonomous-coding', 'name': 'Autonomous coding agent', 'count': 1}],
+        'assignmentUnit': 'opencode',
+        'permissions': ['local-filesystem-read', 'local-filesystem-write', 'network-model-calls', 'git-diff-required', 'approval-gated-production'],
+        'governance': {
+            'riskLevels': ['local-write', 'network', 'secret-access'],
+            'approvalStatus': 'approved',
+            'approvalAuthority': 'melverick',
+            'approvalNote': 'Melverick approved installing OpenCode and exposing it as a governed HMC tool. Production-affecting execution remains task/approval gated.',
+            'policySummary': 'OpenCode may read/write local repositories and call external model providers. Use only in explicit workdirs/branches/worktrees, never print secrets, never deploy or push production changes without Andrej verification and the relevant production approval.',
+            'allowedAgentClasses': ['platform', 'workspace'],
+            'allowedWorkspaceIds': ['mission-control', 'nexius-academy', 'nexiuslabs', 'melverick'],
+            'blockedActions': ['direct-main-push-without-review', 'production-deploy-without-verification', 'secret-printing', 'destructive-filesystem-operations', 'unscoped-workdir-run'],
+            'dataBoundary': 'repo-local-plus-external-model-provider',
+        },
+        'health': {
+            'state': 'passing',
+            'checkSummary': f'OpenCode CLI installed and version check passed: {version}. Credentials are managed by opencode auth and are not stored in Mission Control.',
+            'evidenceIds': ['ev-cli-opencode-install'],
+        },
+        'requiredSecrets': ['OpenCode provider credentials configured through opencode auth; registry stores no raw secrets'],
+        'wrapperType': 'autonomous-coding-cli',
+        'restart_required': False,
+        'created_at': now,
+        'updated_at': now,
+    }
+
+
 def load_raw_profile_config(profile_id='default'):
     path = profile_root(profile_id) / 'config.yaml'
     if not path.exists() and profile_id != 'default':
@@ -13717,8 +13889,30 @@ def save_raw_profile_config(profile_id, cfg, path=None):
 
 def installed_tool_records():
     records = []
+    seen_ids = set()
+    opencode_record = opencode_cli_tool_record()
+    if opencode_record:
+        records.append({
+            'id': opencode_record.get('id'),
+            'name': opencode_record.get('name') or 'OpenCode CLI',
+            'kind': 'cli-tool',
+            'source': opencode_record.get('source') or 'Mission Control governed CLI registry',
+            'enabled': opencode_record.get('enabled', True),
+            'description': opencode_record.get('description'),
+            'toolCount': 1,
+            'sampleTools': opencode_record.get('sampleTools') or [],
+            'categories': opencode_record.get('categories') or [{'id': 'autonomous-coding', 'name': 'Autonomous coding agent', 'count': 1}],
+            'assignmentUnit': opencode_record.get('assignmentUnit') or 'opencode',
+            'install': opencode_record,
+            'governance': opencode_record.get('governance'),
+            'permissions': opencode_record.get('permissions') or [],
+            'health': opencode_record.get('health') or {},
+        })
+        seen_ids.add(opencode_record.get('id'))
     for item in read_tool_installations():
         if not isinstance(item, dict):
+            continue
+        if item.get('id') in seen_ids:
             continue
         kind = str(item.get('kind') or 'cli')
         records.append({
@@ -18370,8 +18564,27 @@ def demo_response_for_get(path, query='', headers=None):
         return ({'runtime': runtime}, 200) if runtime else ({'error': 'runtime not found'}, 404)
     if path in ('/api/projects','/api/workspaces'): return demo_projects_payload(), 200
     if path == '/api/project-chats':
-        sessions = [{'id': s['id'], 'title': s['title'], 'project_id': 'demo-project', 'project_name': 'Demo Project', 'source': s['source'], 'model': s['model'], 'started_at': s['started_at'], 'messages': s['message_count'], 'tools': s['tool_call_count'], 'tokens': s['total_tokens']} for s in demo_audit_payload()['sessions']]
-        return {'projects': [{'id': 'demo-project', 'name': 'Demo Project', 'sessions': len(sessions)}], 'sessions': sessions, 'summary': {'projects': 1, 'sessions': len(sessions)}}, 200
+        base = [s for s in demo_audit_payload()['sessions'] if s.get('source') == 'demo-web']
+        extras = [
+            {'id': 'demo-session-research', 'title': 'Demo research follow-up', 'source': 'demo-web', 'model': 'demo-hermes-agent', 'started_at': demo_now(), 'message_count': 5, 'tool_call_count': 1, 'total_tokens': 1540},
+            {'id': 'demo-session-approval', 'title': 'Demo approval discussion', 'source': 'demo-web', 'model': 'demo-hermes-agent', 'started_at': demo_now(), 'message_count': 4, 'tool_call_count': 0, 'total_tokens': 920},
+            {'id': 'demo-session-project', 'title': 'Demo project handoff', 'source': 'demo-web', 'model': 'demo-hermes-agent', 'started_at': demo_now(), 'message_count': 7, 'tool_call_count': 2, 'total_tokens': 2110},
+            {'id': 'demo-session-status', 'title': 'Demo status check-in', 'source': 'demo-web', 'model': 'demo-hermes-agent', 'started_at': demo_now(), 'message_count': 3, 'tool_call_count': 0, 'total_tokens': 680},
+        ]
+        sessions = [{'id': s['id'], 'title': s['title'], 'project_id': 'demo-project', 'project_name': 'Demo Project', 'source': s['source'], 'model': s['model'], 'started_at': s['started_at'], 'messages': s['message_count'], 'tools': s['tool_call_count'], 'tokens': s['total_tokens'], 'human_initiated': True, 'origin': 'Demo Web', 'link_source': 'suggested', 'relationship_type': 'discussion'} for s in [*base, *extras][:5]]
+        return {'projects': [{'id': 'demo-project', 'name': 'Demo Project', 'sessions': len(sessions), 'chats': len(sessions)}], 'sessions': sessions, 'summary': {'projects': 1, 'sessions': len(sessions), 'chats': len(sessions), 'canonical_links': 0, 'suggested_links': len(sessions)}}, 200
+    if path.startswith('/api/project-chats/') and path.endswith('/messages'):
+        sid = unquote(path.strip('/').split('/')[2]) if len(path.strip('/').split('/')) >= 3 else 'demo-session'
+        now = time.time()
+        return {
+            'ok': True,
+            'session': {'id': sid, 'title': 'Demo chat', 'source': 'demo', 'model': 'demo', 'started_at': demo_now(), 'project_id': 'demo-project', 'project_name': 'Demo Project'},
+            'messages': [
+                {'id': f'demo-{sid}-user', 'role': 'user', 'text': 'Show this saved conversation.', 'at': 'Demo · now', 'ts': now - 60, 'source': 'demo', 'sessionId': sid, 'projectId': 'demo-project', 'projectName': 'Demo Project'},
+                {'id': f'demo-{sid}-agent', 'role': 'agent', 'text': 'This is a demo saved chat session message.', 'at': 'Demo · now', 'ts': now - 40, 'source': 'demo', 'sessionId': sid, 'projectId': 'demo-project', 'projectName': 'Demo Project'},
+            ],
+            'summary': {'messages': 2},
+        }, 200
     if path == '/api/files':
         q = parse_qs(query)
         root_id = (q.get('root') or ['outputs'])[0] or 'outputs'
@@ -18690,6 +18903,24 @@ def normalize_tool_capability_source(tool):
     now = tool.get('updated_at') or tool.get('created_at') or _capability_now()
     tool_count = tool.get('toolCount')
     sample_tools = tool.get('sampleTools') or []
+    install = tool.get('install') if isinstance(tool.get('install'), dict) else {}
+    install_governance = tool.get('governance') if isinstance(tool.get('governance'), dict) else install.get('governance') if isinstance(install.get('governance'), dict) else {}
+    install_health = tool.get('health') if isinstance(tool.get('health'), dict) else install.get('health') if isinstance(install.get('health'), dict) else {}
+    install_permissions = tool.get('permissions') if isinstance(tool.get('permissions'), list) else install.get('permissions') if isinstance(install.get('permissions'), list) else []
+    risk_levels = install_governance.get('riskLevels') or (['network'] if source_type == 'mcp-server' else ['local-write'])
+    approval_status = install_governance.get('approvalStatus') or 'not-required'
+    policy_summary = install_governance.get('policySummary') or 'Imported from existing Tools Hub inventory.'
+    governance = {
+        'riskLevels': risk_levels,
+        'approvalStatus': approval_status,
+        'approvalAuthority': install_governance.get('approvalAuthority'),
+        'approvalGateIds': install_governance.get('approvalGateIds') or [],
+        'policySummary': policy_summary,
+        'allowedAgentClasses': install_governance.get('allowedAgentClasses') or ['platform', 'workspace'],
+        'allowedWorkspaceIds': install_governance.get('allowedWorkspaceIds') or [],
+        'blockedActions': install_governance.get('blockedActions') or [],
+        'dataBoundary': install_governance.get('dataBoundary') or ('external-api' if source_type == 'mcp-server' else 'local-only'),
+    }
     return {
         'id': capability_source_id(source_type, raw_id),
         'type': source_type,
@@ -18699,20 +18930,20 @@ def normalize_tool_capability_source(tool):
         'category': source_type,
         'tags': [source_type] + [str(t) for t in sample_tools[:6]],
         'status': 'enabled' if tool.get('enabled', True) else 'disabled',
-        'sourceUri': (tool.get('install') or {}).get('url') or (tool.get('install') or {}).get('command') or tool.get('assignmentUnit'),
-        'sourceRef': (tool.get('install') or {}).get('serverName') or raw_id,
+        'sourceUri': install.get('url') or install.get('command') or tool.get('assignmentUnit'),
+        'sourceRef': install.get('serverName') or raw_id,
         'sourceLabel': tool.get('source') or 'Tools Hub',
         'workspaceId': None,
         'runtimeId': None,
-        'profileId': (tool.get('install') or {}).get('profile'),
+        'profileId': install.get('profile'),
         'ownerKind': 'admin',
         'visibility': 'admin-only',
         'editable': True,
         'enabled': bool(tool.get('enabled', True)),
-        'installMethod': {'kind': install_kind, 'commandPreview': (tool.get('install') or {}).get('command') or tool.get('assignmentUnit'), 'configPath': (tool.get('install') or {}).get('config_path'), 'requiresRestart': bool((tool.get('install') or {}).get('restart_required') or tool.get('restart_required')), 'requiredSecrets': [], 'requiredPermissions': ['network'] if source_type == 'mcp-server' else [], 'wrapperType': 'mcp' if source_type == 'mcp-server' else 'tool'},
-        'governance': {'riskLevels': ['network'] if source_type == 'mcp-server' else ['local-write'], 'approvalStatus': 'not-required', 'approvalGateIds': [], 'policySummary': 'Imported from existing Tools Hub inventory.', 'allowedAgentClasses': ['platform', 'workspace'], 'allowedWorkspaceIds': [], 'blockedActions': [], 'dataBoundary': 'external-api' if source_type == 'mcp-server' else 'local-only'},
-        'permissions': [],
-        'health': {'state': 'passing' if tool.get('enabled', True) else 'unknown', 'checkSummary': f"{tool_count} tools listed" if tool_count is not None else 'Tool registry record loaded', 'evidenceIds': []},
+        'installMethod': {'kind': install_kind, 'commandPreview': install.get('command') or tool.get('assignmentUnit'), 'configPath': install.get('config_path'), 'requiresRestart': bool(install.get('restart_required') or tool.get('restart_required')), 'requiredSecrets': install.get('requiredSecrets') or [], 'requiredPermissions': install_permissions or (['network'] if source_type == 'mcp-server' else []), 'wrapperType': install.get('wrapperType') or ('mcp' if source_type == 'mcp-server' else 'tool')},
+        'governance': governance,
+        'permissions': install_permissions,
+        'health': {'state': install_health.get('state') or ('passing' if tool.get('enabled', True) else 'unknown'), 'checkSummary': install_health.get('checkSummary') or (f"{tool_count} tools listed" if tool_count is not None else 'Tool registry record loaded'), 'evidenceIds': install_health.get('evidenceIds') or []},
         'evidence': [{'id': f"ev-{capability_source_id(source_type, raw_id)}", 'kind': 'source', 'title': 'Tools Hub record', 'summary': tool.get('source') or 'Tools Hub', 'createdAt': now, 'redacted': True}],
         'assignment': _capability_assignment_from_hub_lists(unit=unit, usage_count=1 if tool.get('enabled', True) else 0),
         'rollback': {'supported': True, 'disableSteps': ['Disable the tool or MCP server in Mission Control/Hermes config.'], 'uninstallSteps': ['Remove the tool installation record or mcp_servers entry after approval.'], 'restartRequired': bool((tool.get('install') or {}).get('restart_required') or tool.get('restart_required'))},
@@ -20176,6 +20407,16 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(list_projects(parse_qs(parsed.query), current_identity_from_cookie(self.headers.get('Cookie', ''))))
         elif parsed.path == '/api/project-chats':
             self.send_json(project_chat_sessions_payload(parse_qs(parsed.query), current_identity_from_cookie(self.headers.get('Cookie', ''))))
+        elif parsed.path.startswith('/api/project-chats/') and parsed.path.endswith('/messages'):
+            parts = parsed.path.strip('/').split('/')
+            session_id = unquote(parts[2]) if len(parts) >= 3 else ''
+            q = parse_qs(parsed.query)
+            try:
+                limit = min(max(int((q.get('limit') or ['500'])[0]), 20), 1000)
+            except Exception:
+                limit = 500
+            result, status = project_chat_session_messages_payload(session_id, current_identity_from_cookie(self.headers.get('Cookie', '')), limit=limit)
+            self.send_json(result, status)
         elif parsed.path == '/api/files':
             result, status = file_browser_payload(parse_qs(parsed.query), current_identity_from_cookie(self.headers.get('Cookie', '')))
             self.send_json(result, status)

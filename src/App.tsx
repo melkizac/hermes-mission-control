@@ -18,6 +18,7 @@ import { Approvals } from "./views/Approvals";
 import { Reflections } from "./views/Reflections";
 import { AuditLog } from "./views/AuditLog";
 import { Automations } from "./views/Automations";
+import { OperationsHub } from "./views/OperationsHub";
 import { TaskBoard } from "./views/TaskBoard";
 import { SkillsHub } from "./views/SkillsHub";
 import { MemoryContext } from "./views/MemoryContext";
@@ -27,6 +28,7 @@ import { PluginsHub } from "./views/PluginsHub";
 import { CostDashboard } from "./views/CostDashboard";
 import { UsageRemaining } from "./views/UsageRemaining";
 import { ModelRouter } from "./views/ModelRouter";
+import { SettingsPage } from "./views/SettingsPage";
 import { HermesDesktopAdmin } from "./views/HermesDesktopAdmin";
 import { MissionControlDocs } from "./views/MissionControlDocs";
 import { LandingPage } from "./views/LandingPage";
@@ -34,7 +36,6 @@ import { LoginPage } from "./views/LoginPage";
 import { AdminSetupPage } from "./views/AdminSetupPage";
 import { BrowserOperations } from "./views/BrowserOperations";
 import { ResearchRuns } from "./views/ResearchRuns";
-import { Placeholder } from "./views/Placeholder";
 import { parseMissionControlDeepLink } from "./services/deepLinks";
 import { recordRouteTelemetry } from "./services/performanceTelemetry";
 
@@ -42,21 +43,57 @@ const docsPaths = new Set(["/mission-control-docs", "/mission-control-guide", "/
 const publicPaths = new Set(["/", "/login"]);
 const standaloneAgentVoicePaths = new Set(["/agent-voice"]);
 
-async function requestJson<T>(path: string): Promise<T> {
-  const res = await fetch(`${window.location.protocol}//${window.location.host}${path}`, {
-    credentials: "include",
-    headers: { Accept: "application/json" },
-  });
-  if (!res.ok) throw new Error(`${path}: ${res.statusText}`);
-  return res.json() as Promise<T>;
+type InboxSummary = { drafted?: number; ready?: number };
+type InboxItem = { status?: string };
+type InboxPayload = { summary?: InboxSummary; items?: InboxItem[] };
+
+async function requestApprovalCount(fallbackCount: number): Promise<number> {
+  const res = await fetch(`${window.location.protocol}//${window.location.host}/api/inbox`, { credentials: "include", headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(res.statusText);
+  const inbox = await res.json() as InboxPayload;
+  if (inbox.summary) return Number(inbox.summary.drafted ?? 0) + Number(inbox.summary.ready ?? 0);
+  if (!Array.isArray(inbox.items)) return fallbackCount;
+  return inbox.items.filter((item) => item.status === "drafted" || item.status === "ready").length;
 }
 
-async function safeJson<T>(path: string, fallback: T): Promise<T> {
-  try {
-    return await requestJson<T>(path);
-  } catch {
-    return fallback;
-  }
+function TopApprovalNotification() {
+  const { view, setView, approvals } = useStore();
+  const [approvalCount, setApprovalCount] = useState(approvals.length);
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const next = await requestApprovalCount(approvals.length);
+        if (alive) setApprovalCount(next);
+      } catch {
+        if (alive) setApprovalCount(approvals.length);
+      }
+    };
+    void load();
+    const interval = window.setInterval(load, 60000);
+    return () => {
+      alive = false;
+      window.clearInterval(interval);
+    };
+  }, [approvals.length]);
+
+  if (approvalCount <= 0) return null;
+
+  const approvalBadge = approvalCount > 99 ? "99+" : String(approvalCount);
+
+  return (
+    <button
+      className={"top-approval-notification" + (view === "approvals" ? " on" : "")}
+      type="button"
+      onClick={() => setView("approvals")}
+      aria-label={`Approvals, ${approvalBadge} pending`}
+      title="Approvals"
+    >
+      <Icon name="bell" size={14} />
+      <span className="utility-dock-badge">{approvalBadge}</span>
+    </button>
+  );
 }
 
 function Shell() {
@@ -97,6 +134,7 @@ function Shell() {
   if (shouldRenderMobileChatOnly) {
     return (
       <div className="shell mobile-chat-only-shell">
+        <TopApprovalNotification />
         <main className="main mobile-chat-only-main">
           <MissionControl />
         </main>
@@ -107,16 +145,15 @@ function Shell() {
   return (
     <div className="shell">
       <NavRail />
-      <div className="top-right-actions">
-        <NeedsAttentionBell />
-      </div>
+      <TopApprovalNotification />
       <main className="main">
         {!canRenderView && <AdminOnlyNotice onGoHome={() => setView(safeDefaultViewForRole(me?.user.role))} />}
         {canRenderView && view === "mission" && <MissionControl />}
         {canRenderView && view === "dashboard" && <Dashboard />}
         {canRenderView && view === "delegate-work" && <DelegateWork />}
+        {canRenderView && view === "operations" && <OperationsHub />}
         {canRenderView && view === "workflow-library" && <WorkflowLibrary />}
-        {canRenderView && view === "profile" && <Placeholder title="Account Settings" blurb="Account identity and operator preferences for your Mission Control workspace." />}
+        {canRenderView && view === "profile" && <SettingsPage />}
         {canRenderView && view === "agents" && <Agents />}
         {canRenderView && view === "agent-voice" && <AgentVoice />}
         {canRenderView && view === "agent-org" && <AgentOrg />}
@@ -137,7 +174,7 @@ function Shell() {
         {canRenderView && view === "usage" && <UsageRemaining />}
         {canRenderView && view === "costs" && <CostDashboard />}
         {canRenderView && view === "models" && <ModelRouter />}
-        {canRenderView && view === "settings" && <HermesDesktopAdmin />}
+        {canRenderView && view === "settings" && <SettingsPage />}
         {canRenderView && view === "agent-platform-admin" && <AdminSetupPage kind="agent-platform-admin" />}
         {canRenderView && view === "users-workspaces" && <AdminSetupPage kind="users-workspaces" />}
         {canRenderView && view === "workspace-runtime-console" && <AdminSetupPage kind="workspace-runtime-console" />}
@@ -149,50 +186,6 @@ function Shell() {
         {canRenderView && view === "quota" && <AdminSetupPage kind="quota" />}
       </main>
     </div>
-  );
-}
-
-function NeedsAttentionBell() {
-  const { approvals, setView } = useStore();
-  const [approvalCount, setApprovalCount] = useState(approvals.length);
-
-  useEffect(() => {
-    let alive = true;
-    async function loadApprovalCount() {
-      const inbox = await safeJson<any>("/api/inbox", null);
-      const summary = inbox?.summary;
-      const pendingFromSummary = Number(summary?.drafted ?? 0) + Number(summary?.ready ?? 0);
-      const pendingFromItems = Array.isArray(inbox?.items)
-        ? inbox.items.filter((item: any) => item?.status === "drafted" || item?.status === "ready").length
-        : approvals.length;
-      const nextCount = summary ? pendingFromSummary : pendingFromItems;
-      if (alive) setApprovalCount(nextCount);
-    }
-    const timer = window.setTimeout(() => {
-      void loadApprovalCount();
-    }, 20000);
-    const interval = window.setInterval(loadApprovalCount, 60000);
-    return () => {
-      alive = false;
-      window.clearTimeout(timer);
-      window.clearInterval(interval);
-    };
-  }, [approvals.length]);
-
-  if (approvalCount <= 0) return null;
-
-  const countLabel = approvalCount === 1 ? "1 pending approval" : `${approvalCount} pending approvals`;
-
-  return (
-    <button
-      className="top-attention-bell has-items"
-      aria-label={`Pending approvals: ${approvalCount}`}
-      onClick={() => setView("approvals")}
-      title={countLabel}
-    >
-      <Icon name="bell" size={18} />
-      <span className="attention-count">{approvalCount > 99 ? "99+" : approvalCount}</span>
-    </button>
   );
 }
 

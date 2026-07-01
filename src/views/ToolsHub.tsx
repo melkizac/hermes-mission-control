@@ -31,12 +31,13 @@ function displayType(value?: string) {
 }
 
 function displaySource(value?: string) {
-  const raw = String(value || "config.yaml").toLowerCase();
+  if (!value) return "Source not reported";
+  const raw = String(value).toLowerCase();
   if (raw.includes("openclaw")) return "OpenClaw";
   if (raw.includes("shared")) return "Shared";
   if (raw.includes("mission control") || raw.includes("user") || raw.includes("mcp_servers")) return "User";
   if (raw.includes("config.yaml") || raw.includes("profile config") || raw.includes("hermes")) return "Hermes";
-  return cap(String(value || "Hermes"));
+  return cap(String(value));
 }
 
 export function ToolsHub() {

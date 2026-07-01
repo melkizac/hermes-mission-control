@@ -1,4 +1,4 @@
-import { ReactNode, useRef, useState } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 
 export type AgentDrawerTab = {
   id: string;
@@ -52,11 +52,26 @@ export function AgentDetailDrawerShell({
   children,
 }: AgentDetailDrawerShellProps) {
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
+  const [tabsOverflow, setTabsOverflow] = useState(false);
   const tabRailRef = useRef<HTMLDivElement | null>(null);
   const scrollTabs = (direction: -1 | 1) => {
     tabRailRef.current?.scrollBy({ left: direction * 220, behavior: "smooth" });
   };
   const hasActions = actions.length > 0;
+
+  useEffect(() => {
+    const rail = tabRailRef.current;
+    if (!rail) return undefined;
+    const syncOverflow = () => setTabsOverflow(rail.scrollWidth > rail.clientWidth + 2);
+    syncOverflow();
+    const resizeObserver = new ResizeObserver(syncOverflow);
+    resizeObserver.observe(rail);
+    window.addEventListener("resize", syncOverflow);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", syncOverflow);
+    };
+  }, [tabs.length]);
 
   return (
     <aside className={`agent-detail-shell ${className}`.trim()} aria-label={ariaLabel || `${title} details`} onClick={(e) => e.stopPropagation()}>
@@ -87,7 +102,7 @@ export function AgentDetailDrawerShell({
         </div>
       </header>
 
-      <div className="drawer-tab-rail" aria-label="Agent drawer sections">
+      <div className={`drawer-tab-rail ${tabsOverflow ? "has-overflow" : "no-overflow"}`} aria-label="Agent drawer sections">
         <button className="drawer-tab-arrow" type="button" aria-label="Scroll tabs left" onClick={() => scrollTabs(-1)}>‹</button>
         <nav className="drawer-tabs" ref={tabRailRef}>
           {tabs.map((tab) => (
