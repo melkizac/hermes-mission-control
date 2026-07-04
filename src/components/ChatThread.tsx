@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useStore } from "../services/store";
 import { Icon } from "./Icon";
 import { AgentAvatar } from "./AgentAvatar";
-import type { Agent, Attachment, Message, ModelRoutingSelection, ProjectChatMessagesResponse, ProjectChatResponse, ReplyContext, RouterConfig } from "../types";
+import type { Agent, Attachment, Message, ModelRoutingSelection, ProcessingProgressEvent, ProjectChatMessagesResponse, ProjectChatResponse, ReplyContext, RouterConfig } from "../types";
 import { formatSingaporeTime } from "../utils/time";
 
 const ONE_DAY_SECONDS = 24 * 60 * 60;
@@ -92,6 +92,24 @@ function formatRunDuration(ms: number) {
   const seconds = totalSeconds % 60;
   if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatProgressEventAge(event: ProcessingProgressEvent) {
+  if (!event.ts) return "now";
+  const seconds = Math.max(0, Math.floor(Date.now() / 1000 - event.ts));
+  if (seconds < 5) return "now";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m ago`;
+}
+
+function uniqueProgressEvents(events: ProcessingProgressEvent[]) {
+  const byId = new Map<string, ProcessingProgressEvent>();
+  for (const event of events) {
+    if (!event?.label?.trim()) continue;
+    byId.set(event.id || `${event.stage || event.label}-${event.ts || 0}`, event);
+  }
+  return Array.from(byId.values()).sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0));
 }
 
 function agentGroupLabel(name: string) {
@@ -250,6 +268,10 @@ export function ChatThread({
   const activeBackendRequestDetail = useMemo(
     () => (agent.processingRequestDetails ?? []).find((item) => item.id === activeBackendRequestId),
     [activeBackendRequestId, agent.processingRequestDetails],
+  );
+  const activeProgressEvents = useMemo(
+    () => uniqueProgressEvents(activeBackendRequestDetail?.progressEvents ?? []).slice(-5),
+    [activeBackendRequestDetail?.progressEvents],
   );
   const activeBackendUserMessage = useMemo(
     () => sortedMessages.find((m) => m.role === "user" && m.requestId === activeBackendRequestId),
@@ -772,15 +794,34 @@ export function ChatThread({
               <MessageView m={{ id: "pending-user", role: "user", text: visiblePendingMessage.text, attachments: visiblePendingMessage.attachments, replyTo: visiblePendingMessage.replyTo, at: "just now" }} agent={agent} />
             )}
             <div className="processing-inline" role="status" aria-live="polite" aria-label={`${agent.name} is processing your message`}>
-              <span className="processing-inline-dots" aria-hidden="true">
-                <span />
-                <span />
-                <span />
-              </span>
-              <span>{agent.name} is processing…</span>
-              <span className="processing-inline-timer" aria-label={`Elapsed processing time ${processingElapsedLabel}`} title="Elapsed processing time">
-                {processingElapsedLabel}
-              </span>
+              <div className="processing-inline-head">
+                <span className="processing-inline-dots" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </span>
+                <span>{agent.name} is processing…</span>
+                <span className="processing-inline-timer" aria-label={`Elapsed processing time ${processingElapsedLabel}`} title="Elapsed processing time">
+                  {processingElapsedLabel}
+                </span>
+              </div>
+              {activeProgressEvents.length > 0 && (
+                <ol className="processing-progress-list" aria-label="Live progress updates">
+                  {activeProgressEvents.map((event, index) => {
+                    const latest = index === activeProgressEvents.length - 1;
+                    return (
+                      <li key={event.id || `${event.label}-${event.ts || index}`} className={latest ? "latest" : undefined}>
+                        <span className="processing-progress-dot" aria-hidden="true" />
+                        <span className="processing-progress-copy">
+                          <b>{event.label}</b>
+                          {event.detail && <small>{event.detail}</small>}
+                        </span>
+                        <time>{formatProgressEventAge(event)}</time>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
             </div>
           </>
         )}
