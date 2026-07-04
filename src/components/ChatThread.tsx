@@ -110,6 +110,22 @@ function chatTabInitial(sessionTitle: string) {
   return sessionTitle.trim().charAt(0).toUpperCase() || "C";
 }
 
+const PINNED_CHAT_TABS_KEY = "hmc:pinned-chat-tabs";
+const PENDING_OPEN_CHAT_SESSION_KEY = "hmc:pending-open-chat-session";
+
+function readPinnedChatTabIds() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(PINNED_CHAT_TABS_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string" && id.trim().length > 0) : [];
+  } catch {
+    return [];
+  }
+}
+
+function pinChatTabId(ids: string[], sessionId: string) {
+  return [sessionId, ...ids.filter((id) => id !== sessionId)].slice(0, 80);
+}
+
 export function ChatThread({
   agent,
   onOpenDetails,
@@ -149,13 +165,7 @@ export function ChatThread({
   const [sessionMessageErrors, setSessionMessageErrors] = useState<Record<string, string>>({});
   const [startPermissionMode, setStartPermissionMode] = useState<AgentStartPermissionMode>("full-policy");
   const [startProjectId, setStartProjectId] = useState("");
-  const [closedChatTabIds, setClosedChatTabIds] = useState<string[]>(() => {
-    try {
-      return JSON.parse(window.localStorage.getItem("hmc:closed-chat-tabs") || "[]") as string[];
-    } catch {
-      return [];
-    }
-  });
+  const [pinnedChatTabIds, setPinnedChatTabIds] = useState<string[]>(readPinnedChatTabIds);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -180,17 +190,15 @@ export function ChatThread({
     [projectChats, selectedProjectId],
   );
   const openChatTabs = useMemo(
-    () =>
-      projectSessions
-        .filter((session) => session.human_initiated !== false && !closedChatTabIds.includes(session.id))
-        .slice()
-        .sort((a, b) => new Date(b.started_at || 0).getTime() - new Date(a.started_at || 0).getTime())
-        .slice(0, 6),
-    [closedChatTabIds, projectSessions],
+    () => {
+      const byId = new Map(projectSessions.filter((session) => session.human_initiated !== false).map((session) => [session.id, session]));
+      return pinnedChatTabIds.map((id) => byId.get(id)).filter((session): session is ProjectChatResponse["sessions"][number] => Boolean(session));
+    },
+    [pinnedChatTabIds, projectSessions],
   );
   const effectiveSelectedSessionId = selectedChatTabId === "start"
     ? "all"
-    : selectedChatTabId === "all" || openChatTabs.some((session) => session.id === selectedChatTabId)
+    : selectedChatTabId === "all" || openChatTabs.some((session) => session.id === selectedChatTabId) || pinnedChatTabIds.includes(selectedChatTabId)
     ? selectedChatTabId
     : selectedSessionId;
   const scopedSessionIds = useMemo(() => new Set(projectSessions.map((session) => session.id)), [projectSessions]);
@@ -284,10 +292,18 @@ export function ChatThread({
 
   useEffect(() => {
     if (selectedSessionId !== "all") {
-      setClosedChatTabIds((current) => current.filter((id) => id !== selectedSessionId));
+      setPinnedChatTabIds((current) => pinChatTabId(current, selectedSessionId));
       setSelectedChatTabId(selectedSessionId);
     }
   }, [selectedSessionId]);
+
+  useEffect(() => {
+    const pendingSessionId = window.sessionStorage.getItem(PENDING_OPEN_CHAT_SESSION_KEY);
+    if (!pendingSessionId) return;
+    window.sessionStorage.removeItem(PENDING_OPEN_CHAT_SESSION_KEY);
+    setPinnedChatTabIds((current) => pinChatTabId(current, pendingSessionId));
+    setSelectedChatTabId(pendingSessionId);
+  }, []);
 
   useEffect(() => {
     if (
@@ -332,17 +348,18 @@ export function ChatThread({
   }, [effectiveSelectedSessionId, sessionMessages]);
 
   useEffect(() => {
-    window.localStorage.setItem("hmc:closed-chat-tabs", JSON.stringify(closedChatTabIds.slice(0, 80)));
-  }, [closedChatTabIds]);
+    window.localStorage.setItem(PINNED_CHAT_TABS_KEY, JSON.stringify(pinnedChatTabIds.slice(0, 80)));
+  }, [pinnedChatTabIds]);
 
   useEffect(() => {
     if (
       selectedChatTabId === "start" ||
       selectedChatTabId === "all" ||
-      openChatTabs.some((session) => session.id === selectedChatTabId)
+      openChatTabs.some((session) => session.id === selectedChatTabId) ||
+      (projectChats === null && pinnedChatTabIds.includes(selectedChatTabId))
     ) return;
     setSelectedChatTabId("start");
-  }, [openChatTabs, selectedChatTabId]);
+  }, [openChatTabs, pinnedChatTabIds, projectChats, selectedChatTabId]);
 
   useEffect(() => {
     const onResize = () => resizeComposerInput();
@@ -592,7 +609,7 @@ export function ChatThread({
   };
 
   function closeChatTab(sessionId: string) {
-    setClosedChatTabIds((current) => current.includes(sessionId) ? current : [sessionId, ...current].slice(0, 80));
+    setPinnedChatTabIds((current) => current.filter((id) => id !== sessionId));
     if (selectedChatTabId === sessionId) setSelectedChatTabId("all");
   }
 
@@ -602,9 +619,9 @@ export function ChatThread({
 
   return (
     <div className={"center" + (showWelcomeStart ? " chat-start-mode" : "")} onPaste={handlePasteIntoChat}>
-      {openChatTabs.length > 0 && (
-        <div className="chat-session-tabs" role="tablist" aria-label="Open chat sessions">
-          {openChatTabs.map((session) => {
+      <div className="chat-session-tabs" role="tablist" aria-label="Open chat sessions">
+        {openChatTabs.length > 0 ? (
+          openChatTabs.map((session) => {
             const label = chatTabLabel(session.title, session.project_name);
             const active = effectiveSelectedSessionId === session.id;
             return (
@@ -615,7 +632,7 @@ export function ChatThread({
                   aria-selected={active}
                   onClick={() => {
                     window.dispatchEvent(new CustomEvent("hmc:open-chat-session", { detail: { sessionId: session.id } }));
-                    setClosedChatTabIds((current) => current.filter((id) => id !== session.id));
+                    setPinnedChatTabIds((current) => pinChatTabId(current, session.id));
                     setSelectedChatTabId(session.id);
                   }}
                   title={label}
@@ -628,18 +645,20 @@ export function ChatThread({
                 </button>
               </div>
             );
-          })}
-          <button
-            type="button"
-            className={"chat-session-tab-add" + (selectedChatTabId === "start" ? " on" : "")}
-            onClick={() => setSelectedChatTabId("start")}
-            aria-label="Start a new chat"
-            title="Start a new chat"
-          >
-            <Icon name="plus" size={16} />
-          </button>
-        </div>
-      )}
+          })
+        ) : (
+          <div className="chat-session-tabs-empty">No kept chats</div>
+        )}
+        <button
+          type="button"
+          className={"chat-session-tab-add" + (selectedChatTabId === "start" ? " on" : "")}
+          onClick={() => setSelectedChatTabId("start")}
+          aria-label="Start a new chat"
+          title="Start a new chat"
+        >
+          <Icon name="plus" size={16} />
+        </button>
+      </div>
       {showWelcomeStart && (
         <section className="chat-start-hero" aria-label="Start a new chat">
           <h1>{greeting}, {displayName}!</h1>

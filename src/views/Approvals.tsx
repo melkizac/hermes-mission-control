@@ -272,8 +272,6 @@ export function Approvals() {
             <div className="inbox-kv">
               <Info label="Kind" value={selected.kind} />
               <Info label="Risk" value={selected.risk} />
-              <Info label="Destination" value={selected.destination} />
-              <Info label="Source" value={selected.source_path ?? selected.source_id ?? selected.source} />
               <Info label="Created" value={formatSingaporeTime(selected.created_at)} />
               <Info label="Reviewed" value={selected.reviewed_at ?? "—"} />
             </div>

@@ -30,6 +30,15 @@ def test_settings_menu_contains_profile_mode_toggle_for_admin_accounts():
     assert '{!collapsed && (' in rail
 
 
+def test_collapsed_brand_logo_expands_sidebar_instead_of_dashboard_tooltip():
+    rail = (ROOT / "src/components/NavRail.tsx").read_text()
+
+    assert 'if (collapsed) {' in rail
+    assert 'setCollapsed(false);' in rail
+    assert 'aria-label={collapsed ? "Expand sidebar" : "Go to Dashboard"}' in rail
+    assert 'data-tooltip={collapsed ? "Expand sidebar" : "Dashboard"}' in rail
+
+
 def test_mode_toggle_styles_are_scoped_to_settings_menu():
     css = (ROOT / "src/styles/app.css").read_text()
 

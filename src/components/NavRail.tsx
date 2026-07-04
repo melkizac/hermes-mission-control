@@ -120,6 +120,21 @@ async function requestProjectChats(): Promise<ProjectChatResponse | null> {
   return res.json() as Promise<ProjectChatResponse>;
 }
 
+const PINNED_CHAT_TABS_KEY = "hmc:pinned-chat-tabs";
+const PENDING_OPEN_CHAT_SESSION_KEY = "hmc:pending-open-chat-session";
+
+function pinChatSession(sessionId: string) {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(PINNED_CHAT_TABS_KEY) || "[]");
+    const current = Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string" && id.trim().length > 0) : [];
+    window.localStorage.setItem(PINNED_CHAT_TABS_KEY, JSON.stringify([sessionId, ...current.filter((id) => id !== sessionId)].slice(0, 80)));
+    window.sessionStorage.setItem(PENDING_OPEN_CHAT_SESSION_KEY, sessionId);
+  } catch {
+    window.localStorage.setItem(PINNED_CHAT_TABS_KEY, JSON.stringify([sessionId]));
+    window.sessionStorage.setItem(PENDING_OPEN_CHAT_SESSION_KEY, sessionId);
+  }
+}
+
 function sessionTimeLabel(value?: string) {
   if (!value) return "";
   const time = new Date(value).getTime();
@@ -225,6 +240,7 @@ export function NavRail() {
     const needle = [session.project_owner, session.project_name, session.source, session.origin].filter(Boolean).join(" ").toLowerCase();
     const matchedAgent = agents.find((agent) => needle.includes(agent.id.toLowerCase()) || needle.includes(agent.name.toLowerCase()));
     if (matchedAgent) select(matchedAgent.id);
+    pinChatSession(session.id);
     window.dispatchEvent(new CustomEvent("hmc:open-chat-session", { detail: { sessionId: session.id } }));
     setView("agents");
   }
@@ -247,11 +263,15 @@ export function NavRail() {
         <button
           className="rail-brand-home"
           onClick={() => {
+            if (collapsed) {
+              setCollapsed(false);
+              return;
+            }
             if (uiMode === "admin") setUiMode("workspace");
             setView("dashboard");
           }}
-          aria-label="Go to Dashboard"
-          data-tooltip="Dashboard"
+          aria-label={collapsed ? "Expand sidebar" : "Go to Dashboard"}
+          data-tooltip={collapsed ? "Expand sidebar" : "Dashboard"}
         >
           <span className="mark">
             <img src={logoUrl} alt="Melverick_OS logo" />

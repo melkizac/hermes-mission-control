@@ -56,3 +56,16 @@ def test_chat_surfaces_do_not_import_workflow_library_into_agent_chat_initial_re
     assert "/api/workflows" not in chat_thread
     assert "listWorkflows" not in agents
     assert "/api/workflows" not in agents
+
+
+def test_left_rail_latest_human_chats_and_top_tabs_are_pinned_only():
+    nav = read("src/components/NavRail.tsx")
+    chat_thread = read("src/components/ChatThread.tsx")
+    assert ".filter((session) => session.human_initiated !== false)" in nav
+    assert ".slice(0, 5)" in nav
+    assert "hmc:pinned-chat-tabs" in nav
+    assert "hmc:pinned-chat-tabs" in chat_thread
+    assert "hmc:closed-chat-tabs" not in chat_thread
+    assert ".sort((a, b) => new Date(b.started_at || 0).getTime() - new Date(a.started_at || 0).getTime())" not in chat_thread
+    assert 'className="chat-session-tabs"' in chat_thread
+    assert "No kept chats" in chat_thread
