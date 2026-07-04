@@ -1788,6 +1788,7 @@ def persist_processing_state_locked():
                 'agent_id': item.get('agent_id'),
                 'started_at': item.get('started_at'),
                 'cancelled': bool(item.get('cancelled')),
+                'progress_events': list(item.get('progress_events') or [])[-12:],
             }
             for rid, item in PROCESSING_REQUESTS.items()
         ]
@@ -1807,10 +1808,62 @@ def reset_processing_state_file():
 def register_processing(agent_id, request_id):
     rid = safe_id(request_id) or f'req-{int(time.time() * 1000)}'
     aid = safe_id(agent_id) or 'default'
+    now = time.time()
     with PROCESSING_LOCK:
-        PROCESSING_REQUESTS[rid] = {'agent_id': aid, 'cancelled': False, 'started_at': time.time()}
+        PROCESSING_REQUESTS[rid] = {
+            'agent_id': aid,
+            'cancelled': False,
+            'started_at': now,
+            'progress_events': [{
+                'id': f'{rid}-accepted',
+                'requestId': rid,
+                'agent_id': aid,
+                'label': 'Request accepted',
+                'detail': 'Mission Control queued the message for the agent worker.',
+                'status': 'queued',
+                'stage': 'accepted',
+                'ts': now,
+            }],
+        }
         persist_processing_state_locked()
     return rid
+
+
+def append_processing_progress(request_id, label, detail='', status='running', stage='progress'):
+    rid = safe_id(request_id)
+    if not rid:
+        return None
+    now = time.time()
+    event = {
+        'id': f'{rid}-{safe_id(stage) or "progress"}-{int(now * 1000)}',
+        'requestId': rid,
+        'label': str(label or 'Working')[:160],
+        'detail': str(detail or '')[:500],
+        'status': str(status or 'running')[:40],
+        'stage': str(stage or 'progress')[:80],
+        'ts': now,
+    }
+    with PROCESSING_LOCK:
+        item = PROCESSING_REQUESTS.get(rid)
+        if not item:
+            return None
+        event['agent_id'] = item.get('agent_id')
+        events = list(item.get('progress_events') or [])
+        if events and events[-1].get('stage') == event['stage'] and events[-1].get('label') == event['label']:
+            events[-1] = {**events[-1], 'ts': now, 'detail': event.get('detail') or events[-1].get('detail', '')}
+        else:
+            events.append(event)
+        item['progress_events'] = events[-24:]
+        persist_processing_state_locked()
+    return event
+
+
+def processing_events_for_request(request_id):
+    rid = safe_id(request_id)
+    if not rid:
+        return []
+    with PROCESSING_LOCK:
+        return list((PROCESSING_REQUESTS.get(rid) or {}).get('progress_events') or [])
 
 
 def is_processing_cancelled(request_id):
@@ -1833,7 +1886,12 @@ def active_processing_items(agent_id=None):
                 continue
             if item.get('cancelled'):
                 continue
-            rows.append({'id': key, 'agent_id': item.get('agent_id'), 'started_at': item.get('started_at')})
+            rows.append({
+                'id': key,
+                'agent_id': item.get('agent_id'),
+                'started_at': item.get('started_at'),
+                'progressEvents': list(item.get('progress_events') or [])[-12:],
+            })
         return rows
 
 
@@ -1854,6 +1912,23 @@ def stop_processing(agent_id, request_id=None):
             item['cancelled'] = True
             stopped.append(key)
         if stopped:
+            now = time.time()
+            for key in stopped:
+                item = PROCESSING_REQUESTS.get(key)
+                if not item:
+                    continue
+                events = list(item.get('progress_events') or [])
+                events.append({
+                    'id': f'{key}-stopping-{int(now * 1000)}',
+                    'requestId': key,
+                    'agent_id': item.get('agent_id'),
+                    'label': 'Stop requested',
+                    'detail': 'Mission Control asked the worker to stop this message.',
+                    'status': 'stopping',
+                    'stage': 'stopping',
+                    'ts': now,
+                })
+                item['progress_events'] = events[-24:]
             persist_processing_state_locked()
     return {'ok': True, 'stopped': stopped, 'count': len(stopped)}
 
@@ -2112,6 +2187,7 @@ def profile_streaming_chat_completion(messages, model='hermes-agent', request_id
         {'model': model or 'hermes-agent', 'messages': messages, 'stream': True},
         timeout=CHAT_COMPLETION_STREAM_READ_TIMEOUT,
         extra_headers=headers,
+        request_id=request_id,
     )
 
 
@@ -2177,7 +2253,7 @@ def api_chat_completion(messages, model='hermes-agent', request_id=None, runtime
     if runtime_route:
         headers.update(runtime_route_headers(runtime_route))
     try:
-        return api_streaming_chat_completion(payload, timeout=CHAT_COMPLETION_STREAM_READ_TIMEOUT, extra_headers=headers)
+        return api_streaming_chat_completion(payload, timeout=CHAT_COMPLETION_STREAM_READ_TIMEOUT, extra_headers=headers, request_id=request_id)
     except urllib.error.HTTPError:
         raise
     except Exception:
@@ -2185,10 +2261,12 @@ def api_chat_completion(messages, model='hermes-agent', request_id=None, runtime
         # instead of the previous short timeout.  This path is intentionally
         # bounded; the preferred streaming path receives keepalives and can run
         # much longer without tripping a silent-read timeout.
+        if request_id:
+            append_processing_progress(request_id, 'Using non-streaming fallback', 'The streaming API did not complete, so Mission Control is waiting for a full response.', stage='fallback')
         return api_request('/chat/completions', method='POST', payload={**payload, 'stream': False}, timeout=CHAT_COMPLETION_FALLBACK_TIMEOUT, extra_headers=headers)[1]
 
 
-def api_streaming_chat_completion(payload, timeout=120, extra_headers=None):
+def api_streaming_chat_completion(payload, timeout=120, extra_headers=None, request_id=None):
     key = read_api_key()
     headers = {'Authorization': f'Bearer {key}'} if key else {}
     if extra_headers:
@@ -2206,10 +2284,19 @@ def api_streaming_chat_completion(payload, timeout=120, extra_headers=None):
     created = int(time.time())
     usage = {}
     finish_reason = 'stop'
+    first_content_at = None
+    if request_id:
+        append_processing_progress(request_id, 'Contacting agent runtime', 'Waiting for the Hermes streaming API to accept the chat request.', stage='runtime-start')
     with urllib.request.urlopen(req, timeout=timeout) as resp:
+        if request_id:
+            append_processing_progress(request_id, 'Agent runtime connected', 'Streaming response opened; waiting for model/tool activity.', stage='runtime-connected')
         for raw_line in resp:
             line = raw_line.decode('utf-8', errors='replace').strip()
-            if not line or line.startswith(':') or line.startswith('event:'):
+            if not line:
+                continue
+            if line.startswith(':') or line.startswith('event:'):
+                if request_id:
+                    append_processing_progress(request_id, 'Waiting for agent activity', 'The runtime is still connected while the agent works.', stage='runtime-keepalive')
                 continue
             if not line.startswith('data:'):
                 continue
@@ -2235,6 +2322,11 @@ def api_streaming_chat_completion(payload, timeout=120, extra_headers=None):
             piece = delta.get('content')
             if piece:
                 content_parts.append(piece)
+                if request_id and first_content_at is None:
+                    first_content_at = time.time()
+                    append_processing_progress(request_id, 'Receiving assistant response', 'The agent has started streaming the final answer.', stage='assistant-stream')
+    if request_id:
+        append_processing_progress(request_id, 'Finalizing answer', 'Mission Control is saving the completed assistant response into the chat timeline.', stage='finalizing')
     return {
         'id': completion_id or f'chatcmpl-hmc-{int(time.time() * 1000)}',
         'object': 'chat.completion',
@@ -20505,11 +20597,19 @@ class Handler(BaseHTTPRequestHandler):
                 request_id = str((q.get('requestId') or [''])[0] or '')
                 rows = ui_chat_messages(chat_channel_id)
                 request_messages = [row for row in rows if not request_id or row.get('requestId') == request_id]
-                active_ids = [item.get('id') for item in active_processing_items(chat_channel_id) if item.get('id')]
+                active_items = active_processing_items(chat_channel_id)
+                active_ids = [item.get('id') for item in active_items if item.get('id')]
+                progress_events = []
+                if request_id:
+                    progress_events = processing_events_for_request(request_id)
+                else:
+                    for item in active_items:
+                        progress_events.extend(item.get('progressEvents') or [])
                 self.send_json({
                     'requestId': request_id,
                     'messages': request_messages,
                     'processingRequests': active_ids,
+                    'progressEvents': progress_events[-12:],
                     'active': request_id in active_ids if request_id else bool(active_ids),
                 })
             elif len(parts) >= 4 and parts[3] == 'worker-transcript':
@@ -20879,9 +20979,11 @@ class Handler(BaseHTTPRequestHandler):
             messages.append({'role':'user','content': user_content})
             if payload.get('async'):
                 append_ui_chat_messages(runtime_channel_id, [user_msg])
+                append_processing_progress(request_id, 'Preparing prompt context', 'Mission Control saved your message and is building the agent prompt.', stage='prompt')
 
                 def _process_message_async():
                     try:
+                        append_processing_progress(request_id, 'Starting agent worker', 'The background worker is handing the request to the selected runtime/model route.', stage='worker-start')
                         if is_processing_cancelled(request_id):
                             raise MessageProcessingStopped()
                         data = api_chat_completion(messages, model=routing_selection.get('api_model') or 'hermes-agent', request_id=request_id, runtime_route=api_runtime_route)
@@ -20890,11 +20992,14 @@ class Handler(BaseHTTPRequestHandler):
                         content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
                         reply_ts = time.time()
                         reply = {'id': data.get('id') or f'ui-agent-{now_ms}', 'role': 'agent', 'text': content, 'at': 'now', 'ts': reply_ts, 'source': 'web-ui', 'requestId': request_id}
+                        append_processing_progress(request_id, 'Writing final answer', 'Mission Control is adding the assistant reply to the chat.', stage='saving')
                         append_ui_chat_messages(runtime_channel_id, [reply])
                     except MessageProcessingStopped:
+                        append_processing_progress(request_id, 'Message stopped', 'The request was stopped before the agent finished.', status='stopped', stage='stopped')
                         pass
                     except Exception as e:
                         error_ts = time.time()
+                        append_processing_progress(request_id, 'Message processing failed', str(e), status='error', stage='error')
                         append_ui_chat_messages(runtime_channel_id, [{
                             'id': f'ui-agent-error-{now_ms}',
                             'role': 'system',

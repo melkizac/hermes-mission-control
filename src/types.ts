@@ -817,6 +817,17 @@ export interface AgentHandoffMutationResponse {
   error?: string;
 }
 
+export interface ProcessingProgressEvent {
+  id: string;
+  requestId?: string;
+  agent_id?: string;
+  label: string;
+  detail?: string;
+  status?: "queued" | "running" | "stopping" | "stopped" | "error" | string;
+  stage?: string;
+  ts?: number;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -841,7 +852,7 @@ export interface Agent {
   files: ConfigFile[];
   messages: Message[];
   processingRequests?: string[];
-  processingRequestDetails?: Array<{ id: string; agent_id?: string; started_at?: number }>;
+  processingRequestDetails?: Array<{ id: string; agent_id?: string; started_at?: number; progressEvents?: ProcessingProgressEvent[] }>;
   artifacts: Artifact[];
   tasks: Task[];
   detailLoaded?: boolean;
