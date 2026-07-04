@@ -1,98 +1,129 @@
 # Hermes Mission Control
 
-Hermes Mission Control is the operator cockpit for Melverick's Hermes-based digital coworker system.
+Hermes Mission Control is Melverick's control plane for operating a Hermes-based AI workforce.
 
-Hermes is the worker layer. **Mission Control is the management, audit, and trust layer**: the control room that makes autonomous agent work visible, accountable, governable, and trustworthy instead of scattered across chats, cron jobs, Kanban records, browser sessions, runtime logs, and tool traces.
+Hermes is the worker/runtime layer. **Mission Control is the management, audit, governance, and trust layer**: the operator cockpit that makes autonomous work visible, accountable, interruptible, and reviewable across chats, agents, projects, task boards, routines, runtime connectors, browser sessions, approvals, evidence, costs, and audit logs.
 
-## What Mission Control does
+Live service: `https://hermes.melverick.com`
 
-Mission Control helps an operator answer:
+## What Mission Control helps Melverick do
 
-- **What needs me now?** Approval gates, blockers, failed routines, and runtime warnings.
-- **What is running?** Active agents, tasks, browser sessions, routines, and runtime connectors.
-- **What did agents produce?** Task results, artifacts, screenshots, links, evidence, and audit traces.
-- **Can I trust it?** Human-in-the-loop approvals, proof of work, execution boundaries, source data, and cost telemetry.
+Mission Control is designed to answer four operator questions:
 
-## Major revamp status
+| Question | Mission Control answer |
+|---|---|
+| **What needs me now?** | Approval gates, blockers, failed routines, runtime warnings, quota/cost alerts, and human-owned tasks. |
+| **What is running?** | Active chats, agent tasks, project missions, routines, research runs, browser sessions, runtime connectors, and desktop/gateway readiness. |
+| **What did agents produce?** | Task results, files, drafts, links, screenshots, browser evidence, run traces, comments, artifacts, and final evidence records. |
+| **Can I trust it?** | Approval policy, execution boundaries, account-sensitive action gates, source context, audit logs, model/cost telemetry, rollback notes, and proof-of-work evidence. |
 
-The current build includes the phased Mission Control revamp through Browser Activity and mobile/deep-link hardening:
+## Current capability map
 
-- **Mission Control** — daily operator cockpit for attention, running work, outputs, system health, and next actions.
-- **Delegate Work** — front door for routing a plain instruction into a project/agent task.
-- **Workflow Library** — packaged SME workflows such as Nexius Academy lead intake and LinkedIn content operating loop.
-- **Task Board** — operational queue for agent tasks, human-only tasks, blockers, comments, result review, artifacts, evidence, approval gates, and next actions.
-- **Needs Attention / Approval Gates** — human-in-the-loop queue for approve/reject decisions before external-facing, destructive, costly, or policy-sensitive actions.
-- **Agents** — profile-backed agent chat and runtime context.
-- **Agent Org / AI Workforce** — registry-backed digital coworker map with goals, flows, queues, outputs, permissions, and health.
-- **Routines** — Hermes cron jobs with schedule, status, outputs, and controls.
-- **Browser Activity** — browser session visibility with current domain/URL, screenshot slot, action log, account-sensitive and approval indicators, stop/takeover controls, and final evidence.
-- **Runtime Connectors / Desktop Gateway** — runtime readiness, connector tokens, execution boundaries, and delayed Windows-local enablement.
-- **Workspace Knowledge / Second Brain** — Karpathy-style LLM Wiki and source context browser.
-- **Audit / Evidence** — session/run trace inspection backed by Hermes state.
-- **Costs / Model Router** — usage visibility and cost-aware model routing policy.
-- **Mobile / Telegram handoff** — deep links for task, approval, agent, and task-result contexts.
+### 1. Operator command center
+
+- **Chat-first command center** for giving Melkizac plain-language instructions without pre-selecting Goal/Project/Mission/Task terminology.
+- **Attachment-aware requests** for documents, images, and data files up to the configured 50 MB composer guard.
+- **Permission mode selection** (`Full access`, `Ask permission`, `Draft only`) so the operator can constrain the next request before it is routed.
+- **Model selection / AUTO routing context** so requests can carry a model preference while still allowing policy-aware routing.
+- **Project and mission context** that can be attached to chat instructions when the work belongs to an existing project.
+- **Mobile / Telegram deep-link handoff** for task, approval, agent, and task-result contexts.
+
+### 2. AI workforce and agent operations
+
+- **Agent chat surfaces** for profile-backed conversations with specialist agents.
+- **Pinned/recent project chat sessions** in the navigation rail so active work can be resumed quickly.
+- **Agent Org / AI Workforce map** showing digital coworker responsibilities, goals, queues, outputs, permissions, and health.
+- **Agent detail drawers** for role, operating context, capabilities, and runtime status.
+- **Agent voice / standalone voice entry point** for the voice interaction surface.
+- **Shared agent template and platform-agent admin surfaces** for multi-agent workforce administration.
+
+### 3. Projects, goals, missions, and task execution
+
+Mission Control uses this canonical work model:
+
+```text
+Intent → Project → Goal → Mission → Tasks → Outputs / Evidence
+
+If repeatable:
+Goal → Workflow → Routine → Runs
+```
+
+- **Projects** act as folders / operating spaces for related goals, missions, tasks, files, evidence, routines, agents, and context.
+- **Delegate Work** turns a plain instruction into a routed project/agent task.
+- **Task Board** is the operational queue for agent-owned work, Melverick-owned decisions, blockers, comments, result review, artifacts, approval gates, and next actions.
+- **Task result and evidence views** expose what happened, what was produced, which links/files matter, and what the operator should do next.
+- **Operations / Work Hub surfaces** consolidate active operational workflows and automation entry points.
+
+### 4. Approvals, governance, and auditability
+
+- **Needs Attention / Approvals** queue for human-in-the-loop approve/reject decisions.
+- **Approval policy surfaces** for external-facing, destructive, costly, account-sensitive, or policy-sensitive actions.
+- **Capability governance** that can require approval gates, smoke evidence, rollback notes, health checks, and per-agent assignment before a tool/app/service is trusted.
+- **Audit / Runs Activity** for inspecting important operational traces, events, errors, retries, and evidence.
+- **Result evidence links / evidence records** for screenshots, final URLs, source links, build/test output, generated artifacts, approval records, and task comments.
+- **Admin-only permission boundaries** so workspace operators and platform admins see different surfaces.
+
+### 5. Runtime connectors, desktop gateway, and browser operations
+
+- **Runtime Connectors** show readiness, connector registration, heartbeat/status, execution boundaries, and runtime event ingestion.
+- **Desktop Gateway admin** documents Windows/local execution readiness without pretending that unconfigured real local-PC access is available.
+- **Browser Activity / Browser Operations** show browser sessions, current domain/URL, screenshot slots, action logs, account-sensitive flags, stop/takeover controls, approval-before-submit/post/send/purchase boundaries, and final evidence.
+- **Browser runtime event bridge** accepts lifecycle events from browser workers and merges them into Mission Control visibility.
+- **Reusable browser producer client** (`scripts/browser_runtime_producer.py`) lets Browserbase, Playwright, or desktop-browser jobs publish screenshots, action logs, final evidence, and stop/takeover polling data.
+- **Safe funnel-check probes and jobs** can inspect public website forms without submitting, capture evidence, create/update Task Board tasks, and stop at approval gates before sensitive actions.
+- **Production connector configuration gate** keeps real Browserbase, desktop-browser, and Windows gateway credentials redacted and blocked until explicit approval and dry-run connectivity checks pass.
+
+### 6. Workflows, routines, and automation governance
+
+- **Workflow Library / Workflow Templates Admin** for packaged repeatable workflows such as lead intake, LinkedIn/content operating loops, research-to-deliverable work, and website funnel checks.
+- **Routine Governance / Automations** for Hermes cron jobs, schedules, paused/enabled state, latest run status, outputs, and controls.
+- **Website Funnel Check routine flow** supports safe target registries, paused recurring bindings, explicit enablement after approval, run-now dry runs, evidence drill-down, and history counts while preserving `NO_SUBMIT` safeguards.
+- **Webhook/event-driven workflow support** is documented through the connector and routine model.
+
+### 7. Research, knowledge, files, and deliverables
+
+- **Research Run Monitor** tracks parallel research lanes, evidence, confidence, blockers, synthesis status, and operator-created wide research missions.
+- **Research-to-deliverable workflow** converts chat-detected source Q&A, decks, reports, proposals, revisions, and status requests into Projects, task graphs, sources, outputs, blockers, approvals, and editable artifacts.
+- **Second Brain / Workspace Knowledge** provides the Karpathy-style LLM Wiki and source context browser.
+- **Files / File System** surfaces workspace files and supports file inspection/editing through governed UI affordances.
+- **Memory, Skills, Tools, Plugins, Reflections** expose the reusable context, procedures, integrations, and learning surfaces behind the AI workforce.
+
+### 8. Capabilities and owned-app operations
+
+- **Capability Registry** manages OSS/package/service/owned-app capabilities with assignment, approval, smoke evidence, health, rollback, and disable flows.
+- **Owned App Capability Standard** covers first-party/operated apps such as Mission Control, Nexius Academy, SGQR/PayNow tools, lead dashboards, and other governed Melverick/Nexius properties.
+- **Tools Hub, Skills Hub, Plugins Hub** show available tools, procedural skills, and extension points for agents.
+- **Connector/runtime boundaries** clarify which tools are server-side, browser-based, desktop-local, simulated/demo, or blocked pending configuration.
+
+### 9. Admin, users, costs, and model routing
+
+- **Admin Console** centralizes platform setup and runtime governance.
+- **Users & Workspaces** supports the multi-user/workspace control-plane model.
+- **Workspace Runtime Console** separates runtime readiness from governance/control-plane decisions.
+- **Costs / Usage and Usage Remaining** expose model usage, limits, quota, and cost telemetry.
+- **Model Router** supports account/model routing policy, allow-listing, and cost-aware route planning.
+- **Settings / Profile** manage operator-level preferences and workspace/account configuration surfaces.
+
+## Important safety boundaries
+
+- Secrets, API keys, passwords, session cookies, gateway tokens, and connection strings must stay out of the repository and chat logs.
+- Production-affecting external actions such as posting, sending, submitting forms, deleting resources, rotating live secrets, changing DNS, or spending money must go through approval gates.
+- Real Browserbase, desktop-browser, or Windows gateway execution is intentionally gated behind connector configuration, redacted credentials, approval, and dry-run readiness checks.
+- Demo readiness, simulated browser sessions, and dummy Windows targets must never be described as real local-PC access.
+- Live hotfixes should be captured in GitHub promptly through a narrow commit/PR, with build/test/browser evidence and rollback notes.
 
 ## Detailed operator documentation
 
-The major-revamp documentation is here:
-
-```text
-docs/HERMES_MISSION_CONTROL.md
-```
-
-The Capability Registry operator SOP is here:
-
-```text
-docs/CAPABILITY_REGISTRY_OPERATOR_GUIDE.md
-```
-
-It explains how admins add OSS projects and package/service capabilities, how agents receive capabilities, how approval gates and smoke evidence work, and how to rollback or disable a capability.
-
-The Owned App Capability Standard is here:
-
-```text
-docs/OWNED_APP_CAPABILITY_SPEC.md
-```
-
-It defines `source_type: owned_app` for first-party/operated apps such as NetWorth Tracker, Mission Control, Nexius Academy site/funnel, SGQR/PayNow tools, and lead dashboards, including manifest schema, approvals, evidence, audit, health, rollback, and Mission Control display rules.
-
-The Melkizac research-to-deliverable operator SOP is here:
-
-```text
-docs/RESEARCH_TO_DELIVERABLE_WORKFLOW.md
-```
-
-It explains how Melkizac detects learning/source-Q&A/deck/report/proposal/revision/status intents from chat, creates Projects and Task Board graphs, processes sources, handles blockers/approvals, and returns editable artifacts with evidence.
-
-The Agent OS rollout, admin verification, and rollback guide is here:
-
-```text
-docs/AGENT_OS_ROLLOUT_OPERATOR_GUIDE.md
-```
-
-It records the verified rollout evidence, day-to-day operator flow, admin checks, DB/migration notes, rollback plan, and known limitations for the intelligent operating layer.
-
-## Canonical work terminology
-
-Use this simple relationship when explaining or designing Mission Control work:
-
-```text
-Project = the folder / operating space
-Goal = the desired result
-Mission = the campaign/run to achieve the result
-Task = the individual action
-Evidence = proof it happened
-```
-
-Example:
-
-```text
-Project: Nexius Academy Course Growth
-Goal: Increase qualified AI course signups
-Mission: Run this month’s signup campaign
-Tasks: Check funnel, draft posts, monitor leads, prepare follow-up
-Evidence: Screenshots, drafts, lead records, approval trail
-```
+| Document | Purpose |
+|---|---|
+| [`docs/HERMES_MISSION_CONTROL.md`](docs/HERMES_MISSION_CONTROL.md) | Main operator documentation and phased capability history. |
+| [`docs/CAPABILITY_REGISTRY_OPERATOR_GUIDE.md`](docs/CAPABILITY_REGISTRY_OPERATOR_GUIDE.md) | Adding capabilities, assigning agents, approval gates, smoke evidence, rollback, and disable procedures. |
+| [`docs/OWNED_APP_CAPABILITY_SPEC.md`](docs/OWNED_APP_CAPABILITY_SPEC.md) | Standard for governed first-party apps and owned operational systems. |
+| [`docs/RUNTIME_CONNECTOR_V2.md`](docs/RUNTIME_CONNECTOR_V2.md) | Runtime connector registration, heartbeat, and event ingestion. |
+| [`docs/AI_WORKFORCE_TEAM_MAP.md`](docs/AI_WORKFORCE_TEAM_MAP.md) | Melkizac/default and specialist-agent role map, ownership, handoff, and approval boundaries. |
+| [`docs/RESEARCH_TO_DELIVERABLE_WORKFLOW.md`](docs/RESEARCH_TO_DELIVERABLE_WORKFLOW.md) | Research/source-Q&A/deck/report/proposal workflow SOP. |
+| [`docs/AGENT_OS_ROLLOUT_OPERATOR_GUIDE.md`](docs/AGENT_OS_ROLLOUT_OPERATOR_GUIDE.md) | Agent OS rollout status, verification checklist, rollback notes, and known limitations. |
+| [`docs/ADMIN_PLATFORM_MULTI_RUNTIME_DESIGN.md`](docs/ADMIN_PLATFORM_MULTI_RUNTIME_DESIGN.md) | Multi-user, multi-workspace, multi-runtime admin platform design. |
 
 ## Quick local development
 
@@ -115,15 +146,12 @@ npm run build
 systemctl is-active hermes-mission-control.service
 ```
 
-Before any live restart, check:
+Before any live restart, check active processing state:
 
 ```bash
 cat /opt/hermes-mission-control/processing-requests.json
 ```
 
-## Safety notes
+## Sharing the repository
 
-- Do not print or commit passwords, API keys, tokens, session cookies, or connection strings.
-- Real Windows-local execution is not enabled until `WINDOWS_HERMES_GATEWAY_URL`, token, approved folders, and a connection probe are configured.
-- Demo readiness and simulated browser/Windows sessions must not be described as real local-PC access.
-- External submit/post/send/purchase actions should go through approval gates.
+A source snapshot is safe to share when generated from the GitHub repository after confirming no secrets are present. Prefer a ZIP/source archive when the recipient only needs the current code and does not need git history. A git bundle includes history and should be shared only when commit history is useful.
