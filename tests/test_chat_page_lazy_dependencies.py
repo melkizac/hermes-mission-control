@@ -62,7 +62,11 @@ def test_left_rail_latest_human_chats_and_top_tabs_are_pinned_only():
     nav = read("src/components/NavRail.tsx")
     chat_thread = read("src/components/ChatThread.tsx")
     assert ".filter((session) => session.human_initiated !== false)" in nav
-    assert ".slice(0, 5)" in nav
+    assert "INITIAL_CHAT_SESSION_COUNT = 5" in nav
+    assert "CHAT_SESSION_BATCH_SIZE = 5" in nav
+    assert "requestProjectChats(nextVisibleCount + 1)" in nav
+    assert 'aria-label="View more past conversations"' in nav
+    assert "View more conversations" in nav
     assert "hmc:pinned-chat-tabs" in nav
     assert "hmc:pinned-chat-tabs" in chat_thread
     assert "hmc:closed-chat-tabs" not in chat_thread
