@@ -485,6 +485,92 @@ def admin_access_payload(identity):
     }, 200
 
 
+def admin_dashboard_payload(identity):
+    denied, status = admin_access_denied(identity)
+    if denied:
+        return denied, status
+
+    access, access_status = admin_access_payload(identity)
+    if access_status != 200:
+        return access, access_status
+
+    gateway_process = shell("ps -eo pid,comm,args | grep -E 'hermes_cli.main gateway run|gateway run' | grep -v grep | head -1", timeout=3)
+    gateway_running = gateway_process.returncode == 0 and bool(gateway_process.stdout.strip())
+    api_ok = False
+    api_error = ''
+    try:
+        with urllib.request.urlopen('http://127.0.0.1:8642/health', timeout=1.5) as response:
+            api_ok = response.status == 200
+    except Exception as exc:
+        api_error = str(exc)[:240]
+
+    delivery = {'active': 0, 'failed_24h': 0, 'last_updated_at': None}
+    try:
+        with CHAT_DELIVERY_LOCK:
+            con = chat_delivery_connect()
+            delivery['active'] = con.execute(
+                "SELECT count(*) FROM chat_deliveries WHERE status IN ('accepted','running')"
+            ).fetchone()[0]
+            delivery['failed_24h'] = con.execute(
+                "SELECT count(*) FROM chat_deliveries WHERE status IN ('failed','interrupted') AND updated_at>=?",
+                (time.time() - 86400,),
+            ).fetchone()[0]
+            latest = con.execute('SELECT max(updated_at) FROM chat_deliveries').fetchone()[0]
+            delivery['last_updated_at'] = iso(latest) if latest else None
+            con.close()
+    except Exception:
+        pass
+
+    approvals = {'pending': 0, 'high_risk': 0}
+    try:
+        con = ensure_approvals_tables()
+        approvals['pending'] = con.execute(
+            "SELECT count(*) FROM approvals WHERE status IN ('drafted','ready')"
+        ).fetchone()[0]
+        approvals['high_risk'] = con.execute(
+            "SELECT count(*) FROM approvals WHERE risk IN ('high','critical') AND status IN ('drafted','ready')"
+        ).fetchone()[0]
+        con.close()
+    except Exception:
+        pass
+
+    summary = access.get('summary') or {}
+    running_runtimes = int(summary.get('running_runtimes') or 0)
+    total_runtimes = int(summary.get('runtimes') or 0)
+    attention = []
+    if not gateway_running or not api_ok:
+        attention.append('gateway')
+    if total_runtimes and running_runtimes < total_runtimes:
+        attention.append('runtimes')
+    if delivery['active']:
+        attention.append('active_deliveries')
+    if delivery['failed_24h']:
+        attention.append('failed_deliveries')
+    if approvals['pending']:
+        attention.append('approvals')
+
+    return {
+        'ok': True,
+        'gateway': {
+            'ok': gateway_running and api_ok,
+            'process_running': gateway_running,
+            'api_ok': api_ok,
+            'label': 'Hermes gateway and API online' if gateway_running and api_ok else 'Hermes communication needs attention',
+            'error': api_error,
+        },
+        'users': {
+            'active': int(summary.get('active') or 0),
+            'total': int(summary.get('total_users') or 0),
+            'workspaces': int(summary.get('workspaces') or 0),
+        },
+        'runtimes': {'running': running_runtimes, 'total': total_runtimes},
+        'delivery': delivery,
+        'approvals': approvals,
+        'attention': attention,
+        'generated_at': iso(time.time()),
+    }, 200
+
+
 def normalize_runtime_console_mode(value):
     mode = safe_id(value or 'supervise')
     if mode not in ('supervise', 'manage', 'impersonate'):
@@ -20557,6 +20643,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(status_payload())
         elif parsed.path == '/api/desktop-gateway':
             self.send_json(desktop_gateway_status(self.headers))
+        elif parsed.path == '/api/admin/dashboard':
+            result, status = admin_dashboard_payload(current_identity_from_cookie(self.headers.get('Cookie', '')))
+            self.send_json(result, status)
         elif parsed.path == '/api/admin/access':
             result, status = admin_access_payload(current_identity_from_cookie(self.headers.get('Cookie', '')))
             self.send_json(result, status)

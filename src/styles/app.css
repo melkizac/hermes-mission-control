@@ -3409,12 +3409,59 @@ input, select, textarea { font-family: inherit; }
 .admin-hub-card span { color: var(--faint); font-size: 10px; text-transform: uppercase; letter-spacing: .12em; font-weight: 900; }
 .admin-hub-card b { color: var(--ink); font-size: 14px; letter-spacing: -.15px; }
 .admin-hub-card small { color: var(--muted); line-height: 1.35; font-size: 12px; }
+.admin-dashboard-essential { max-width: 1500px; }
+@keyframes admin-spin { to { transform: rotate(360deg); } }
+.admin-refresh-spinner { animation: admin-spin .8s linear infinite; }
+.admin-health-summary { display: flex; align-items: center; gap: 12px; margin: 0 0 16px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 16px; background: #fff; }
+.admin-health-summary.good { border-color: rgba(18, 183, 106, .28); background: rgba(236, 253, 243, .72); }
+.admin-health-summary.warn { border-color: rgba(247, 144, 9, .3); background: rgba(255, 250, 235, .78); }
+.admin-health-summary > div { min-width: 0; flex: 1; display: grid; gap: 3px; }
+.admin-health-summary b { color: var(--ink); font-size: 14px; }
+.admin-health-summary p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.admin-health-icon { width: 36px; height: 36px; flex: 0 0 36px; display: grid; place-items: center; border-radius: 11px; color: #087f5b; background: rgba(18, 183, 106, .12); }
+.admin-health-summary.warn .admin-health-icon { color: #b54708; background: rgba(247, 144, 9, .14); }
+.admin-primary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.admin-primary-card { min-width: 0; min-height: 240px; display: flex; flex-direction: column; gap: 13px; padding: 16px; border: 1px solid var(--line); border-radius: 18px; background: #fff; box-shadow: var(--shadow-sm); }
+.admin-primary-card-head { display: flex; align-items: center; gap: 9px; color: var(--faint); font-size: 10px; font-weight: 900; letter-spacing: .11em; }
+.admin-primary-card-icon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: #0b6f66; background: var(--accent-soft); }
+.admin-primary-card-copy { display: grid; gap: 6px; }
+.admin-primary-card-copy h2 { margin: 0; color: var(--ink); font-size: 17px; letter-spacing: -.3px; }
+.admin-primary-card-copy p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.admin-primary-status { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12px; font-weight: 800; }
+.admin-primary-status span { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--faint); }
+.admin-primary-status.good span { background: var(--good); }
+.admin-primary-status.warn span { background: var(--warn); }
+.admin-primary-status.bad span { background: var(--bad); }
+.admin-primary-actions { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: auto; }
+.admin-primary-actions .btn { white-space: normal; text-align: left; }
+.admin-advanced-tools { border: 1px solid var(--line); border-radius: 16px; background: rgba(255, 255, 255, .72); overflow: hidden; }
+.admin-advanced-tools > summary { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 15px; cursor: pointer; list-style: none; }
+.admin-advanced-tools > summary::-webkit-details-marker { display: none; }
+.admin-advanced-tools > summary span { display: grid; gap: 3px; }
+.admin-advanced-tools > summary b { color: var(--ink); font-size: 13px; }
+.admin-advanced-tools > summary small { color: var(--muted); font-size: 12px; font-weight: 600; }
+.admin-advanced-tools > summary svg { color: var(--muted); transition: transform .18s ease; }
+.admin-advanced-tools[open] > summary svg { transform: rotate(180deg); }
+.admin-advanced-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 0 12px 12px; }
+.admin-advanced-grid button { min-width: 0; display: grid; gap: 4px; padding: 11px 12px; text-align: left; border: 1px solid var(--line); border-radius: 12px; background: #fff; cursor: pointer; }
+.admin-advanced-grid button:hover { border-color: rgba(14, 143, 132, .32); background: var(--accent-soft); }
+.admin-advanced-grid b { color: var(--ink); font-size: 12.5px; }
+.admin-advanced-grid small { color: var(--muted); font-size: 11.5px; line-height: 1.35; }
 .settings-section-title { margin: 4px 0 16px; }
 .settings-section-title h2 { margin-top: 4px; font-size: 22px; letter-spacing: -.35px; }
-@media (max-width: 1180px) { .admin-hub-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 1180px) {
+  .admin-hub-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .admin-primary-grid, .admin-advanced-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (max-width: 760px) {
   .admin-hub-grid { grid-template-columns: 1fr; }
   .admin-hub-card { min-height: auto; }
+  .admin-primary-grid { grid-template-columns: 1fr; }
+  .admin-primary-card { min-height: auto; }
+  .admin-health-summary { align-items: flex-start; }
+  .admin-health-summary > .btn { width: auto; }
+  .admin-advanced-grid { grid-template-columns: 1fr; }
+  .admin-advanced-tools > summary { align-items: flex-start; }
   .subnav { display: none; }
   .admin-parent .nav-caret { display: none; }
 }
