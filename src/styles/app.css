@@ -9478,6 +9478,9 @@ button.voice-activation {
 .mobile-chat-navigator-layer,
 .main-chat-mobile-menu,
 .mobile-chat-saved-banner { display: none; }
+.chat-load-earlier { display: block; min-height: 36px; margin: 8px auto 16px; border: 1px solid #cbd5e1; border-radius: 11px; padding: 7px 12px; background: #fff; color: #344054; font-size: 12px; font-weight: 850; }
+.chat-load-earlier:disabled { opacity: .65; }
+.chat-message-render-unit { content-visibility: auto; contain-intrinsic-size: auto 120px; }
 
 @media (max-width: 760px) {
   .mobile-chat-only-main,
@@ -9533,4 +9536,9 @@ button.voice-activation {
   .main-chat-saved-banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 13px; background: #eef2ff; color: #3730a3; font-size: 11px; font-weight: 750; }
   .main-chat-saved-banner button { border: 0; background: transparent; color: #3730a3; font-size: 11px; font-weight: 900; }
   .mobile-chat-only-main .clean-permission-select { display: inline-flex; max-width: 170px; }
+  .mobile-chat-pagination-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 13px; border-bottom: 1px solid #e4e7ec; background: #fff; color: #667085; font-size: 11px; }
+  .mobile-chat-pagination-bar .error { color: #b42318; }
+  .mobile-chat-pagination-bar button { min-height: 32px; border: 1px solid #cbd5e1; border-radius: 10px; padding: 5px 9px; background: #fff; color: #344054; font-size: 11px; font-weight: 850; }
+  .mobile-chat-pagination-bar button:disabled { opacity: .65; }
+  .mobile-chat-only-main .main-chat-row { content-visibility: auto; contain-intrinsic-size: auto 120px; }
 }

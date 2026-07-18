@@ -563,16 +563,27 @@ def bootstrap_auth_seed_users():
         AUTH_BOOTSTRAP_MATERIAL = material
 
 
-def row_identity(user_row, workspace_row=None):
+def row_identity(user_row, workspace_row=None, provision_resources=True):
     user = dict(user_row)
     workspace = dict(workspace_row) if workspace_row else None
     profile_row = None
     runtime_row = None
     try:
         con = auth_db_connect()
-        profile_row = ensure_user_hermes_profile(con, user_row, workspace_row)
-        runtime_row = ensure_user_runtime(con, user_row, profile_row)
-        con.commit()
+        if provision_resources:
+            profile_row = ensure_user_hermes_profile(con, user_row, workspace_row)
+            runtime_row = ensure_user_runtime(con, user_row, profile_row)
+            con.commit()
+        else:
+            profile_row = con.execute(
+                "SELECT * FROM hermes_profiles WHERE owner_user_id=? AND status='active' ORDER BY created_at LIMIT 1",
+                (user_row['id'],),
+            ).fetchone()
+            if profile_row:
+                runtime_row = con.execute(
+                    'SELECT * FROM user_runtimes WHERE user_id=? AND profile_id=? ORDER BY created_at LIMIT 1',
+                    (user_row['id'], profile_row['id']),
+                ).fetchone()
         con.close()
     except Exception:
         profile_row = None
@@ -609,7 +620,10 @@ def user_identity_by_email(email):
         con.close()
         return None
     workspace = con.execute('SELECT * FROM workspaces WHERE owner_user_id=? ORDER BY created_at LIMIT 1', (row['id'],)).fetchone()
-    identity = row_identity(row, workspace)
+    # Session validation runs on every authenticated API request. Runtime
+    # provisioning may inspect or start Docker containers, so this hot path
+    # only reads the records created during login/account setup.
+    identity = row_identity(row, workspace, provision_resources=False)
     con.close()
     return identity
 

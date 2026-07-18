@@ -14,7 +14,7 @@ def test_mobile_chat_restores_history_and_navigation_contract() -> None:
     assert 'aria-label="Open conversations and agents"' in source
     assert 'aria-label="Mobile conversations and agents"' in source
     assert "/api/project-chats" in source
-    assert "/messages`" in source
+    assert "/messages?${query.toString()}`" in source
 
 
 def test_mobile_chat_uses_selected_agent_for_communication() -> None:

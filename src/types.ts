@@ -743,7 +743,8 @@ export interface ProjectChatMessagesResponse {
   ok?: boolean;
   session?: Partial<ProjectChatSession>;
   messages: Message[];
-  summary?: { messages: number };
+  summary?: { messages: number; total_messages?: number };
+  pagination?: { limit: number; has_more: boolean; next_before?: string | null };
   error?: string;
 }
 
