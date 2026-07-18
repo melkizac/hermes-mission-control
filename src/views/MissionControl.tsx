@@ -3,6 +3,7 @@ import type React from "react";
 import { useStore } from "../services/store";
 import { Icon } from "../components/Icon";
 import { VoiceCoreOrb } from "../components/VoiceCoreOrb";
+import { TelegramMessage } from "../components/TelegramMessage";
 import { cachedJsonRequest } from "../services/queryCache";
 import { buildChatIntentPreview, confidenceFromScore, routeChatIntent, serializeChatIntentDecision } from "../services/chatIntentRouter";
 import type { ChatIntentDecision, ChatIntentPreview, ChatIntentNextAction, ChatIntentType, ChatMissionContext, ChatRoutineContext, ChatWorkflowContext } from "../services/chatIntentRouter";
@@ -2181,7 +2182,7 @@ export function MissionControl() {
                       </div>
                       {message.replyTo && <div className="main-chat-reply-context">Replying to {message.replyTo.author}: {mainChatReplyPreview(message.replyTo)}</div>}
                       <div className="main-chat-bubble">
-                        <p>{visibleChatText(message)}</p>
+                        <TelegramMessage text={visibleChatText(message)} />
                         {message.attachments?.length ? (
                           <div className="main-chat-message-attachments">
                             {message.attachments.map((attachment) => (
@@ -2211,7 +2212,7 @@ export function MissionControl() {
                       <time>just now</time>
                     </div>
                     <div className="main-chat-bubble">
-                      <p>{visiblePendingMainMessage.text}</p>
+                      <TelegramMessage text={visiblePendingMainMessage.text} />
                       {visiblePendingMainMessage.attachments.length ? (
                         <div className="main-chat-message-attachments">
                           {visiblePendingMainMessage.attachments.map((attachment) => (
