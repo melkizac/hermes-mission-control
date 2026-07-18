@@ -56,7 +56,9 @@ def seed_state_db(app):
             session_id TEXT,
             role TEXT,
             content TEXT,
-            created_at REAL
+            tool_calls TEXT,
+            tool_name TEXT,
+            timestamp REAL
         );
         """
     )
@@ -78,7 +80,7 @@ def seed_state_db(app):
         ],
     )
     con.executemany(
-        "INSERT INTO messages (id,session_id,role,content,created_at) VALUES (?,?,?,?,?)",
+        "INSERT INTO messages (id,session_id,role,content,timestamp) VALUES (?,?,?,?,?)",
         [
             ("m1", "chat-hmc", "user", "Please improve hermes.melverick.com project chat linking", now + 1),
             ("m2", "chat-hmc", "assistant", "Mission Control can index chats by project.", now + 1),
@@ -232,3 +234,50 @@ def test_recent_project_chat_fast_path_does_not_expose_unlinked_sessions_to_work
 
     assert payload["sessions"] == []
     assert payload["summary"]["fast_path"] is True
+
+
+def test_session_messages_use_direct_link_and_latest_cursor_pages_without_project_scan(tmp_path, monkeypatch):
+    app = load_backend_app(tmp_path, monkeypatch)
+    seed_state_db(app)
+    con = sqlite3.connect(app.STATE_DB)
+    now = 1_700_100_000
+    con.execute(
+        "INSERT INTO sessions (id,title,source,model,started_at,message_count,tool_call_count,input_tokens,output_tokens) VALUES (?,?,?,?,?,?,?,?,?)",
+        ("chat-long", "Long mobile chat", "web-ui", "gpt", now, 75, 0, 100, 200),
+    )
+    con.executemany(
+        "INSERT INTO messages (id,session_id,role,content,timestamp) VALUES (?,?,?,?,?)",
+        [(f"long-{i:03d}", "chat-long", "user" if i % 2 == 0 else "assistant", f"message {i}", now + i) for i in range(75)],
+    )
+    con.commit()
+    con.close()
+    app.ensure_project_sessions_table().close()
+    con = sqlite3.connect(app.STATE_DB)
+    con.execute(
+        "INSERT INTO project_sessions (project_id,session_id,relationship_type,summary,linked_by,linked_at,confidence,link_source) VALUES (?,?,?,?,?,?,?,?)",
+        ("mission-control", "chat-long", "discussion", "", "test", now, 1.0, "canonical"),
+    )
+    con.commit()
+    con.close()
+    monkeypatch.setattr(app, "project_session_text_index", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("opening a conversation must not aggregate transcripts")))
+    monkeypatch.setattr(app, "session_project_assignments", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("opening a conversation must not discover projects")))
+
+    first, first_status = app.project_chat_session_messages_payload("chat-long", admin_identity(), limit=50)
+    second, second_status = app.project_chat_session_messages_payload(
+        "chat-long",
+        admin_identity(),
+        limit=50,
+        before=first["pagination"]["next_before"],
+    )
+
+    assert first_status == second_status == 200
+    assert len(first["messages"]) == 50
+    assert first["messages"][0]["text"] == "message 25"
+    assert first["messages"][-1]["text"] == "message 74"
+    assert first["pagination"]["has_more"] is True
+    assert len(second["messages"]) == 25
+    assert second["messages"][0]["text"] == "message 0"
+    assert second["messages"][-1]["text"] == "message 24"
+    assert second["pagination"]["has_more"] is False
+    assert first["session"]["project_id"] == "mission-control"
+    assert {message["id"] for message in first["messages"]}.isdisjoint({message["id"] for message in second["messages"]})

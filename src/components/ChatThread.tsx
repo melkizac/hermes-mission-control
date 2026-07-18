@@ -161,6 +161,7 @@ export function ChatThread({
   const [agentActionMenuOpen, setAgentActionMenuOpen] = useState(false);
   const [selectedChatTabId, setSelectedChatTabId] = useState<string>("start");
   const [sessionMessages, setSessionMessages] = useState<Record<string, Message[]>>({});
+  const [sessionMessagePagination, setSessionMessagePagination] = useState<Record<string, ProjectChatMessagesResponse["pagination"]>>({});
   const [sessionMessageLoading, setSessionMessageLoading] = useState<Record<string, boolean>>({});
   const [sessionMessageErrors, setSessionMessageErrors] = useState<Record<string, string>>({});
   const [startPermissionMode, setStartPermissionMode] = useState<AgentStartPermissionMode>("full-policy");
@@ -320,18 +321,19 @@ export function ChatThread({
       delete next[sessionId];
       return next;
     });
-    fetch(`${window.location.protocol}//${window.location.host}/api/project-chats/${encodeURIComponent(sessionId)}/messages`, {
+    fetch(`${window.location.protocol}//${window.location.host}/api/project-chats/${encodeURIComponent(sessionId)}/messages?limit=50`, {
       credentials: "include",
       headers: { Accept: "application/json" },
     })
       .then(async (res) => {
         const data = await res.json().catch(() => ({})) as ProjectChatMessagesResponse;
         if (!res.ok || data.error) throw new Error(data.error || res.statusText || "Unable to load chat session");
-        return data.messages ?? [];
+        return data;
       })
-      .then((messages) => {
+      .then((data) => {
         if (!alive) return;
-        setSessionMessages((current) => ({ ...current, [sessionId]: messages }));
+        setSessionMessages((current) => ({ ...current, [sessionId]: data.messages ?? [] }));
+        setSessionMessagePagination((current) => ({ ...current, [sessionId]: data.pagination }));
       })
       .catch((err) => {
         if (!alive) return;
@@ -346,6 +348,35 @@ export function ChatThread({
       alive = false;
     };
   }, [effectiveSelectedSessionId, sessionMessages]);
+
+  async function loadEarlierSessionMessages() {
+    const sessionId = effectiveSelectedSessionId;
+    const pagination = sessionMessagePagination[sessionId];
+    const before = pagination?.next_before;
+    const fetchKey = `${sessionId}|${before || ""}`;
+    if (sessionId === "all" || !before || sessionMessageFetchesRef.current.has(fetchKey)) return;
+    sessionMessageFetchesRef.current.add(fetchKey);
+    setSessionMessageLoading((current) => ({ ...current, [sessionId]: true }));
+    try {
+      const query = new URLSearchParams({ limit: "50", before });
+      const res = await fetch(`${window.location.protocol}//${window.location.host}/api/project-chats/${encodeURIComponent(sessionId)}/messages?${query.toString()}`, {
+        credentials: "include",
+        headers: { Accept: "application/json" },
+      });
+      const data = await res.json().catch(() => ({})) as ProjectChatMessagesResponse;
+      if (!res.ok || data.error) throw new Error(data.error || res.statusText || "Unable to load earlier messages");
+      setSessionMessages((current) => {
+        const combined = [...(data.messages ?? []), ...(current[sessionId] ?? [])];
+        return { ...current, [sessionId]: combined.filter((message, index) => combined.findIndex((candidate) => candidate.id === message.id) === index) };
+      });
+      setSessionMessagePagination((current) => ({ ...current, [sessionId]: data.pagination }));
+    } catch (err) {
+      setSessionMessageErrors((current) => ({ ...current, [sessionId]: err instanceof Error ? err.message : "Unable to load earlier messages" }));
+    } finally {
+      sessionMessageFetchesRef.current.delete(fetchKey);
+      setSessionMessageLoading((current) => ({ ...current, [sessionId]: false }));
+    }
+  }
 
   useEffect(() => {
     window.localStorage.setItem(PINNED_CHAT_TABS_KEY, JSON.stringify(pinnedChatTabIds.slice(0, 80)));
@@ -741,6 +772,11 @@ export function ChatThread({
               ? `Project view · ${activeProjectName ?? selectedProjectId}`
               : "Global Command Chat · sorted into projects and sessions"}
         </div>
+        {effectiveSelectedSessionId !== "all" && sessionMessagePagination[effectiveSelectedSessionId]?.has_more && (
+          <button className="chat-load-earlier" type="button" onClick={() => void loadEarlierSessionMessages()} disabled={sessionMessageLoading[effectiveSelectedSessionId]}>
+            {sessionMessageLoading[effectiveSelectedSessionId] ? "Loading earlier messagesâ€¦" : "Load earlier messages"}
+          </button>
+        )}
         {sortedMessages.length === 0 && effectiveSelectedSessionId !== "all" && sessionMessageLoading[effectiveSelectedSessionId] && (
           <div className="empty" style={{ marginTop: 30 }}>
             Loading conversation...
@@ -757,7 +793,7 @@ export function ChatThread({
           </div>
         )}
         {sortedMessages.map((m) => (
-          <div key={m.id}>
+          <div className="chat-message-render-unit" key={m.id}>
             {m.id === unreadStartId && (
               <div className="unread-divider" ref={unreadRef}>
                 <span>Unread since your last visit</span>

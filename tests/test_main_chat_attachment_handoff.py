@@ -8,7 +8,8 @@ PRODUCTION_ROOT = Path('/opt/hermes-mission-control/source')
 ROOT = PRODUCTION_ROOT if PRODUCTION_ROOT.exists() else Path(__file__).resolve().parents[1]
 MISSION_PATH = ROOT / 'src/views/MissionControl.tsx'
 STORE_PATH = ROOT / 'src/services/store.tsx'
-APP_PATH = Path('/opt/hermes-mission-control/app.py')
+PRODUCTION_APP_PATH = Path('/opt/hermes-mission-control/app.py')
+APP_PATH = PRODUCTION_APP_PATH if PRODUCTION_APP_PATH.exists() else ROOT / 'backend/app.py'
 
 
 def test_main_chat_uploads_selected_files_before_routing_or_sending():

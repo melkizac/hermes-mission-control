@@ -8226,7 +8226,7 @@ def project_chat_session_record(session_id):
     return indexed.get(session_id)
 
 
-def project_chat_session_messages_payload(session_id, identity=None, limit=500):
+def project_chat_session_messages_payload(session_id, identity=None, limit=50, before=None):
     session_id = str(session_id or '').strip()
     if not session_id:
         return {'ok': False, 'error': 'session_id is required'}, 400
@@ -8236,38 +8236,53 @@ def project_chat_session_messages_payload(session_id, identity=None, limit=500):
         con = sqlite3.connect(f'file:{STATE_DB}?mode=ro', uri=True, timeout=2)
         con.row_factory = sqlite3.Row
         session = con.execute(
-            'SELECT id,title,source,model,started_at FROM sessions WHERE id=?',
+            'SELECT id,title,source,model,started_at,message_count FROM sessions WHERE id=?',
             (session_id,),
         ).fetchone()
         if not session:
             con.close()
             return {'ok': False, 'error': 'session not found'}, 404
-        rows = con.execute("""
+        cursor_clause = ''
+        cursor_params = []
+        if before:
+            try:
+                before_ts, before_id = str(before).rsplit('|', 1)
+                before_ts = float(before_ts)
+                cursor_clause = ' AND (timestamp < ? OR (timestamp = ? AND id < ?))'
+                cursor_params = [before_ts, before_ts, before_id]
+            except Exception:
+                cursor_clause = ''
+                cursor_params = []
+        rows = con.execute(f"""
             SELECT id,session_id,role,content,tool_calls,tool_name,timestamp
             FROM messages
             WHERE session_id=?
               AND role IN ('user','assistant','tool')
               AND content IS NOT NULL AND trim(content) != ''
-            ORDER BY timestamp ASC, id ASC
+              {cursor_clause}
+            ORDER BY timestamp DESC, id DESC
             LIMIT ?
-        """, (session_id, int(limit or 500))).fetchall()
+        """, (session_id, *cursor_params, int(limit or 50) + 1)).fetchall()
         con.close()
     except Exception as exc:
         return {'ok': False, 'error': str(exc) or 'Unable to load session messages'}, 500
 
-    project_map = {}
-    try:
-        indexed = project_session_text_index({session_id}, limit=1)
-        project_map, _ = session_project_assignments(indexed.values())
-    except Exception:
-        project_map = {}
-    assigned = project_map.get(session_id) or {}
-    project_id = assigned.get('project_id')
-    project_name = assigned.get('project_name')
+    has_more = len(rows) > int(limit or 50)
+    page_rows_desc = rows[:int(limit or 50)]
+    page_rows = list(reversed(page_rows_desc))
+    next_before = None
+    if has_more and page_rows:
+        earliest = page_rows[0]
+        next_before = f"{float(earliest['timestamp'] or 0)}|{earliest['id']}"
+
+    direct_links = canonical_project_session_links(session_ids={session_id}, limit=1)
+    direct_link = direct_links[0] if direct_links else {}
+    project_id = direct_link.get('project_id') or 'general-chat'
+    project_name = direct_link.get('project_name') or 'General chat'
     source = session['source'] or 'unknown'
     source_label = display_source_label(source)
     messages = []
-    for r in rows:
+    for r in page_rows:
         role = r['role'] or 'system'
         content = r['content'] or ''
         if role == 'user':
@@ -8308,7 +8323,12 @@ def project_chat_session_messages_payload(session_id, identity=None, limit=500):
             'project_name': project_name,
         },
         'messages': messages,
-        'summary': {'messages': len(messages)},
+        'summary': {'messages': len(messages), 'total_messages': int(session['message_count'] or len(messages))},
+        'pagination': {
+            'limit': int(limit or 50),
+            'has_more': has_more,
+            'next_before': next_before,
+        },
     }, 200
 
 
@@ -20642,10 +20662,11 @@ class Handler(BaseHTTPRequestHandler):
             session_id = unquote(parts[2]) if len(parts) >= 3 else ''
             q = parse_qs(parsed.query)
             try:
-                limit = min(max(int((q.get('limit') or ['500'])[0]), 20), 1000)
+                limit = min(max(int((q.get('limit') or ['50'])[0]), 10), 200)
             except Exception:
-                limit = 500
-            result, status = project_chat_session_messages_payload(session_id, current_identity_from_cookie(self.headers.get('Cookie', '')), limit=limit)
+                limit = 50
+            before = (q.get('before') or [None])[0]
+            result, status = project_chat_session_messages_payload(session_id, current_identity_from_cookie(self.headers.get('Cookie', '')), limit=limit, before=before)
             self.send_json(result, status)
         elif parsed.path == '/api/files':
             result, status = file_browser_payload(parse_qs(parsed.query), current_identity_from_cookie(self.headers.get('Cookie', '')))

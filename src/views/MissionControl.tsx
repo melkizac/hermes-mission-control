@@ -37,6 +37,12 @@ type MainChatPendingMessage = {
   attachments: ChatAttachment[];
 };
 
+type MobileConversationCacheEntry = {
+  messages: Message[];
+  pagination?: ProjectChatMessagesResponse["pagination"];
+  cachedAt: number;
+};
+
 type AgentOsIntentRoute = {
   intent_type?: string;
   research_deliverable_intent?: string | null;
@@ -474,6 +480,9 @@ export function MissionControl() {
   const [mobileHistoryError, setMobileHistoryError] = useState<string | null>(null);
   const [mobileSelectedSession, setMobileSelectedSession] = useState<ProjectChatSession | null>(null);
   const [mobileSessionMessages, setMobileSessionMessages] = useState<Message[] | null>(null);
+  const [mobileSessionPagination, setMobileSessionPagination] = useState<ProjectChatMessagesResponse["pagination"]>();
+  const [mobileConversationLoading, setMobileConversationLoading] = useState(false);
+  const [mobileEarlierLoading, setMobileEarlierLoading] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>("idle");
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [voiceMessage, setVoiceMessage] = useState("Click the mic and speak. I will transcribe your voice into the message box.");
@@ -511,6 +520,8 @@ export function MissionControl() {
   const activeMainRequestRef = useRef<{ id: string; controller: AbortController } | null>(null);
   const activeMainUploadedAttachmentsRef = useRef<Attachment[]>([]);
   const mobileHistoryRequestRef = useRef<Promise<void> | null>(null);
+  const mobileConversationCacheRef = useRef<Map<string, MobileConversationCacheEntry>>(new Map());
+  const mobileConversationFetchesRef = useRef<Map<string, Promise<ProjectChatMessagesResponse>>>(new Map());
 
   function resizeComposerTextarea() {
     const textarea = composerTextareaRef.current;
@@ -751,24 +762,96 @@ export function MissionControl() {
     return () => window.clearTimeout(timer);
   }, [loadMobileConversationIndex, mobileProjectChats]);
 
-  async function openMobileConversation(session: ProjectChatSession) {
-    setMobileHistoryLoading(true);
-    setMobileHistoryError(null);
-    try {
-      const response = await fetch(`${window.location.protocol}//${window.location.host}/api/project-chats/${encodeURIComponent(session.id)}/messages`, {
+  async function requestMobileConversationPage(sessionId: string, before?: string | null) {
+    const requestKey = `${sessionId}|${before || "latest"}`;
+    const existing = mobileConversationFetchesRef.current.get(requestKey);
+    if (existing) return existing;
+    const request = (async () => {
+      const query = new URLSearchParams({ limit: "50" });
+      if (before) query.set("before", before);
+      const response = await fetch(`${window.location.protocol}//${window.location.host}/api/project-chats/${encodeURIComponent(sessionId)}/messages?${query.toString()}`, {
         credentials: "include",
         headers: { Accept: "application/json" },
       });
       const data = await response.json().catch(() => ({})) as ProjectChatMessagesResponse;
       if (!response.ok || data.error) throw new Error(data.error || `Conversation failed (${response.status}).`);
-      setMobileSelectedSession(session);
-      setMobileSessionMessages((data.messages ?? []).filter(isRenderableChatMessage));
-      setHasStartedMainChat(true);
-      setMobileNavigatorOpen(false);
+      return data;
+    })();
+    mobileConversationFetchesRef.current.set(requestKey, request);
+    try {
+      return await request;
+    } finally {
+      mobileConversationFetchesRef.current.delete(requestKey);
+    }
+  }
+
+  async function prefetchMobileConversation(session: ProjectChatSession) {
+    const cached = mobileConversationCacheRef.current.get(session.id);
+    if (cached && Date.now() - cached.cachedAt < 120_000) return;
+    try {
+      const data = await requestMobileConversationPage(session.id);
+      mobileConversationCacheRef.current.set(session.id, {
+        messages: (data.messages ?? []).filter(isRenderableChatMessage),
+        pagination: data.pagination,
+        cachedAt: Date.now(),
+      });
+    } catch {
+      // Opening the conversation surfaces errors; speculative prefetch stays silent.
+    }
+  }
+
+  async function openMobileConversation(session: ProjectChatSession) {
+    setMobileHistoryError(null);
+    const cached = mobileConversationCacheRef.current.get(session.id);
+    setMobileSelectedSession(session);
+    setHasStartedMainChat(true);
+    setMobileNavigatorOpen(false);
+    if (cached && Date.now() - cached.cachedAt < 120_000) {
+      setMobileSessionMessages(cached.messages);
+      setMobileSessionPagination(cached.pagination);
+      setMobileConversationLoading(false);
+      return;
+    }
+    setMobileSessionMessages([]);
+    setMobileSessionPagination(undefined);
+    setMobileConversationLoading(true);
+    try {
+      const data = await requestMobileConversationPage(session.id);
+      const messages = (data.messages ?? []).filter(isRenderableChatMessage);
+      mobileConversationCacheRef.current.set(session.id, { messages, pagination: data.pagination, cachedAt: Date.now() });
+      setMobileSessionMessages(messages);
+      setMobileSessionPagination(data.pagination);
     } catch (err) {
       setMobileHistoryError(err instanceof Error ? err.message : "Conversation could not be opened.");
     } finally {
-      setMobileHistoryLoading(false);
+      setMobileConversationLoading(false);
+    }
+  }
+
+  async function loadEarlierMobileConversation() {
+    const session = mobileSelectedSession;
+    const before = mobileSessionPagination?.next_before;
+    if (!session || !before || mobileEarlierLoading) return;
+    const history = mainChatHistoryRef.current;
+    const previousHeight = history?.scrollHeight ?? 0;
+    setMobileEarlierLoading(true);
+    try {
+      const data = await requestMobileConversationPage(session.id, before);
+      const earlier = (data.messages ?? []).filter(isRenderableChatMessage);
+      setMobileSessionMessages((current) => {
+        const combined = [...earlier, ...(current ?? [])];
+        const unique = combined.filter((message, index) => combined.findIndex((candidate) => candidate.id === message.id) === index);
+        mobileConversationCacheRef.current.set(session.id, { messages: unique, pagination: data.pagination, cachedAt: Date.now() });
+        return unique;
+      });
+      setMobileSessionPagination(data.pagination);
+      window.requestAnimationFrame(() => {
+        if (history) history.scrollTop += Math.max(0, history.scrollHeight - previousHeight);
+      });
+    } catch (err) {
+      setMobileHistoryError(err instanceof Error ? err.message : "Earlier messages could not be loaded.");
+    } finally {
+      setMobileEarlierLoading(false);
     }
   }
 
@@ -781,6 +864,8 @@ export function MissionControl() {
     setMobileSelectedAgentId(agentId);
     setMobileSelectedSession(null);
     setMobileSessionMessages(null);
+    setMobileSessionPagination(undefined);
+    setMobileConversationLoading(false);
     setMainChatReplyTo(null);
     setHasStartedMainChat(true);
     setMobileNavigatorOpen(false);
@@ -790,6 +875,8 @@ export function MissionControl() {
   function createNewMobileChat() {
     setMobileSelectedSession(null);
     setMobileSessionMessages(null);
+    setMobileSessionPagination(undefined);
+    setMobileConversationLoading(false);
     setMainChatReplyTo(null);
     setDraft("");
     setAttachments([]);
@@ -1757,6 +1844,8 @@ export function MissionControl() {
     if (mobileSelectedSession) {
       setMobileSelectedSession(null);
       setMobileSessionMessages(null);
+      setMobileSessionPagination(undefined);
+      setMobileConversationLoading(false);
     }
     if (!options.keepVoiceScreen) {
       // Plain text submits must never inherit a previous voice session's reply mode.
@@ -1908,7 +1997,7 @@ export function MissionControl() {
             {!mobileHistoryLoading && !mobileHistoryError && recentSessions.length === 0 && <p className="mobile-chat-history-note">No saved conversations yet.</p>}
             <div className="mobile-chat-session-list">
               {recentSessions.map((session) => (
-                <button type="button" key={session.id} onClick={() => void openMobileConversation(session)}>
+                <button type="button" key={session.id} onPointerDown={() => void prefetchMobileConversation(session)} onClick={() => void openMobileConversation(session)}>
                   <strong>{session.title || "Untitled conversation"}</strong>
                   <span>{session.project_name || "General"} · {session.messages} messages</span>
                   <time>{session.started_at ? new Date(session.started_at).toLocaleDateString() : ""}</time>
@@ -2051,14 +2140,24 @@ export function MissionControl() {
         </header>
 
         {mobileSelectedSession && <div className="mobile-chat-saved-banner"><span>Viewing saved conversation</span><button type="button" onClick={() => startMobileChat(activeChatAgentId)}>Return to live chat</button></div>}
+        {mobileSelectedSession && (mobileConversationLoading || mobileSessionPagination?.has_more || mobileHistoryError) && (
+          <div className="mobile-chat-pagination-bar" role="status" aria-live="polite">
+            {mobileConversationLoading ? <span>Loading conversationâ€¦</span> : mobileHistoryError ? <span className="error">{mobileHistoryError}</span> : <span>Showing the latest messages</span>}
+            {!mobileConversationLoading && mobileSessionPagination?.has_more && (
+              <button type="button" onClick={() => void loadEarlierMobileConversation()} disabled={mobileEarlierLoading}>
+                {mobileEarlierLoading ? "Loading earlier messagesâ€¦" : "Load earlier messages"}
+              </button>
+            )}
+          </div>
+        )}
         <main ref={mainChatHistoryRef} className={`main-chat-history ${voiceStatus !== "idle" ? "voice-mode" : ""}`} aria-label={voiceStatus !== "idle" ? "Voice input activation" : `${activeChatAgentName} conversation history`}>
           {voiceStatus !== "idle" ? (
             renderVoiceActivation("full")
           ) : displayedMainChatMessages.length === 0 && !visiblePendingMainMessage ? (
             <div className="main-chat-empty-state">
               <span className="main-chat-avatar">{activeChatAgent?.initials || "ME"}</span>
-              <strong>No messages with {activeChatAgentName} yet</strong>
-              <p>Send a message below to start this conversation.</p>
+              <strong>{mobileConversationLoading ? "Loading conversationâ€¦" : `No messages with ${activeChatAgentName} yet`}</strong>
+              <p>{mobileConversationLoading ? "Retrieving the latest messages." : "Send a message below to start this conversation."}</p>
             </div>
           ) : (
             <>
