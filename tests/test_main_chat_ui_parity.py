@@ -1,37 +1,38 @@
 from pathlib import Path
 
-ROOT = Path('/opt/hermes-mission-control/source')
+PRODUCTION_ROOT = Path('/opt/hermes-mission-control/source')
+ROOT = PRODUCTION_ROOT if PRODUCTION_ROOT.exists() else Path(__file__).resolve().parents[1]
 MISSION_PATH = ROOT / 'src/views/MissionControl.tsx'
 
 
 def test_main_chat_default_load_keeps_hero_unless_user_or_backend_starts_chat():
     mission = MISSION_PATH.read_text(encoding='utf-8')
-    assert 'void refreshAgent("default").catch(() => undefined);' in mission
+    assert 'void refreshAgent(activeChatAgentId).catch(() => undefined);' in mission
     assert 'const shouldShowMainChatTranscript = hasStartedMainChat || Boolean(visiblePendingMainMessage) || Boolean(activeMainBackendRequestId);' in mission
     assert 'hasStartedMainChat || mainChatMessages.length > 0' not in mission
     assert 'return !shouldShowMainChatTranscript ? (' in mission
-    assert 'mainChatMessages.map((message) => {' in mission
+    assert 'displayedMainChatMessages.map((message) => {' in mission
     assert 'className={`main-chat-row ${isUser ? "user" : "agent"}`}' in mission
 
 
 def test_main_chat_processing_reconciles_backend_requests_like_agent_chat():
     mission = MISSION_PATH.read_text(encoding='utf-8')
     assert 'const activeMainBackendRequestId = useMemo(() => {' in mission
-    assert 'const activeIds = new Set(melkizac?.processingRequests ?? []);' in mission
+    assert 'const activeIds = new Set(activeChatAgent?.processingRequests ?? []);' in mission
     assert 'message.requestId === userMessage.requestId && (message.role === "agent" || message.role === "system")' in mission
     assert 'const isMainChatProcessing = sending || Boolean(routingActionBusy) || Boolean(activeMainBackendRequestId);' in mission
     assert 'const effectiveProcessingStartedAt = processingStartedAt ?? activeMainBackendStartedAt;' in mission
     assert 'if (!activeMainBackendRequestId || sending) return;' in mission
-    assert 'window.setInterval(() => void refreshAgent("default").catch(() => undefined), 3000)' in mission
+    assert 'window.setInterval(() => void refreshAgent(activeChatAgentId).catch(() => undefined), 3000)' in mission
     assert 'through /messages/status; this fallback detail refresh is only for an' in mission
-    assert 'Melkizac is processing…' in mission
+    assert '{activeChatAgentName} is processing…' in mission
 
 
 def test_main_chat_stop_and_transient_errors_match_agent_chat_reconciliation():
     mission = MISSION_PATH.read_text(encoding='utf-8')
     assert 'const requestId = active?.id ?? activeMainBackendRequestId ?? undefined;' in mission
-    assert 'await stopProcessingForAgent("default", requestId);' in mission
-    assert 'await refreshAgent("default").catch(() => undefined);' in mission
+    assert 'await stopProcessingForAgent(activeChatAgentId, requestId);' in mission
+    assert 'await refreshAgent(activeChatAgentId).catch(() => undefined);' in mission
     assert 'bad gateway|gateway|timeout|network|failed to fetch|502|503|504' in mission
     assert 'Connection dropped while Melkizac was processing. Refreshing the latest chat instead of putting the sent message back in the composer…' in mission
     assert 'for (const delay of [1200, 3000, 6000, 10000])' in mission

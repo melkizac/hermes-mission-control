@@ -4,7 +4,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-ROOT = Path('/opt/hermes-mission-control/source')
+PRODUCTION_ROOT = Path('/opt/hermes-mission-control/source')
+ROOT = PRODUCTION_ROOT if PRODUCTION_ROOT.exists() else Path(__file__).resolve().parents[1]
 MISSION_PATH = ROOT / 'src/views/MissionControl.tsx'
 STORE_PATH = ROOT / 'src/services/store.tsx'
 APP_PATH = Path('/opt/hermes-mission-control/app.py')
@@ -15,11 +16,11 @@ def test_main_chat_uploads_selected_files_before_routing_or_sending():
     store = STORE_PATH.read_text(encoding='utf-8')
 
     assert 'uploadAttachmentToAgent: (agentId: string, file: File)' in store
-    assert 'uploadAttachmentToAgent("default", item.file)' in mission
+    assert 'uploadAttachmentToAgent(activeChatAgentId, item.file)' in mission
     assert 'const uploadedAttachments = sentAttachments.length ? await uploadMainChatAttachments(sentAttachments) : [];' in mission
     assert 'activeMainUploadedAttachmentsRef.current = uploadedAttachments;' in mission
-    assert 'sendToAgent("default", composeInstructionContext(current.instruction, current.decision), activeMainUploadedAttachmentsRef.current' in mission
-    assert 'sendToAgent("default", composeClarificationContext(current.instruction, current.decision, current.preview), activeMainUploadedAttachmentsRef.current' in mission
+    assert 'sendToAgent(activeChatAgentId, composeInstructionContext(current.instruction, current.decision), activeMainUploadedAttachmentsRef.current' in mission
+    assert 'sendToAgent(activeChatAgentId, composeClarificationContext(current.instruction, current.decision, current.preview), activeMainUploadedAttachmentsRef.current' in mission
 
 
 def test_research_deliverable_route_carries_uploaded_attachment_paths_to_backend():
