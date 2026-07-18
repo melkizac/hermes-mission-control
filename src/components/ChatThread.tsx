@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useStore } from "../services/store";
 import { Icon } from "./Icon";
 import { AgentAvatar } from "./AgentAvatar";
+import { TelegramMessage } from "./TelegramMessage";
 import type { Agent, Attachment, Message, ModelRoutingSelection, ProjectChatMessagesResponse, ProjectChatResponse, ReplyContext, RouterConfig } from "../types";
 import { formatSingaporeTime } from "../utils/time";
 
@@ -1278,7 +1279,7 @@ function MessageView({ m, agent, onReply }: { m: Message; agent: Agent; onReply?
           </span>
         </div>
         <ReplyQuote reply={m.replyTo} />
-        {visibleText && <div className="bubble">{visibleText}</div>}
+        {visibleText && <div className="bubble"><TelegramMessage text={visibleText} /></div>}
         <AttachmentList attachments={m.attachments} />
       </div>
     </div>
