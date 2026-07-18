@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "appSlug": "hermes-mission-control-reliable-chat",
+  "updatedAt": "2026-07-18T18:10:00+08:00",
+  "tasks": [
+    {"id":"RAC-001","title":"Durable delivery ledger","ownerRole":"builder","reviewerRole":"reviewer","status":"done","dependencies":[],"verificationMethod":"SQLite idempotency and restart regression test","evidenceRequired":["tests/test_reliable_agent_chat.py"],"evidenceProduced":["tests/test_reliable_agent_chat.py","docs/reliable-agent-chat/verification.md"],"reviewResult":"Idempotency and restart reconciliation passed.","blockedReason":"","updatedAt":"2026-07-18T18:35:00+08:00"},
+    {"id":"RAC-002","title":"Concurrency-safe chat persistence","ownerRole":"builder","reviewerRole":"reviewer","status":"done","dependencies":["RAC-001"],"verificationMethod":"Concurrent append regression test","evidenceRequired":["tests/test_reliable_agent_chat.py"],"evidenceProduced":["tests/test_reliable_agent_chat.py"],"reviewResult":"Forty concurrent writes preserved.","blockedReason":"","updatedAt":"2026-07-18T18:35:00+08:00"},
+    {"id":"RAC-003","title":"Bounded ingestion","ownerRole":"builder","reviewerRole":"tester","status":"done","dependencies":[],"verificationMethod":"Limit contract test","evidenceRequired":["tests/test_reliable_agent_chat.py"],"evidenceProduced":["tests/test_reliable_agent_chat.py"],"reviewResult":"Body and attachment ceilings verified.","blockedReason":"","updatedAt":"2026-07-18T18:35:00+08:00"},
+    {"id":"RAC-004","title":"Mobile delivery UX","ownerRole":"builder","reviewerRole":"product-reviewer","status":"blocked","dependencies":["RAC-001"],"verificationMethod":"Production build and 390x844 screenshot","evidenceRequired":["docs/reliable-agent-chat/evidence/mobile-chat.png"],"evidenceProduced":["docs/reliable-agent-chat/verification.md"],"reviewResult":"Build and static contract passed; visual pass remains.","blockedReason":"Local policy rejected browser/server launch before startup.","updatedAt":"2026-07-18T18:35:00+08:00"}
+  ]
+}

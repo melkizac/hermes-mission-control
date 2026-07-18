@@ -427,6 +427,27 @@ input, select, textarea { font-family: inherit; }
 .usage-limit-meta { font-size: 12px; }
 
 @media (max-width: 760px) {
+  .mobile-chat-only-shell,
+  .mobile-chat-only-main,
+  .mobile-chat-only-main .center {
+    width: 100%;
+    min-width: 0;
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+  .mobile-chat-only-main .center { padding-top: env(safe-area-inset-top); }
+  .mobile-chat-only-main .chat-session-tabs { min-height: 40px; padding-inline: 6px; }
+  .mobile-chat-only-main .chead { padding: 9px 12px; }
+  .mobile-chat-only-main .statuspill { max-width: 52vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-chat-only-main .thread { padding: 12px 12px 6px; overscroll-behavior: contain; }
+  .mobile-chat-only-main .composer {
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    box-shadow: 0 -10px 28px rgba(20, 26, 38, .08);
+  }
+  .mobile-chat-only-main .cbox.composer-card { min-height: 62px; border-radius: 17px; }
+  .mobile-chat-only-main .composer-input { font-size: 16px; }
+  .mobile-chat-only-main .processing-inline { margin-left: 8px; }
+  .mobile-chat-only-main .jump-to-latest { right: 12px; bottom: calc(82px + env(safe-area-inset-bottom)); }
   html, body, #root { min-height: 100%; height: 100%; overflow: hidden; }
   body { overscroll-behavior: none; }
   .shell {
