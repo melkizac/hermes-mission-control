@@ -29,7 +29,7 @@ import { CostDashboard } from "./views/CostDashboard";
 import { UsageRemaining } from "./views/UsageRemaining";
 import { ModelRouter } from "./views/ModelRouter";
 import { SettingsPage } from "./views/SettingsPage";
-import { HermesDesktopAdmin } from "./views/HermesDesktopAdmin";
+import { AdminDashboardPane } from "./views/admin/AdminDashboardPane";
 import { MissionControlDocs } from "./views/MissionControlDocs";
 import { LandingPage } from "./views/LandingPage";
 import { LoginPage } from "./views/LoginPage";
@@ -179,7 +179,7 @@ function Shell() {
         {canRenderView && view === "users-workspaces" && <AdminSetupPage kind="users-workspaces" />}
         {canRenderView && view === "workspace-runtime-console" && <AdminSetupPage kind="workspace-runtime-console" />}
         {canRenderView && view === "shared-agent-templates" && <AdminSetupPage kind="shared-agent-templates" />}
-        {canRenderView && view === "desktop-gateway" && <HermesDesktopAdmin />}
+        {canRenderView && view === "desktop-gateway" && <AdminDashboardPane />}
         {canRenderView && view === "browser-ops" && <BrowserOperations />}
         {canRenderView && view === "research-runs" && <ResearchRuns />}
         {canRenderView && view === "approval-policy" && <AdminSetupPage kind="approval-policy" />}

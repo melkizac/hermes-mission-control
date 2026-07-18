@@ -56,35 +56,31 @@ const workspaceUtilityItems: NavRouteItem[] = [
   { key: "capabilities", label: "Capabilities", icon: "setup" },
 ];
 
-const collapsibleWorkspaceSections = new Set<string>();
+const collapsibleWorkspaceSections = new Set<string>(["Advanced"]);
 
 const adminConsoleGroups: NavGroup[] = [
   {
-    label: "Platform",
+    label: "Essentials",
     items: [
-      { key: "desktop-gateway", label: "Admin Console", icon: "dashboard" },
-      { key: "users-workspaces", label: "Users & Workspaces", icon: "profile" },
-      { key: "workspace-runtime-console", label: "Workspace Runtime Console", icon: "runtimes" },
-      { key: "agent-platform-admin", label: "Platform Agent Org", icon: "agentOrg" },
-      { key: "shared-agent-templates", label: "Shared Agent Templates", icon: "agents" },
+      { key: "desktop-gateway", label: "System Status", icon: "dashboard" },
+      { key: "workspace-runtime-console", label: "Agents & Runtimes", icon: "runtimes" },
+      { key: "users-workspaces", label: "Users & Access", icon: "profile" },
+      { key: "approval-policy", label: "Safety & Activity", icon: "approvals" },
     ],
   },
   {
-    label: "Runtime",
+    label: "Advanced",
     items: [
       { key: "runtimes", label: "Runtime Connectors", icon: "runtimes" },
+      { key: "agent-platform-admin", label: "Platform Agent Org", icon: "agentOrg" },
+      { key: "shared-agent-templates", label: "Shared Agent Templates", icon: "agents" },
       { key: "workflow-library", label: "Workflow Templates Admin", icon: "skills" },
       { key: "research-runs", label: "Research Run Monitor", icon: "audit" },
       { key: "capabilities", label: "Capabilities", icon: "setup" },
       { key: "automations", label: "Routine Governance", icon: "automations" },
-    ],
-  },
-  {
-    label: "Governance",
-    items: [
-      { key: "audit", label: "Runs / Activity", icon: "audit" },
+      { key: "audit", label: "Audit Log", icon: "audit" },
       { key: "costs", label: "Costs / Usage", icon: "costs" },
-      { key: "approval-policy", label: "Approval Rules", icon: "approvals" },
+      { key: "quota", label: "Quota & Limits", icon: "usage" },
     ],
   },
 ];
@@ -157,9 +153,10 @@ export function NavRail() {
   const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem("hmc-nav-collapsed") === "true");
   const [collapsedGroups, setCollapsedGroups] = useState<CollapsedGroups>(() => {
     try {
-      return JSON.parse(window.localStorage.getItem("hmc-nav-collapsed-groups") || "{}") as CollapsedGroups;
+      const saved = JSON.parse(window.localStorage.getItem("hmc-nav-collapsed-groups") || "{}") as CollapsedGroups;
+      return { Advanced: true, ...saved };
     } catch {
-      return {};
+      return { Advanced: true };
     }
   });
 
