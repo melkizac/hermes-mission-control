@@ -588,6 +588,8 @@ export interface RouterModel {
   cost_weight?: number;
   best_for?: string[];
   notes?: string;
+  credential_status?: string;
+  active?: boolean;
 }
 
 export interface RouterConfig {
@@ -595,7 +597,8 @@ export interface RouterConfig {
   updated_at: string;
   policy: Record<string, unknown>;
   models: RouterModel[];
-  summary: { total: number; enabled: number; authorized: number; frontier: number };
+  available_models?: RouterModel[];
+  summary: { total: number; enabled: number; authorized: number; available?: number; frontier: number };
   error?: string;
 }
 

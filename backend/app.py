@@ -2287,13 +2287,16 @@ def profile_streaming_chat_completion(messages, model='hermes-agent', request_id
     )
 
 
-def profile_cli_chat_completion(messages, model='hermes-agent', request_id=None, runtime_route=None):
-    profile = safe_id((runtime_route or {}).get('profile_name') or (runtime_route or {}).get('shared_agent_ref') or '')
-    if not profile or profile == 'default':
-        raise RuntimeError('profile-backed Mission Control chat requires a non-default Hermes profile')
+def profile_cli_chat_completion(messages, model='hermes-agent', provider='', request_id=None, runtime_route=None):
+    profile = safe_id((runtime_route or {}).get('profile_name') or (runtime_route or {}).get('shared_agent_ref') or 'default') or 'default'
     hermes_bin = resolve_hermes_cli_bin()
     prompt = messages_to_cli_prompt(messages)
-    cmd = [hermes_bin, '--profile', profile, 'chat', '-q', prompt, '--source', 'api_server', '-Q']
+    cmd = [hermes_bin]
+    if profile != 'default':
+        cmd.extend(['--profile', profile])
+    cmd.extend(['chat', '-q', prompt, '--source', 'api_server', '-Q'])
+    if provider:
+        cmd.extend(['--provider', str(provider)])
     if model and model not in ('hermes-agent', 'auto'):
         cmd.extend(['-m', str(model)])
     env = os.environ.copy()
@@ -2338,12 +2341,14 @@ CHAT_COMPLETION_STREAM_READ_TIMEOUT = env_float('HMC_CHAT_COMPLETION_STREAM_READ
 CHAT_COMPLETION_FALLBACK_TIMEOUT = env_float('HMC_CHAT_COMPLETION_TIMEOUT_SECONDS', 1800)
 
 
-def api_chat_completion(messages, model='hermes-agent', request_id=None, runtime_route=None):
+def api_chat_completion(messages, model='hermes-agent', provider='', force_cli=False, request_id=None, runtime_route=None):
+    if force_cli:
+        return profile_cli_chat_completion(messages, model=model, provider=provider, request_id=request_id, runtime_route=runtime_route)
     if route_is_profile_backed(runtime_route):
         try:
             return profile_streaming_chat_completion(messages, model=model, request_id=request_id, runtime_route=runtime_route)
         except Exception:
-            return profile_cli_chat_completion(messages, model=model, request_id=request_id, runtime_route=runtime_route)
+            return profile_cli_chat_completion(messages, model=model, provider=provider, request_id=request_id, runtime_route=runtime_route)
     payload = {'model': model, 'messages': messages, 'stream': True}
     headers = {'Idempotency-Key': request_id} if request_id else {}
     if runtime_route:
@@ -10312,23 +10317,98 @@ def read_model_router_config():
                 cfg.update({k: loaded[k] for k in loaded.keys() if k in ('enabled', 'updated_at', 'policy', 'models')})
         except Exception as e:
             cfg['error'] = str(e)
-    env_keys = configured_env_keys()
     cli_settings = hermes_cli_settings()
+    auth_credentials = cli_settings.get('auth_credentials')
+    if not isinstance(auth_credentials, list):
+        auth_credentials = hermes_auth_credentials()
     auth_provider_set = set(cli_settings.get('auth_providers') or [])
+    credentials_by_provider = {}
+    for credential in auth_credentials:
+        provider = str(credential.get('provider') or '').strip()
+        if provider:
+            credentials_by_provider.setdefault(provider, []).append(credential)
     for model in cfg.get('models', []):
         provider = str(model.get('provider') or '').strip()
         env_name = str(model.get('credential_env') or provider_credential_env(provider) or '').strip()
         model['credential_env'] = env_name
-        model['authorized'] = bool((env_name and env_name in env_keys) or (provider and provider in auth_provider_set))
-        if model['authorized'] and provider in auth_provider_set and not (env_name and env_name in env_keys):
+        provider_credentials = credentials_by_provider.get(provider) or []
+        healthy_credentials = [
+            credential for credential in provider_credentials
+            if str(credential.get('health') or credential.get('status') or 'healthy').strip().lower()
+            not in ('dead', 'dead/revoked', 'revoked', 'rate-limited', 'rate_limited', 'exhausted', 'missing', 'unavailable')
+        ]
+        # When Hermes reports credential-pool health, it is authoritative. A
+        # present environment variable must not re-enable a route that Hermes
+        # has already marked revoked, exhausted, or rate-limited.
+        if provider_credentials:
+            credential_ready = bool(healthy_credentials)
+        else:
+            credential_ready = bool(provider and provider in auth_provider_set)
+        env_ready = bool(env_name and configured_env_value(env_name) and not (provider_credentials and not healthy_credentials))
+        model['authorized'] = bool(credential_ready or env_ready)
+        if model['authorized'] and provider in auth_provider_set and not env_ready:
             model['secret_status'] = 'configured via Hermes auth'
         else:
             model['secret_status'] = 'configured' if model['authorized'] else 'missing'
+        model['credential_status'] = (
+            'healthy Hermes credential'
+            if healthy_credentials
+            else 'configured API key'
+            if env_ready
+            else 'credential unavailable'
+        )
+
+    active = cli_settings.get('active') if isinstance(cli_settings.get('active'), dict) else {}
+    active_provider = str(active.get('provider') or '').strip()
+    active_model = str(active.get('model') or '').strip()
+    candidates = list(cfg.get('models', []))
+    active_matches = [m for m in candidates if m.get('provider') == active_provider and m.get('model') == active_model]
+    if active_provider and active_model and not active_matches:
+        env_name = str(active.get('credential_env') or provider_credential_env(active_provider) or '').strip()
+        provider_credentials = credentials_by_provider.get(active_provider) or []
+        healthy_credentials = [
+            credential for credential in provider_credentials
+            if str(credential.get('health') or credential.get('status') or 'healthy').strip().lower()
+            not in ('dead', 'dead/revoked', 'revoked', 'rate-limited', 'rate_limited', 'exhausted', 'missing', 'unavailable')
+        ]
+        env_ready = bool(env_name and configured_env_value(env_name) and not (provider_credentials and not healthy_credentials))
+        authorized = bool(healthy_credentials or env_ready or (active_provider in auth_provider_set and not provider_credentials))
+        candidates.insert(0, {
+            'id': safe_id(f'{active_provider}-{active_model}') or 'hermes-active-model',
+            'label': f'Hermes active · {active_model}',
+            'provider': active_provider,
+            'model': active_model,
+            'tier': 'frontier' if any(token in active_model.lower() for token in ('gpt-5', 'opus', 'pro')) else 'balanced',
+            'enabled': True,
+            'authorized': authorized,
+            'credential_env': env_name,
+            'secret_status': 'configured via Hermes auth' if healthy_credentials else 'configured' if env_ready else 'missing',
+            'credential_status': 'healthy Hermes credential' if healthy_credentials else 'configured API key' if env_ready else 'credential unavailable',
+            'cost_weight': 5,
+            'best_for': ['chat'],
+            'notes': 'Auto-discovered from the active Hermes model configuration.',
+            'active': True,
+        })
+    elif active_matches:
+        candidates = active_matches + [m for m in candidates if m not in active_matches]
+
+    available_models = []
+    seen_routes = set()
+    for model in candidates:
+        route_key = (str(model.get('provider') or '').strip().lower(), str(model.get('model') or '').strip().lower())
+        if not all(route_key) or route_key in seen_routes:
+            continue
+        if not model.get('enabled') or not model.get('authorized'):
+            continue
+        seen_routes.add(route_key)
+        available_models.append({**model, 'active': route_key == (active_provider.lower(), active_model.lower())})
+    cfg['available_models'] = available_models
     cfg['hermes_settings'] = cli_settings
     cfg['summary'] = {
         'total': len(cfg.get('models', [])),
         'enabled': sum(1 for m in cfg.get('models', []) if m.get('enabled')),
         'authorized': sum(1 for m in cfg.get('models', []) if m.get('authorized')),
+        'available': len(available_models),
         'frontier': sum(1 for m in cfg.get('models', []) if m.get('tier') == 'frontier'),
     }
     return cfg
@@ -10961,7 +11041,26 @@ def resolve_message_model(payload, text, agent_id=None, identity=None):
     runtime_assignment = {}
     if mode == 'manual':
         model_id = safe_id(routing.get('modelId') or '')
-        selected = next((m for m in cfg.get('models', []) if m.get('id') == model_id and m.get('enabled')), None)
+        available_models = cfg.get('available_models')
+        if not isinstance(available_models, list):
+            available_models = [
+                model for model in cfg.get('models', [])
+                if model.get('enabled') and model.get('authorized')
+            ]
+        selected = next((m for m in available_models if m.get('id') == model_id), None)
+        if not selected:
+            return {
+                'api_model': 'hermes-agent',
+                'api_provider': '',
+                'selected_model': None,
+                'runtime_account': {},
+                'runtime_assignment': {},
+                'mode': 'manual',
+                'reason': 'manual selector route is unavailable',
+                'plan': None,
+                'force_cli': False,
+                'error': 'The selected model is no longer available with a healthy Hermes OAuth credential or API key. Refresh the model list and choose another model.',
+            }
     if selected:
         reason = 'manual selector override from Mission Control chat UI'
     elif agent_id:
@@ -10983,12 +11082,14 @@ def resolve_message_model(payload, text, agent_id=None, identity=None):
     api_model = str(selected.get('model') or 'hermes-agent') if isinstance(selected, dict) else 'hermes-agent'
     return {
         'api_model': api_model,
+        'api_provider': str(selected.get('provider') or '') if isinstance(selected, dict) else '',
         'selected_model': selected,
         'runtime_account': runtime_account,
         'runtime_assignment': runtime_assignment,
         'mode': 'manual' if mode == 'manual' and selected else 'assignment' if runtime_assignment and selected else 'auto' if cfg.get('enabled', True) else 'default',
         'reason': reason,
         'plan': plan,
+        'force_cli': bool(mode == 'manual' and selected),
     }
 
 
@@ -21206,10 +21307,16 @@ class Handler(BaseHTTPRequestHandler):
             context = source_context_for_prompt(runtime_channel_id)
             route_context = runtime_route_prompt_block(runtime_route)
             routing_selection = resolve_message_model(payload, text, agent_id=agent_id, identity=identity)
+            if routing_selection.get('error'):
+                unregister_processing(request_id)
+                update_chat_delivery(request_id, 'failed', routing_selection.get('error'))
+                return self.send_json({'error': routing_selection.get('error')}, 409)
             api_runtime_route = dict(runtime_route or {})
             runtime_account = routing_selection.get('runtime_account') or {}
-            if runtime_account.get('credential_env'):
-                api_runtime_route['runtime_credential_env'] = runtime_account.get('credential_env')
+            selected_route = routing_selection.get('selected_model') or {}
+            runtime_credential_env = runtime_account.get('credential_env') or selected_route.get('credential_env')
+            if runtime_credential_env:
+                api_runtime_route['runtime_credential_env'] = runtime_credential_env
             attachment_context = attachment_prompt_block(attachments)
             user_content = text.strip()
             if reply_to and reply_to.get('text'):
@@ -21239,7 +21346,14 @@ class Handler(BaseHTTPRequestHandler):
                         update_chat_delivery(request_id, 'running')
                         if is_processing_cancelled(request_id):
                             raise MessageProcessingStopped()
-                        data = api_chat_completion(messages, model=routing_selection.get('api_model') or 'hermes-agent', request_id=request_id, runtime_route=api_runtime_route)
+                        data = api_chat_completion(
+                            messages,
+                            model=routing_selection.get('api_model') or 'hermes-agent',
+                            provider=routing_selection.get('api_provider') or '',
+                            force_cli=bool(routing_selection.get('force_cli')),
+                            request_id=request_id,
+                            runtime_route=api_runtime_route,
+                        )
                         if is_processing_cancelled(request_id):
                             raise MessageProcessingStopped()
                         content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
@@ -21269,7 +21383,14 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 if is_processing_cancelled(request_id):
                     raise MessageProcessingStopped()
-                data = api_chat_completion(messages, model=routing_selection.get('api_model') or 'hermes-agent', request_id=request_id, runtime_route=api_runtime_route)
+                data = api_chat_completion(
+                    messages,
+                    model=routing_selection.get('api_model') or 'hermes-agent',
+                    provider=routing_selection.get('api_provider') or '',
+                    force_cli=bool(routing_selection.get('force_cli')),
+                    request_id=request_id,
+                    runtime_route=api_runtime_route,
+                )
                 if is_processing_cancelled(request_id):
                     raise MessageProcessingStopped()
                 content = data.get('choices', [{}])[0].get('message', {}).get('content', '')

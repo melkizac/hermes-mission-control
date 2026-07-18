@@ -5,6 +5,7 @@ import { Icon } from "../components/Icon";
 import { VoiceCoreOrb } from "../components/VoiceCoreOrb";
 import { TelegramMessage } from "../components/TelegramMessage";
 import { cachedJsonRequest } from "../services/queryCache";
+import { availableChatModels, chatModelOptionLabel } from "../services/modelSelection";
 import { buildChatIntentPreview, confidenceFromScore, routeChatIntent, serializeChatIntentDecision } from "../services/chatIntentRouter";
 import type { ChatIntentDecision, ChatIntentPreview, ChatIntentNextAction, ChatIntentType, ChatMissionContext, ChatRoutineContext, ChatWorkflowContext } from "../services/chatIntentRouter";
 import type { Attachment, AutomationsResponse, BoardResponse, BoardTask, Message, ModelRoutingSelection, ProjectChatMessagesResponse, ProjectChatResponse, ProjectChatSession, ProjectRecord, ProjectsResponse, ReplyContext, RouterConfig, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
@@ -619,11 +620,11 @@ export function MissionControl() {
       .map((workItem) => ({ id: workItem.id, title: workItem.title, status: workItem.status })),
     [recentTasks],
   );
-  const enabledModels = useMemo(() => (modelRouterConfig?.models ?? []).filter((model) => model.enabled), [modelRouterConfig]);
-  const selectedModel = enabledModels.find((model) => model.id === modelMode) ?? null;
+  const availableModels = useMemo(() => availableChatModels(modelRouterConfig), [modelRouterConfig]);
+  const selectedModel = availableModels.find((model) => model.id === modelMode) ?? null;
   const selectedModelLabel = selectedModel ? (selectedModel.label || selectedModel.model) : "Auto";
   const selectedModelPromptLabel = selectedModel
-    ? `${selectedModel.label || selectedModel.model} · ${selectedModel.tier}${selectedModel.authorized ? "" : " · key missing"}`
+    ? chatModelOptionLabel(selectedModel)
     : modelRouterConfig?.enabled === false
       ? "Default Hermes model"
       : "AUTO - Melkizac decides";
@@ -683,7 +684,7 @@ export function MissionControl() {
       const cfg = await getModelRouter();
       if (!alive) return cfg;
       setModelRouterConfig(cfg);
-      const exists = modelMode === "auto" || (cfg.models ?? []).some((model) => model.enabled && model.id === modelMode);
+      const exists = modelMode === "auto" || availableChatModels(cfg).some((model) => model.id === modelMode);
       if (!exists) setModelMode("auto");
       return cfg;
     } catch {
@@ -701,7 +702,7 @@ export function MissionControl() {
       .then((cfg) => {
         if (!alive) return;
         setModelRouterConfig(cfg);
-        const exists = modelMode === "auto" || (cfg.models ?? []).some((model) => model.enabled && model.id === modelMode);
+        const exists = modelMode === "auto" || availableChatModels(cfg).some((model) => model.id === modelMode);
         if (!exists) setModelMode("auto");
       })
       .catch(() => {
@@ -888,7 +889,7 @@ export function MissionControl() {
   async function resolveMainModelRouting(): Promise<ModelRoutingSelection> {
     if (modelMode === "auto") return { mode: "auto" };
     const cfg = modelRouterConfig ?? await ensureModelRouter();
-    const manualModel = (cfg?.models ?? []).find((model) => model.enabled && model.id === modelMode);
+    const manualModel = availableChatModels(cfg).find((model) => model.id === modelMode);
     return manualModel ? { mode: "manual", modelId: manualModel.id } : { mode: "auto" };
   }
 
@@ -2025,7 +2026,7 @@ export function MissionControl() {
             <span>{modelMode === "auto" ? "Auto" : ""}</span>
             <select value={selectedModel ? selectedModel.id : "auto"} onChange={(event) => setModelMode(event.target.value)} onFocus={() => void ensureModelRouter()} onPointerDown={() => void ensureModelRouter()}>
               <option value="auto">{modelRouterLoading ? "Auto · loading models..." : "Auto"}</option>
-              {enabledModels.map((model) => <option key={model.id} value={model.id}>{(model.label || model.model)} · {model.tier}{model.authorized ? "" : " · key missing"}</option>)}
+              {availableModels.map((model) => <option key={model.id} value={model.id}>{chatModelOptionLabel(model)}</option>)}
             </select>
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <path d="M7 10l5 5 5-5" />
@@ -2093,7 +2094,7 @@ export function MissionControl() {
               <label className="clean-select">
                 <select value={selectedModel ? selectedModel.id : "auto"} onChange={(event) => setModelMode(event.target.value)} onFocus={() => void ensureModelRouter()} onPointerDown={() => void ensureModelRouter()} aria-label="AI model selector">
                   <option value="auto">{modelRouterLoading ? "Auto · loading models..." : "Auto"}</option>
-                  {enabledModels.map((model) => <option key={model.id} value={model.id}>{(model.label || model.model)} · {model.tier}{model.authorized ? "" : " · key missing"}</option>)}
+                  {availableModels.map((model) => <option key={model.id} value={model.id}>{chatModelOptionLabel(model)}</option>)}
                 </select>
               </label>
               {renderVoiceReplyControl()}
@@ -2342,7 +2343,7 @@ export function MissionControl() {
               <label className="clean-select">
                 <select value={selectedModel ? selectedModel.id : "auto"} onChange={(event) => setModelMode(event.target.value)} onFocus={() => void ensureModelRouter()} onPointerDown={() => void ensureModelRouter()} aria-label="AI model selector">
                   <option value="auto">{modelRouterLoading ? "Auto · loading models..." : "Auto"}</option>
-                  {enabledModels.map((model) => <option key={model.id} value={model.id}>{(model.label || model.model)} · {model.tier}{model.authorized ? "" : " · key missing"}</option>)}
+                  {availableModels.map((model) => <option key={model.id} value={model.id}>{chatModelOptionLabel(model)}</option>)}
                 </select>
               </label>
               {renderVoiceReplyControl()}
