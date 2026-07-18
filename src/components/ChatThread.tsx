@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent } from "react";
 import { useStore } from "../services/store";
+import { availableChatModels, chatModelOptionLabel } from "../services/modelSelection";
 import { Icon } from "./Icon";
 import { AgentAvatar } from "./AgentAvatar";
 import { TelegramMessage } from "./TelegramMessage";
@@ -178,10 +179,10 @@ export function ChatThread({
   const sessionMessageFetchesRef = useRef<Set<string>>(new Set());
   const p = statusPill[agent.status] || statusPill.degraded;
   const storageKey = `hmc:last-seen-message:${agent.id}`;
-  const enabledModels = useMemo(() => (routerConfig?.models ?? []).filter((model) => model.enabled), [routerConfig]);
-  const selectedModel = useMemo(() => enabledModels.find((model) => model.id === modelSelection), [enabledModels, modelSelection]);
+  const availableModels = useMemo(() => availableChatModels(routerConfig), [routerConfig]);
+  const selectedModel = useMemo(() => availableModels.find((model) => model.id === modelSelection), [availableModels, modelSelection]);
   const modelSelectorLabel = selectedModel
-    ? `${selectedModel.label || selectedModel.model} · ${selectedModel.tier}${selectedModel.authorized ? "" : " · key missing"}`
+    ? chatModelOptionLabel(selectedModel)
     : modelRouterLoading
       ? "Loading model options…"
     : routerConfig?.enabled === false
@@ -429,7 +430,7 @@ export function ChatThread({
       const cfg = await getModelRouter();
       if (!alive) return cfg;
       setRouterConfig(cfg);
-      const exists = modelSelection === "auto" || (cfg.models ?? []).some((model) => model.enabled && model.id === modelSelection);
+      const exists = modelSelection === "auto" || availableChatModels(cfg).some((model) => model.id === modelSelection);
       if (!exists) setModelSelection("auto");
       return cfg;
     } catch {
@@ -448,7 +449,7 @@ export function ChatThread({
       .then((cfg) => {
         if (!alive) return;
         setRouterConfig(cfg);
-        const exists = modelSelection === "auto" || (cfg.models ?? []).some((model) => model.enabled && model.id === modelSelection);
+        const exists = modelSelection === "auto" || availableChatModels(cfg).some((model) => model.id === modelSelection);
         if (!exists) setModelSelection("auto");
       })
       .catch(() => {
@@ -469,7 +470,7 @@ export function ChatThread({
   const resolveModelRouting = async (): Promise<ModelRoutingSelection> => {
     if (modelSelection === "auto") return { mode: "auto" };
     const cfg = routerConfig ?? await ensureModelRouter();
-    const manualModel = (cfg?.models ?? []).find((model) => model.enabled && model.id === modelSelection);
+    const manualModel = availableChatModels(cfg).find((model) => model.id === modelSelection);
     return manualModel ? { mode: "manual", modelId: manualModel.id } : { mode: "auto" };
   };
 
@@ -913,9 +914,9 @@ export function ChatThread({
                     aria-label="Select AI model for this message"
                   >
                     <option value="auto">{modelRouterLoading ? "Auto · loading models..." : "Auto"}</option>
-                    {enabledModels.map((model) => (
+                    {availableModels.map((model) => (
                       <option key={model.id} value={model.id}>
-                        {(model.label || model.model)} · {model.tier}{model.authorized ? "" : " · key missing"}
+                        {chatModelOptionLabel(model)}
                       </option>
                     ))}
                   </select>
@@ -1001,9 +1002,9 @@ export function ChatThread({
                 aria-label="Select AI model for this message"
               >
                 <option value="auto">{modelRouterLoading ? "Auto · loading models..." : "Auto"}</option>
-                {enabledModels.map((model) => (
+                {availableModels.map((model) => (
                   <option key={model.id} value={model.id}>
-                    {(model.label || model.model)} · {model.tier}{model.authorized ? "" : " · key missing"}
+                    {chatModelOptionLabel(model)}
                   </option>
                 ))}
               </select>
