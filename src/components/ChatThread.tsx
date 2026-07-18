@@ -777,7 +777,7 @@ export function ChatThread({
                 <span />
                 <span />
               </span>
-              <span>{agent.name} is processing…</span>
+              <span>Accepted · {agent.name} is working…</span>
               <span className="processing-inline-timer" aria-label={`Elapsed processing time ${processingElapsedLabel}`} title="Elapsed processing time">
                 {processingElapsedLabel}
               </span>

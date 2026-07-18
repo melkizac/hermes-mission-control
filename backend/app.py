@@ -43,10 +43,12 @@ FUNNEL_TARGETS = Path(os.environ.get('HMC_FUNNEL_TARGETS_FILE', APP_ROOT / 'webs
 BROWSER_CONNECTORS = Path(os.environ.get('HMC_BROWSER_CONNECTORS_FILE', APP_ROOT / 'browser_connectors.json'))
 DIST_DIR = Path(os.environ.get('HMC_DIST_DIR', APP_ROOT / 'dist'))
 UI_CHAT_FILE = Path(os.environ.get('HMC_UI_CHAT_FILE', APP_ROOT / 'ui-chat-overlays.json'))
+CHAT_DELIVERY_DB = Path(os.environ.get('HMC_CHAT_DELIVERY_DB', APP_ROOT / 'chat-delivery.db'))
 MODEL_USAGE_REMAINING_FILE = Path(os.environ.get('HMC_MODEL_USAGE_REMAINING_FILE', APP_ROOT / 'model-usage-remaining.json'))
 UPLOAD_DIR = Path(os.environ.get('HMC_UPLOAD_DIR', APP_ROOT / 'uploads'))
 GENERATED_OUTPUT_DIR = Path(os.environ.get('HMC_GENERATED_OUTPUT_DIR', HOME / '.hermes' / 'output'))
 MAX_ATTACHMENT_BYTES = int(os.environ.get('HMC_MAX_ATTACHMENT_BYTES', str(50 * 1024 * 1024)))
+MAX_HTTP_BODY_BYTES = int(os.environ.get('HMC_MAX_HTTP_BODY_BYTES', str(72 * 1024 * 1024)))
 MAX_AGENT_AVATAR_BYTES = int(os.environ.get('HMC_MAX_AGENT_AVATAR_BYTES', str(3 * 1024 * 1024)))
 APPROVALS_DB = Path(os.environ.get('HMC_APPROVALS_DB', APP_ROOT / 'approvals.db'))
 RUNTIME_CONNECTORS_DB = Path(os.environ.get('HMC_RUNTIME_CONNECTORS_DB', APP_ROOT / 'runtime_connectors.db'))
@@ -71,6 +73,8 @@ AGENT_RUNTIME_SWITCHER_FILE = Path(os.environ.get('HMC_AGENT_RUNTIME_SWITCHER_FI
 PROCESSING_STATE_FILE = Path(os.environ.get('HMC_PROCESSING_STATE_FILE', APP_ROOT / 'processing-requests.json'))
 PROCESSING_LOCK = threading.Lock()
 PROCESSING_REQUESTS = {}
+UI_CHAT_LOCK = threading.RLock()
+CHAT_DELIVERY_LOCK = threading.RLock()
 AGENT_DIRECTORY_SEED_LOCK = threading.Lock()
 AGENT_DIRECTORY_SEEDED = False
 SQLITE_BUSY_TIMEOUT_MS = int(os.environ.get('HMC_SQLITE_BUSY_TIMEOUT_MS', '5000'))
@@ -1778,6 +1782,86 @@ class MessageProcessingStopped(Exception):
     pass
 
 
+def chat_delivery_connect():
+    CHAT_DELIVERY_DB.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(CHAT_DELIVERY_DB, timeout=max(1, SQLITE_BUSY_TIMEOUT_MS / 1000))
+    con.row_factory = sqlite3.Row
+    con.execute(f'PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}')
+    con.execute('PRAGMA journal_mode=WAL')
+    con.execute('''
+        CREATE TABLE IF NOT EXISTS chat_deliveries (
+            request_id TEXT PRIMARY KEY,
+            agent_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            error TEXT NOT NULL DEFAULT '',
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        )
+    ''')
+    con.commit()
+    return con
+
+
+def register_chat_delivery(request_id, agent_id, payload):
+    rid = safe_id(request_id) or f'req-{int(time.time() * 1000)}'
+    aid = safe_id(agent_id) or 'default'
+    now = time.time()
+    with CHAT_DELIVERY_LOCK:
+        con = chat_delivery_connect()
+        try:
+            cur = con.execute(
+                'INSERT OR IGNORE INTO chat_deliveries (request_id,agent_id,status,payload_json,error,created_at,updated_at) VALUES (?,?,?,?,?,?,?)',
+                (rid, aid, 'accepted', json.dumps(payload or {}, ensure_ascii=False), '', now, now),
+            )
+            con.commit()
+            row = con.execute('SELECT * FROM chat_deliveries WHERE request_id=?', (rid,)).fetchone()
+            return {**dict(row), 'payload': json.loads(row['payload_json'] or '{}'), 'created': cur.rowcount == 1}
+        finally:
+            con.close()
+
+
+def update_chat_delivery(request_id, status, error=''):
+    with CHAT_DELIVERY_LOCK:
+        con = chat_delivery_connect()
+        try:
+            con.execute('UPDATE chat_deliveries SET status=?, error=?, updated_at=? WHERE request_id=?', (status, str(error or '')[:4000], time.time(), request_id))
+            con.commit()
+        finally:
+            con.close()
+
+
+def chat_delivery(request_id):
+    if not request_id:
+        return None
+    with CHAT_DELIVERY_LOCK:
+        con = chat_delivery_connect()
+        try:
+            row = con.execute('SELECT * FROM chat_deliveries WHERE request_id=?', (request_id,)).fetchone()
+            if not row:
+                return None
+            result = dict(row)
+            result['payload'] = json.loads(result.pop('payload_json') or '{}')
+            return result
+        finally:
+            con.close()
+
+
+def reconcile_chat_deliveries_after_restart():
+    """Make interrupted work explicit instead of silently losing accepted turns."""
+    with CHAT_DELIVERY_LOCK:
+        con = chat_delivery_connect()
+        try:
+            cur = con.execute(
+                "UPDATE chat_deliveries SET status='interrupted', error='Backend restarted before completion; resend to retry safely.', updated_at=? WHERE status IN ('accepted','running')",
+                (time.time(),),
+            )
+            con.commit()
+            return cur.rowcount
+        finally:
+            con.close()
+
+
 def persist_processing_state_locked():
     """Persist in-process chat workers so deploy/restart scripts can drain safely."""
     try:
@@ -1855,6 +1939,8 @@ def stop_processing(agent_id, request_id=None):
             stopped.append(key)
         if stopped:
             persist_processing_state_locked()
+    for stopped_id in stopped:
+        update_chat_delivery(stopped_id, 'cancelled', 'Stopped by operator.')
     return {'ok': True, 'stopped': stopped, 'count': len(stopped)}
 
 
@@ -14337,10 +14423,11 @@ def worker_transcript_messages(agent_id, limit=220):
 
 def load_ui_chat_overlays():
     try:
-        if UI_CHAT_FILE.exists():
-            data = json.loads(UI_CHAT_FILE.read_text(errors='replace'))
-            if isinstance(data, dict):
-                return data
+        with UI_CHAT_LOCK:
+            if UI_CHAT_FILE.exists():
+                data = json.loads(UI_CHAT_FILE.read_text(errors='replace'))
+                if isinstance(data, dict):
+                    return data
     except Exception:
         pass
     return {}
@@ -14348,14 +14435,15 @@ def load_ui_chat_overlays():
 
 def save_ui_chat_overlays(data):
     try:
-        UI_CHAT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        tmp = UI_CHAT_FILE.with_suffix('.tmp')
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
-        tmp.replace(UI_CHAT_FILE)
-        try:
-            UI_CHAT_FILE.chmod(0o600)
-        except Exception:
-            pass
+        with UI_CHAT_LOCK:
+            UI_CHAT_FILE.parent.mkdir(parents=True, exist_ok=True)
+            tmp = UI_CHAT_FILE.with_suffix('.tmp')
+            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+            tmp.replace(UI_CHAT_FILE)
+            try:
+                UI_CHAT_FILE.chmod(0o600)
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -14503,25 +14591,26 @@ def dedupe_ui_overlay_against_db(messages, overlay):
 
 def append_ui_chat_messages(agent_id, messages):
     aid = safe_id(agent_id) or 'default'
-    data = load_ui_chat_overlays()
-    current = data.get(aid, [])
-    if not isinstance(current, list):
-        current = []
-    merged = current + list(messages or [])
-    deduped = []
-    seen = set()
-    for row in reversed(merged):
-        if isinstance(row, dict):
-            key = row.get('id') or (row.get('requestId'), row.get('role'), str(row.get('text') or '').strip())
-        else:
-            key = repr(row)
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(row)
-    deduped.reverse()
-    data[aid] = deduped[-120:]
-    save_ui_chat_overlays(data)
+    with UI_CHAT_LOCK:
+        data = load_ui_chat_overlays()
+        current = data.get(aid, [])
+        if not isinstance(current, list):
+            current = []
+        merged = current + list(messages or [])
+        deduped = []
+        seen = set()
+        for row in reversed(merged):
+            if isinstance(row, dict):
+                key = row.get('id') or (row.get('requestId'), row.get('role'), str(row.get('text') or '').strip())
+            else:
+                key = repr(row)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(row)
+        deduped.reverse()
+        data[aid] = deduped[-120:]
+        save_ui_chat_overlays(data)
 
 
 def sanitize_filename(name):
@@ -20220,8 +20309,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({
                 'name': 'Hermes Mission Control',
                 'short_name': 'Hermes MC',
-                'start_url': '/',
+                'start_url': '/app',
+                'scope': '/',
                 'display': 'standalone',
+                'background_color': '#ffffff',
+                'theme_color': '#0e8f84',
+                'description': 'Fast, durable mobile command chat for Hermes agents.',
                 'icons': [
                     {'src': '/favicon-32x32.png', 'sizes': '32x32', 'type': 'image/png'},
                     {'src': '/apple-touch-icon.png', 'sizes': '180x180', 'type': 'image/png'},
@@ -20271,8 +20364,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({
                 'name': 'Hermes Mission Control',
                 'short_name': 'Hermes MC',
-                'start_url': '/',
+                'start_url': '/app',
+                'scope': '/',
                 'display': 'standalone',
+                'background_color': '#ffffff',
+                'theme_color': '#0e8f84',
+                'description': 'Fast, durable mobile command chat for Hermes agents.',
                 'icons': [
                     {'src': '/favicon-32x32.png', 'sizes': '32x32', 'type': 'image/png'},
                     {'src': '/apple-touch-icon.png', 'sizes': '180x180', 'type': 'image/png'},
@@ -20511,6 +20608,7 @@ class Handler(BaseHTTPRequestHandler):
                     'messages': request_messages,
                     'processingRequests': active_ids,
                     'active': request_id in active_ids if request_id else bool(active_ids),
+                    'delivery': chat_delivery(request_id),
                 })
             elif len(parts) >= 4 and parts[3] == 'worker-transcript':
                 identity = current_identity_from_cookie(self.headers.get('Cookie', ''))
@@ -20558,6 +20656,8 @@ class Handler(BaseHTTPRequestHandler):
         self._hmc_path = self.path
         parsed = urlparse(self.path)
         length = int(self.headers.get('Content-Length', '0') or 0)
+        if length > MAX_HTTP_BODY_BYTES:
+            return self.send_json({'error': f'Request body exceeds {MAX_HTTP_BODY_BYTES} bytes.'}, 413)
         raw = self.rfile.read(length).decode('utf-8', errors='replace') if length else '{}'
         try:
             payload = json.loads(raw)
@@ -20831,7 +20931,17 @@ class Handler(BaseHTTPRequestHandler):
             if route_status != 200:
                 return self.send_json(runtime_route, route_status)
             runtime_channel_id = runtime_route.get('channel_id') or agent_id
-            request_id = register_processing(runtime_channel_id, payload.get('requestId'))
+            requested_id = safe_id(payload.get('requestId')) or f'req-{int(time.time() * 1000)}'
+            delivery = register_chat_delivery(requested_id, runtime_channel_id, {
+                'text': payload.get('text') or '',
+                'attachments': payload.get('attachments') or [],
+                'replyTo': payload.get('replyTo'),
+                'modelRouting': payload.get('modelRouting'),
+            })
+            if not delivery.get('created'):
+                existing = [row for row in ui_chat_messages(runtime_channel_id) if row.get('requestId') == requested_id]
+                return self.send_json({'accepted': True, 'duplicate': True, 'requestId': requested_id, 'delivery': delivery, 'messages': existing}, 202)
+            request_id = register_processing(runtime_channel_id, requested_id)
             text = payload.get('text') or ''
             attachments = normalize_message_attachments(runtime_channel_id, payload.get('attachments') or [])
             reply_to = payload.get('replyTo') if isinstance(payload.get('replyTo'), dict) else None
@@ -20845,6 +20955,7 @@ class Handler(BaseHTTPRequestHandler):
                 }
             if not text.strip() and not attachments:
                 unregister_processing(request_id)
+                update_chat_delivery(request_id, 'failed', 'text or attachment required')
                 return self.send_json({'error': 'text or attachment required'}, 400)
             now = time.time()
             now_ms = int(now*1000)
@@ -20882,6 +20993,7 @@ class Handler(BaseHTTPRequestHandler):
 
                 def _process_message_async():
                     try:
+                        update_chat_delivery(request_id, 'running')
                         if is_processing_cancelled(request_id):
                             raise MessageProcessingStopped()
                         data = api_chat_completion(messages, model=routing_selection.get('api_model') or 'hermes-agent', request_id=request_id, runtime_route=api_runtime_route)
@@ -20891,8 +21003,9 @@ class Handler(BaseHTTPRequestHandler):
                         reply_ts = time.time()
                         reply = {'id': data.get('id') or f'ui-agent-{now_ms}', 'role': 'agent', 'text': content, 'at': 'now', 'ts': reply_ts, 'source': 'web-ui', 'requestId': request_id}
                         append_ui_chat_messages(runtime_channel_id, [reply])
+                        update_chat_delivery(request_id, 'completed')
                     except MessageProcessingStopped:
-                        pass
+                        update_chat_delivery(request_id, 'cancelled', 'Stopped by operator.')
                     except Exception as e:
                         error_ts = time.time()
                         append_ui_chat_messages(runtime_channel_id, [{
@@ -20904,6 +21017,7 @@ class Handler(BaseHTTPRequestHandler):
                             'source': 'web-ui',
                             'requestId': request_id,
                         }])
+                        update_chat_delivery(request_id, 'failed', str(e))
                     finally:
                         unregister_processing(request_id)
 
@@ -20989,6 +21103,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         parsed = urlparse(self.path)
         length = int(self.headers.get('Content-Length', '0') or 0)
+        if length > MAX_HTTP_BODY_BYTES:
+            return self.send_json({'error': f'Request body exceeds {MAX_HTTP_BODY_BYTES} bytes.'}, 413)
         raw = self.rfile.read(length).decode('utf-8', errors='replace') if length else '{}'
         try:
             payload = json.loads(raw)
@@ -21076,6 +21192,9 @@ def main():
     ensure_auth_tables().close()
     seed_agent_directory()
     reset_processing_state_file()
+    interrupted = reconcile_chat_deliveries_after_restart()
+    if interrupted:
+        print(json.dumps({'event': 'hmc_chat_delivery_reconciled', 'interrupted': interrupted}, sort_keys=True))
     host = os.environ.get('HMC_HOST', '127.0.0.1')
     port = int(os.environ.get('HMC_PORT', '19080'))
     print(f'Hermes Mission Control listening on http://{host}:{port}')

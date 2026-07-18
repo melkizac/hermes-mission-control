@@ -119,7 +119,7 @@ export class HttpHermesClient implements HermesClient {
       // /api/agents/<id> detail loads are intentionally expensive and can be
       // competing with background dashboard refreshes; tying the composer to
       // those reads is what made a trivial “Hi” wait ~20s in the UI.
-      const status = await rawJsonRequest<{ messages?: Message[]; processingRequests?: string[] }>(
+      const status = await rawJsonRequest<{ messages?: Message[]; processingRequests?: string[]; delivery?: { status?: string; error?: string } }>(
         `/api/agents/${encodeURIComponent(agentId)}/messages/status?requestId=${encodeURIComponent(requestId)}`,
       );
       const requestMessages = (status?.messages ?? []).filter((m) => m.requestId === requestId);
@@ -130,6 +130,9 @@ export class HttpHermesClient implements HermesClient {
       }
       const errorMessage = requestMessages.find((m) => m.role === "system" && /failed|interrupted|stopped/i.test(m.text ?? ""));
       if (errorMessage) throw new Error(errorMessage.text || "Message processing failed");
+      if (["failed", "interrupted", "cancelled"].includes(status?.delivery?.status ?? "")) {
+        throw new Error(status?.delivery?.error || `Message delivery ${status?.delivery?.status}.`);
+      }
       const activeRequests = new Set(status?.processingRequests ?? []);
       const requestKnown = requestMessages.length > 0;
       const backendNoLongerRunning = requestKnown && !activeRequests.has(requestId) && Date.now() - startedAt * 1000 > 10000;
