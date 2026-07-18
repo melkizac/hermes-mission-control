@@ -6,7 +6,7 @@ import { VoiceCoreOrb } from "../components/VoiceCoreOrb";
 import { cachedJsonRequest } from "../services/queryCache";
 import { buildChatIntentPreview, confidenceFromScore, routeChatIntent, serializeChatIntentDecision } from "../services/chatIntentRouter";
 import type { ChatIntentDecision, ChatIntentPreview, ChatIntentNextAction, ChatIntentType, ChatMissionContext, ChatRoutineContext, ChatWorkflowContext } from "../services/chatIntentRouter";
-import type { Attachment, AutomationsResponse, BoardResponse, BoardTask, Message, ModelRoutingSelection, ProjectRecord, ProjectsResponse, ReplyContext, RouterConfig, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
+import type { Attachment, AutomationsResponse, BoardResponse, BoardTask, Message, ModelRoutingSelection, ProjectChatMessagesResponse, ProjectChatResponse, ProjectChatSession, ProjectRecord, ProjectsResponse, ReplyContext, RouterConfig, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
 
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 
@@ -467,6 +467,13 @@ export function MissionControl() {
   const [modelRouterLoading, setModelRouterLoading] = useState(false);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [hasStartedMainChat, setHasStartedMainChat] = useState(false);
+  const [mobileNavigatorOpen, setMobileNavigatorOpen] = useState(false);
+  const [mobileSelectedAgentId, setMobileSelectedAgentId] = useState("default");
+  const [mobileProjectChats, setMobileProjectChats] = useState<ProjectChatResponse | null>(null);
+  const [mobileHistoryLoading, setMobileHistoryLoading] = useState(false);
+  const [mobileHistoryError, setMobileHistoryError] = useState<string | null>(null);
+  const [mobileSelectedSession, setMobileSelectedSession] = useState<ProjectChatSession | null>(null);
+  const [mobileSessionMessages, setMobileSessionMessages] = useState<Message[] | null>(null);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>("idle");
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [voiceMessage, setVoiceMessage] = useState("Click the mic and speak. I will transcribe your voice into the message box.");
@@ -533,7 +540,8 @@ export function MissionControl() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // Do not lazy-load the full default agent transcript on fresh Chat mount.
+  // Desktop keeps the lightweight hero fast. Mobile has no roster/sidebar, so
+  // it hydrates the selected agent below to keep conversation history reachable.
   // It is a multi-second detail endpoint and made simple sends compete with a
   // history refresh. The clean hero can render from the lightweight roster; the
   // current exchange is appended optimistically and then completed via the
@@ -609,18 +617,23 @@ export function MissionControl() {
   const selectedPermission = permissionModeOptions.find((option) => option.value === permissionMode) ?? permissionModeOptions[0];
   const greeting = singaporeDaypartGreeting();
   const heroPrompt = selectedProject ? `What should we work on in “${projectLabel(selectedProject)}”?` : `${greeting}, Melverick!`;
-  const melkizac = agents.find((agent) => agent.id === "default") ?? agents[0];
+  const activeChatAgent = agents.find((agent) => agent.id === mobileSelectedAgentId)
+    ?? agents.find((agent) => agent.id === "default")
+    ?? agents[0];
+  const activeChatAgentId = activeChatAgent?.id ?? "default";
+  const activeChatAgentName = activeChatAgent?.name || "Melkizac";
   const mainChatMessages = useMemo(
-    () => (melkizac?.messages ?? []).filter(isRenderableChatMessage).slice(-80),
-    [melkizac?.messages],
+    () => (activeChatAgent?.messages ?? []).filter(isRenderableChatMessage).slice(-80),
+    [activeChatAgent?.messages],
   );
+  const displayedMainChatMessages = mobileSessionMessages ?? mainChatMessages;
   const pendingMainMessageAlreadyVisible = useMemo(
     () => Boolean(pendingMainMessage && mainChatMessages.some((message) => message.role === "user" && visibleChatText(message) === pendingMainMessage.text)),
     [mainChatMessages, pendingMainMessage],
   );
   const visiblePendingMainMessage = pendingMainMessageAlreadyVisible ? null : pendingMainMessage;
   const activeMainBackendRequestId = useMemo(() => {
-    const activeIds = new Set(melkizac?.processingRequests ?? []);
+    const activeIds = new Set(activeChatAgent?.processingRequests ?? []);
     if (!activeIds.size) return null;
     const activeUserRequests = [...mainChatMessages]
       .reverse()
@@ -629,11 +642,11 @@ export function MissionControl() {
       const completed = mainChatMessages.some((message) => message.requestId === userMessage.requestId && (message.role === "agent" || message.role === "system"));
       if (!completed) return userMessage.requestId ?? null;
     }
-    return melkizac?.processingRequests?.[0] ?? null;
-  }, [mainChatMessages, melkizac?.processingRequests]);
+    return activeChatAgent?.processingRequests?.[0] ?? null;
+  }, [activeChatAgent?.processingRequests, mainChatMessages]);
   const activeMainBackendRequestDetail = useMemo(
-    () => (melkizac?.processingRequestDetails ?? []).find((item) => item.id === activeMainBackendRequestId),
-    [activeMainBackendRequestId, melkizac?.processingRequestDetails],
+    () => (activeChatAgent?.processingRequestDetails ?? []).find((item) => item.id === activeMainBackendRequestId),
+    [activeChatAgent?.processingRequestDetails, activeMainBackendRequestId],
   );
   const activeMainBackendUserMessage = useMemo(
     () => mainChatMessages.find((message) => message.role === "user" && message.requestId === activeMainBackendRequestId),
@@ -693,6 +706,80 @@ export function MissionControl() {
     window.localStorage.setItem("hmc:model-selection", modelMode);
   }, [modelMode]);
 
+  useEffect(() => {
+    if (!window.matchMedia("(max-width: 760px)").matches) return;
+    let alive = true;
+    setHasStartedMainChat(true);
+    void refreshAgent(activeChatAgentId).catch(() => {
+      if (alive) setMobileHistoryError(`Could not load ${activeChatAgentName}'s latest conversation. Pull to refresh and try again.`);
+    });
+    return () => { alive = false; };
+  }, [activeChatAgentId, activeChatAgentName, refreshAgent]);
+
+  const loadMobileConversationIndex = useCallback(async () => {
+    setMobileHistoryLoading(true);
+    setMobileHistoryError(null);
+    try {
+      const response = await fetch(`${window.location.protocol}//${window.location.host}/api/project-chats`, {
+        credentials: "include",
+        headers: { Accept: "application/json" },
+      });
+      const data = await response.json().catch(() => ({})) as ProjectChatResponse;
+      if (!response.ok) throw new Error(data.error || `Conversation history failed (${response.status}).`);
+      setMobileProjectChats(data);
+    } catch (err) {
+      setMobileHistoryError(err instanceof Error ? err.message : "Conversation history is unavailable.");
+    } finally {
+      setMobileHistoryLoading(false);
+    }
+  }, []);
+
+  async function openMobileConversation(session: ProjectChatSession) {
+    setMobileHistoryLoading(true);
+    setMobileHistoryError(null);
+    try {
+      const response = await fetch(`${window.location.protocol}//${window.location.host}/api/project-chats/${encodeURIComponent(session.id)}/messages`, {
+        credentials: "include",
+        headers: { Accept: "application/json" },
+      });
+      const data = await response.json().catch(() => ({})) as ProjectChatMessagesResponse;
+      if (!response.ok || data.error) throw new Error(data.error || `Conversation failed (${response.status}).`);
+      setMobileSelectedSession(session);
+      setMobileSessionMessages((data.messages ?? []).filter(isRenderableChatMessage));
+      setHasStartedMainChat(true);
+      setMobileNavigatorOpen(false);
+    } catch (err) {
+      setMobileHistoryError(err instanceof Error ? err.message : "Conversation could not be opened.");
+    } finally {
+      setMobileHistoryLoading(false);
+    }
+  }
+
+  function openMobileNavigator() {
+    setMobileNavigatorOpen(true);
+    if (!mobileProjectChats && !mobileHistoryLoading) void loadMobileConversationIndex();
+  }
+
+  function startMobileChat(agentId = activeChatAgentId) {
+    setMobileSelectedAgentId(agentId);
+    setMobileSelectedSession(null);
+    setMobileSessionMessages(null);
+    setMainChatReplyTo(null);
+    setHasStartedMainChat(true);
+    setMobileNavigatorOpen(false);
+    void refreshAgent(agentId).catch(() => setMobileHistoryError("The selected agent could not be refreshed."));
+  }
+
+  function createNewMobileChat() {
+    setMobileSelectedSession(null);
+    setMobileSessionMessages(null);
+    setMainChatReplyTo(null);
+    setDraft("");
+    setAttachments([]);
+    setHasStartedMainChat(false);
+    setMobileNavigatorOpen(false);
+  }
+
   async function resolveMainModelRouting(): Promise<ModelRoutingSelection> {
     if (modelMode === "auto") return { mode: "auto" };
     const cfg = modelRouterConfig ?? await ensureModelRouter();
@@ -726,9 +813,9 @@ export function MissionControl() {
     // detail endpoint. client.sendMessage() already reconciles the active turn
     // through /messages/status; this fallback detail refresh is only for an
     // orphaned backend request discovered outside the local send lifecycle.
-    const poll = window.setInterval(() => void refreshAgent("default").catch(() => undefined), 3000);
+    const poll = window.setInterval(() => void refreshAgent(activeChatAgentId).catch(() => undefined), 3000);
     return () => window.clearInterval(poll);
-  }, [activeMainBackendRequestId, refreshAgent, sending]);
+  }, [activeChatAgentId, activeMainBackendRequestId, refreshAgent, sending]);
 
   useEffect(() => {
     if (sending || routingActionBusy || !hasStartedMainChat) return;
@@ -736,11 +823,11 @@ export function MissionControl() {
     if (!localRequestId) return;
     const persistedUser = mainChatMessages.some((message) => message.role === "user" && message.requestId === localRequestId);
     const completed = mainChatMessages.some((message) => message.requestId === localRequestId && (message.role === "agent" || message.role === "system"));
-    const stillActive = Boolean(melkizac?.processingRequests?.includes(localRequestId));
+    const stillActive = Boolean(activeChatAgent?.processingRequests?.includes(localRequestId));
     if (persistedUser && !completed && !stillActive) {
-      void refreshAgent("default").catch(() => undefined);
+      void refreshAgent(activeChatAgentId).catch(() => undefined);
     }
-  }, [hasStartedMainChat, mainChatMessages, melkizac?.processingRequests, refreshAgent, routingActionBusy, sending]);
+  }, [activeChatAgent?.processingRequests, activeChatAgentId, hasStartedMainChat, mainChatMessages, refreshAgent, routingActionBusy, sending]);
 
   useEffect(() => {
     const wasInVoiceMode = previousVoiceStatusRef.current !== "idle";
@@ -1287,7 +1374,7 @@ export function MissionControl() {
       if (!item.file) {
         throw new Error(`${item.name} was selected in the browser but is no longer available to upload. Please attach it again.`);
       }
-      uploaded.push(await uploadAttachmentToAgent("default", item.file));
+      uploaded.push(await uploadAttachmentToAgent(activeChatAgentId, item.file));
     }
     return uploaded;
   }
@@ -1505,7 +1592,7 @@ export function MissionControl() {
     if (action === "clarify") {
       setRoutingActionMessage(null);
       setRoutingActionError(null);
-      const newMessages = await sendToAgent("default", composeClarificationContext(current.instruction, current.decision, current.preview), activeMainUploadedAttachmentsRef.current, sendOptions);
+      const newMessages = await sendToAgent(activeChatAgentId, composeClarificationContext(current.instruction, current.decision, current.preview), activeMainUploadedAttachmentsRef.current, sendOptions);
       const directReply = [...newMessages].reverse().find((message) => message.role === "agent" && visibleChatText(message).trim());
       if (speakReply && directReply) speakAgentReply(directReply);
       updateDraft("");
@@ -1518,7 +1605,7 @@ export function MissionControl() {
     setRoutingActionError(null);
     try {
       if (action === "send_to_agent") {
-        const newMessages = await sendToAgent("default", composeInstructionContext(current.instruction, current.decision), activeMainUploadedAttachmentsRef.current, sendOptions);
+        const newMessages = await sendToAgent(activeChatAgentId, composeInstructionContext(current.instruction, current.decision), activeMainUploadedAttachmentsRef.current, sendOptions);
         const directReply = [...newMessages].reverse().find((message) => message.role === "agent" && visibleChatText(message).trim());
         if (speakReply && directReply) speakAgentReply(directReply);
         updateDraft("");
@@ -1650,6 +1737,10 @@ export function MissionControl() {
   async function submitInstruction(instructionText: string, options: { preserveDraft?: boolean; keepVoiceScreen?: boolean } = {}) {
     const instruction = instructionText.trim();
     if (!instruction || sending) return;
+    if (mobileSelectedSession) {
+      setMobileSelectedSession(null);
+      setMobileSessionMessages(null);
+    }
     if (!options.keepVoiceScreen) {
       // Plain text submits must never inherit a previous voice session's reply mode.
       // Voice reply is opt-in per voice-originated message only.
@@ -1716,7 +1807,7 @@ export function MissionControl() {
         if (maybeCompleted) {
           setError("Connection dropped while Melkizac was processing. Refreshing the latest chat instead of putting the sent message back in the composer…");
           for (const delay of [1200, 3000, 6000, 10000]) {
-            window.setTimeout(() => void refreshAgent("default").catch(() => undefined), delay);
+            window.setTimeout(() => void refreshAgent(activeChatAgentId).catch(() => undefined), delay);
           }
         } else {
           updateDraft(instruction);
@@ -1751,8 +1842,8 @@ export function MissionControl() {
     setRoutingActionMessage(null);
     setRoutingActionError("Stopping current message…");
     try {
-      await stopProcessingForAgent("default", requestId);
-      await refreshAgent("default").catch(() => undefined);
+      await stopProcessingForAgent(activeChatAgentId, requestId);
+      await refreshAgent(activeChatAgentId).catch(() => undefined);
       setRoutingActionError("Stopped the current message before it finished processing.");
     } catch (err) {
       setRoutingActionError(err instanceof Error ? `Stopped locally, but backend stop failed: ${err.message}` : "Stopped locally, but backend stop failed.");
@@ -1766,11 +1857,58 @@ export function MissionControl() {
     }
   }
 
+  function renderMobileNavigator() {
+    if (!mobileNavigatorOpen) return null;
+    const recentSessions = (mobileProjectChats?.sessions ?? []).filter((session) => session.human_initiated !== false).slice(0, 20);
+    return (
+      <div className="mobile-chat-navigator-layer">
+        <button className="mobile-chat-navigator-scrim" type="button" onClick={() => setMobileNavigatorOpen(false)} aria-label="Close conversations and agents" />
+        <aside className="mobile-chat-navigator" aria-label="Mobile conversations and agents">
+          <header>
+            <div><strong>Hermes chat</strong><span>Agents and conversation history</span></div>
+            <button type="button" onClick={() => setMobileNavigatorOpen(false)} aria-label="Close conversations and agents">×</button>
+          </header>
+          <button className="mobile-chat-new-conversation" type="button" onClick={createNewMobileChat}>＋ New conversation</button>
+          <section>
+            <h2>Agents</h2>
+            <div className="mobile-chat-agent-list">
+              {agents.map((agent) => (
+                <button className={agent.id === activeChatAgentId ? "active" : ""} type="button" key={agent.id} onClick={() => startMobileChat(agent.id)}>
+                  <span className="mobile-chat-agent-avatar">{agent.initials || agent.name.slice(0, 2).toUpperCase()}</span>
+                  <span><strong>{agent.name}</strong><small>{agent.statusLabel || agent.status}</small></span>
+                  {agent.processingRequests?.length ? <em>Working</em> : null}
+                </button>
+              ))}
+            </div>
+          </section>
+          <section className="mobile-chat-recent-section">
+            <div className="mobile-chat-section-heading">
+              <h2>Recent conversations</h2>
+              <button type="button" onClick={() => void loadMobileConversationIndex()} aria-label="Refresh conversation history">Refresh</button>
+            </div>
+            {mobileHistoryLoading && <p className="mobile-chat-history-note">Loading conversation history…</p>}
+            {mobileHistoryError && <p className="mobile-chat-history-note error">{mobileHistoryError}</p>}
+            {!mobileHistoryLoading && !mobileHistoryError && recentSessions.length === 0 && <p className="mobile-chat-history-note">No saved conversations yet.</p>}
+            <div className="mobile-chat-session-list">
+              {recentSessions.map((session) => (
+                <button type="button" key={session.id} onClick={() => void openMobileConversation(session)}>
+                  <strong>{session.title || "Untitled conversation"}</strong>
+                  <span>{session.project_name || "General"} · {session.messages} messages</span>
+                  <time>{session.started_at ? new Date(session.started_at).toLocaleDateString() : ""}</time>
+                </button>
+              ))}
+            </div>
+          </section>
+        </aside>
+      </div>
+    );
+  }
+
   return !shouldShowMainChatTranscript ? (
     <div className="clean-chat-page">
       <section className="clean-chat-shell" aria-label="Clean Chat command center">
         <header className="clean-chat-mobile-topbar" aria-label="Chat controls">
-          <button className="clean-chat-round-button" type="button" aria-label="Open Mission Control menu">
+          <button className="clean-chat-round-button" type="button" onClick={openMobileNavigator} aria-label="Open conversations and agents">
             <span aria-hidden="true" />
             <span aria-hidden="true" />
             <span aria-hidden="true" />
@@ -1786,7 +1924,7 @@ export function MissionControl() {
               <path d="M7 10l5 5 5-5" />
             </svg>
           </label>
-          <button className="clean-chat-round-button clean-chat-compose-button" type="button" aria-label="New chat">
+          <button className="clean-chat-round-button clean-chat-compose-button" type="button" onClick={createNewMobileChat} aria-label="New chat">
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <path d="M5 19l1.4-4.8L17 3.6a2.1 2.1 0 013 3L9.4 17.2 5 19z" />
               <path d="M13.5 6.5l4 4" />
@@ -1877,38 +2015,41 @@ export function MissionControl() {
         {error && <div className="clean-chat-error">{error}</div>}
 
       </section>
+      {renderMobileNavigator()}
     </div>
   ) : (
     <div className="clean-chat-page main-chat-surface">
-      <section className="main-chat-shell" aria-label="Melkizac chat conversation">
+      <section className="main-chat-shell" aria-label={`${activeChatAgentName} chat conversation`}>
         <header className="main-chat-header">
+          <button className="main-chat-mobile-menu" type="button" onClick={openMobileNavigator} aria-label="Open conversations and agents">☰</button>
           <div className="main-chat-header-identity">
-            <span className="main-chat-avatar">ME</span>
+            <span className="main-chat-avatar">{activeChatAgent?.initials || "ME"}</span>
             <div>
-              <h1>Melkizac — All Groups Agent</h1>
-              <p>{selectedProject ? projectLabel(selectedProject) : "Main Chat"}</p>
+              <h1>{activeChatAgentName}</h1>
+              <p>{mobileSelectedSession?.title || (selectedProject ? projectLabel(selectedProject) : activeChatAgent?.squad || "Main Chat")}</p>
             </div>
-            <span className="main-chat-status"><i /> {melkizac?.statusLabel || "Active"} · {melkizac?.activityState || "active"}</span>
+            <span className="main-chat-status"><i /> {activeChatAgent?.statusLabel || "Active"} · {activeChatAgent?.activityState || "active"}</span>
           </div>
-          <button className="main-chat-details" type="button" aria-label="Open Melkizac details">Details</button>
+          <button className="main-chat-details" type="button" onClick={openMobileNavigator} aria-label="Open agent and conversation details">Details</button>
         </header>
 
-        <main ref={mainChatHistoryRef} className={`main-chat-history ${voiceStatus !== "idle" ? "voice-mode" : ""}`} aria-label={voiceStatus !== "idle" ? "Voice input activation" : "Melkizac conversation history"}>
+        {mobileSelectedSession && <div className="mobile-chat-saved-banner"><span>Viewing saved conversation</span><button type="button" onClick={() => startMobileChat(activeChatAgentId)}>Return to live chat</button></div>}
+        <main ref={mainChatHistoryRef} className={`main-chat-history ${voiceStatus !== "idle" ? "voice-mode" : ""}`} aria-label={voiceStatus !== "idle" ? "Voice input activation" : `${activeChatAgentName} conversation history`}>
           {voiceStatus !== "idle" ? (
             renderVoiceActivation("full")
-          ) : mainChatMessages.length === 0 && !visiblePendingMainMessage ? (
+          ) : displayedMainChatMessages.length === 0 && !visiblePendingMainMessage ? (
             <div className="main-chat-empty-state">
-              <span className="main-chat-avatar">ME</span>
-              <strong>Starting the Melkizac conversation…</strong>
-              <p>Your message will appear here while Melkizac responds.</p>
+              <span className="main-chat-avatar">{activeChatAgent?.initials || "ME"}</span>
+              <strong>No messages with {activeChatAgentName} yet</strong>
+              <p>Send a message below to start this conversation.</p>
             </div>
           ) : (
             <>
-              {mainChatMessages.map((message) => {
+              {displayedMainChatMessages.map((message) => {
                 const isUser = message.role === "user";
                 return (
                   <article className={`main-chat-row ${isUser ? "user" : "agent"}`} key={`${message.id}-${message.role}`}>
-                    {!isUser && <span className="main-chat-avatar">ME</span>}
+                    {!isUser && <span className="main-chat-avatar">{activeChatAgent?.initials || "ME"}</span>}
                     <div className="main-chat-message-stack">
                       <div className="main-chat-meta">
                         <strong>{chatMessageLabel(message)}</strong>
@@ -1968,13 +2109,13 @@ export function MissionControl() {
                 </article>
               )}
               {isMainChatProcessing && (
-                <div className="processing-inline main-chat-processing-inline" role="status" aria-live="polite" aria-label="Melkizac is processing your message">
+                <div className="processing-inline main-chat-processing-inline" role="status" aria-live="polite" aria-label={`${activeChatAgentName} is processing your message`}>
                   <span className="processing-inline-dots" aria-hidden="true">
                     <span />
                     <span />
                     <span />
                   </span>
-                  <span>Melkizac is processing…</span>
+                  <span>{activeChatAgentName} is processing…</span>
                   <span className="processing-inline-timer" aria-label={`Elapsed processing time ${processingElapsedLabel}`} title="Elapsed processing time">
                     {processingElapsedLabel}
                   </span>
@@ -1987,7 +2128,7 @@ export function MissionControl() {
 
         <form className="main-chat-composer" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
           <div className="mobile-composer-prompt">
-            {selectedProject ? `What should we work on in ${projectLabel(selectedProject)}?` : "What should Melkizac work on?"}
+            {selectedProject ? `What should we work on in ${projectLabel(selectedProject)}?` : `What should ${activeChatAgentName} work on?`}
           </div>
           {routingActionMessage && <div className="main-chat-route-status success">{routingActionMessage}</div>}
           {routingActionError && <div className="main-chat-route-status error">{routingActionError}</div>}
@@ -2027,7 +2168,7 @@ export function MissionControl() {
             value={draft}
             onChange={(event) => updateDraft(event.target.value)}
             onKeyDown={handleComposerKeyDown}
-            placeholder={isMainChatProcessing ? "Melkizac is processing…" : "Send a task or message to Melkizac..."}
+            placeholder={`Send a task or message to ${activeChatAgentName}...`}
             disabled={isMainChatProcessing}
             rows={2}
           />
@@ -2104,6 +2245,7 @@ export function MissionControl() {
           {error && <div className="clean-chat-error">{error}</div>}
         </form>
       </section>
+      {renderMobileNavigator()}
     </div>
   );
 }
