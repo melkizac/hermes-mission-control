@@ -110,14 +110,17 @@ async function requestStatus(): Promise<RailStatus> {
   return res.json() as Promise<RailStatus>;
 }
 
-async function requestProjectChats(): Promise<ProjectChatResponse | null> {
-  const res = await fetch(`${window.location.protocol}//${window.location.host}/api/project-chats?mode=recent&limit=20`, { credentials: "include", headers: { Accept: "application/json" } });
+async function requestProjectChats(limit: number): Promise<ProjectChatResponse | null> {
+  const res = await fetch(`${window.location.protocol}//${window.location.host}/api/project-chats?mode=recent&limit=${limit}`, { credentials: "include", headers: { Accept: "application/json" } });
   if (!res.ok) throw new Error(res.statusText);
   return res.json() as Promise<ProjectChatResponse>;
 }
 
 const PINNED_CHAT_TABS_KEY = "hmc:pinned-chat-tabs";
 const PENDING_OPEN_CHAT_SESSION_KEY = "hmc:pending-open-chat-session";
+const INITIAL_CHAT_SESSION_COUNT = 5;
+const CHAT_SESSION_BATCH_SIZE = 5;
+const MAX_CHAT_SESSION_COUNT = 50;
 
 function pinChatSession(sessionId: string) {
   try {
@@ -148,6 +151,9 @@ export function NavRail() {
   const { view, setView, uiMode, agents, selected, selectedId, permissions, setUiMode, select } = useStore();
   const [status, setStatus] = useState<RailStatus | null>(null);
   const [projectChats, setProjectChats] = useState<ProjectChatResponse | null>(null);
+  const [visibleChatSessionCount, setVisibleChatSessionCount] = useState(INITIAL_CHAT_SESSION_COUNT);
+  const [moreChatSessionsLoading, setMoreChatSessionsLoading] = useState(false);
+  const [moreChatSessionsError, setMoreChatSessionsError] = useState(false);
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const [chatsCollapsed, setChatsCollapsed] = useState(() => window.localStorage.getItem("hmc-nav-chats-collapsed") === "true");
   const [collapsed, setCollapsed] = useState(() => window.localStorage.getItem("hmc-nav-collapsed") === "true");
@@ -184,8 +190,9 @@ export function NavRail() {
   useEffect(() => {
     if (uiMode === "admin") return;
     let alive = true;
+    setVisibleChatSessionCount(INITIAL_CHAT_SESSION_COUNT);
     const timer = window.setTimeout(() => {
-      void requestProjectChats()
+      void requestProjectChats(INITIAL_CHAT_SESSION_COUNT + 1)
         .then((next) => { if (alive) setProjectChats(next); })
         .catch(() => { if (alive) setProjectChats(null); });
     }, 900);
@@ -227,11 +234,29 @@ export function NavRail() {
     setCollapsedGroups((current) => ({ ...current, [label]: !current[label] }));
   }
 
-  const chatSessions = (projectChats?.sessions ?? [])
+  const availableChatSessions = (projectChats?.sessions ?? [])
     .filter((session) => session.human_initiated !== false)
     .slice()
-    .sort((a, b) => new Date(b.started_at || 0).getTime() - new Date(a.started_at || 0).getTime())
-    .slice(0, 5);
+    .sort((a, b) => new Date(b.started_at || 0).getTime() - new Date(a.started_at || 0).getTime());
+  const chatSessions = availableChatSessions.slice(0, visibleChatSessionCount);
+  const canViewMoreChatSessions = availableChatSessions.length > visibleChatSessionCount
+    && visibleChatSessionCount < MAX_CHAT_SESSION_COUNT;
+
+  async function viewMoreChatSessions() {
+    if (moreChatSessionsLoading || !canViewMoreChatSessions) return;
+    const nextVisibleCount = Math.min(visibleChatSessionCount + CHAT_SESSION_BATCH_SIZE, MAX_CHAT_SESSION_COUNT);
+    setMoreChatSessionsLoading(true);
+    setMoreChatSessionsError(false);
+    try {
+      const next = await requestProjectChats(nextVisibleCount + 1);
+      setProjectChats(next);
+      setVisibleChatSessionCount(nextVisibleCount);
+    } catch {
+      setMoreChatSessionsError(true);
+    } finally {
+      setMoreChatSessionsLoading(false);
+    }
+  }
 
   function openChatSession(session: ProjectChatSession) {
     const needle = [session.project_owner, session.project_name, session.source, session.origin].filter(Boolean).join(" ").toLowerCase();
@@ -363,6 +388,21 @@ export function NavRail() {
                   </button>
                 ))}
                 {!chatSessions.length && <div className="nav-chat-empty">No saved chats yet</div>}
+                {canViewMoreChatSessions && (
+                  <button
+                    className="nav-chat-view-more"
+                    type="button"
+                    onClick={() => void viewMoreChatSessions()}
+                    disabled={moreChatSessionsLoading}
+                    aria-label="View more past conversations"
+                  >
+                    {moreChatSessionsLoading
+                      ? "Loading conversations..."
+                      : moreChatSessionsError
+                        ? "Retry loading conversations"
+                        : "View more conversations"}
+                  </button>
+                )}
               </div>
             )}
           </section>

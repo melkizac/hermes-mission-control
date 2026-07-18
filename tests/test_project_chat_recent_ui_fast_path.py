@@ -12,7 +12,8 @@ def test_left_rail_and_mobile_drawer_use_bounded_recent_chat_endpoint() -> None:
     nav = read("src/components/NavRail.tsx")
     mission = read("src/views/MissionControl.tsx")
 
-    assert "/api/project-chats?mode=recent&limit=20" in nav
+    assert "/api/project-chats?mode=recent&limit=${limit}" in nav
+    assert "requestProjectChats(INITIAL_CHAT_SESSION_COUNT + 1)" in nav
     assert "/api/project-chats?mode=recent&limit=20" in mission
     assert "prefetchMobileConversationIndex" in mission
 
