@@ -115,7 +115,7 @@ async function requestStatus(): Promise<RailStatus> {
 }
 
 async function requestProjectChats(): Promise<ProjectChatResponse | null> {
-  const res = await fetch(`${window.location.protocol}//${window.location.host}/api/project-chats`, { credentials: "include", headers: { Accept: "application/json" } });
+  const res = await fetch(`${window.location.protocol}//${window.location.host}/api/project-chats?mode=recent&limit=20`, { credentials: "include", headers: { Accept: "application/json" } });
   if (!res.ok) throw new Error(res.statusText);
   return res.json() as Promise<ProjectChatResponse>;
 }

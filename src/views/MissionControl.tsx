@@ -510,6 +510,7 @@ export function MissionControl() {
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const activeMainRequestRef = useRef<{ id: string; controller: AbortController } | null>(null);
   const activeMainUploadedAttachmentsRef = useRef<Attachment[]>([]);
+  const mobileHistoryRequestRef = useRef<Promise<void> | null>(null);
 
   function resizeComposerTextarea() {
     const textarea = composerTextareaRef.current;
@@ -717,22 +718,38 @@ export function MissionControl() {
   }, [activeChatAgentId, activeChatAgentName, refreshAgent]);
 
   const loadMobileConversationIndex = useCallback(async () => {
-    setMobileHistoryLoading(true);
-    setMobileHistoryError(null);
+    if (mobileHistoryRequestRef.current) return mobileHistoryRequestRef.current;
+    const request = (async () => {
+      setMobileHistoryLoading(true);
+      setMobileHistoryError(null);
+      try {
+        const response = await fetch(`${window.location.protocol}//${window.location.host}/api/project-chats?mode=recent&limit=20`, {
+          credentials: "include",
+          headers: { Accept: "application/json" },
+        });
+        const data = await response.json().catch(() => ({})) as ProjectChatResponse;
+        if (!response.ok) throw new Error(data.error || `Conversation history failed (${response.status}).`);
+        setMobileProjectChats(data);
+      } catch (err) {
+        setMobileHistoryError(err instanceof Error ? err.message : "Conversation history is unavailable.");
+      } finally {
+        setMobileHistoryLoading(false);
+      }
+    })();
+    mobileHistoryRequestRef.current = request;
     try {
-      const response = await fetch(`${window.location.protocol}//${window.location.host}/api/project-chats`, {
-        credentials: "include",
-        headers: { Accept: "application/json" },
-      });
-      const data = await response.json().catch(() => ({})) as ProjectChatResponse;
-      if (!response.ok) throw new Error(data.error || `Conversation history failed (${response.status}).`);
-      setMobileProjectChats(data);
-    } catch (err) {
-      setMobileHistoryError(err instanceof Error ? err.message : "Conversation history is unavailable.");
+      await request;
     } finally {
-      setMobileHistoryLoading(false);
+      if (mobileHistoryRequestRef.current === request) mobileHistoryRequestRef.current = null;
     }
   }, []);
+
+  useEffect(() => {
+    if (!window.matchMedia("(max-width: 760px)").matches || mobileProjectChats) return;
+    const prefetchMobileConversationIndex = () => void loadMobileConversationIndex();
+    const timer = window.setTimeout(prefetchMobileConversationIndex, 600);
+    return () => window.clearTimeout(timer);
+  }, [loadMobileConversationIndex, mobileProjectChats]);
 
   async function openMobileConversation(session: ProjectChatSession) {
     setMobileHistoryLoading(true);

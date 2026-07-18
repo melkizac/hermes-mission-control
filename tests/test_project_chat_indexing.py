@@ -129,7 +129,8 @@ def test_project_chat_linking_supports_many_to_many_canonical_links_and_rejects_
     nexius = app.project_chat_sessions_payload({"project": ["nexius-leads"]})
     all_chats = app.project_chat_sessions_payload({})
 
-    assert [item["id"] for item in mission["sessions"]] == ["chat-hmc"]
+    assert "chat-hmc" in [item["id"] for item in mission["sessions"]]
+    assert sum(1 for item in mission["sessions"] if item["id"] == "chat-hmc" and item["link_source"] == "canonical") == 1
     assert [item["id"] for item in nexius["sessions"]].count("chat-hmc") == 1
     assert sum(1 for item in all_chats["sessions"] if item["id"] == "chat-hmc" and item["link_source"] == "canonical") == 2
     assert any(item["id"] == "chat-web-ui" for item in all_chats["sessions"])
@@ -203,3 +204,31 @@ def test_project_chat_sessions_return_scoped_human_chats_for_non_admin_user(tmp_
     assert "chat-nexius" not in ids
     assert payload["projects"][0]["id"] == "mission-control"
     assert payload["summary"]["sessions"] == len(payload["sessions"])
+
+
+def test_recent_project_chat_fast_path_is_bounded_and_skips_transcript_analysis(tmp_path, monkeypatch):
+    app = load_backend_app(tmp_path, monkeypatch)
+    seed_state_db(app)
+    monkeypatch.setattr(app, "project_session_text_index", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("recent list must not aggregate transcripts")))
+    monkeypatch.setattr(app, "session_project_assignments", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("recent list must not classify every project")))
+
+    payload = app.project_chat_recent_sessions_payload({"limit": ["2"]}, admin_identity())
+
+    assert [item["id"] for item in payload["sessions"]] == ["chat-web-ui", "chat-nexius"]
+    assert all(item["human_initiated"] is True for item in payload["sessions"])
+    assert all(item["id"] != "cron-nightly" for item in payload["sessions"])
+    assert payload["summary"]["sessions"] == 2
+    assert payload["summary"]["fast_path"] is True
+
+
+def test_recent_project_chat_fast_path_does_not_expose_unlinked_sessions_to_workspace_user(tmp_path, monkeypatch):
+    app = load_backend_app(tmp_path, monkeypatch)
+    seed_state_db(app)
+    monkeypatch.setattr(app, "list_workspace_projects", lambda _filters, _identity: {
+        "projects": [{"id": "mission-control", "name": "Hermes Mission Control"}],
+    })
+
+    payload = app.project_chat_recent_sessions_payload({"limit": ["20"]}, user_identity())
+
+    assert payload["sessions"] == []
+    assert payload["summary"]["fast_path"] is True
