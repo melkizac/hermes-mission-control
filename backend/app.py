@@ -8382,6 +8382,133 @@ def project_chat_suggestion_item(session, suggestion):
     return clean
 
 
+def project_chat_recent_sessions_payload(filters=None, identity=None):
+    """Return the bounded chat-navigation index without transcript aggregation.
+
+    The full project-chat payload classifies transcripts across every project.
+    Navigation only needs recent human chat metadata, so keep this path to two
+    indexed SQLite reads: recent sessions and their existing canonical links.
+    """
+    filters = filters or {}
+    try:
+        limit = min(max(int((filters.get('limit') or ['20'])[0]), 1), 50)
+    except Exception:
+        limit = 20
+    q = (filters.get('q') or [''])[0].strip().lower()
+    project_filter = (filters.get('project') or [''])[0].strip().lower()
+    if not STATE_DB.exists():
+        return {'projects': [], 'sessions': [], 'summary': {'projects': 0, 'sessions': 0, 'chats': 0, 'canonical_links': 0, 'suggested_links': 0, 'heuristic_links': 0, 'fast_path': True}}
+
+    try:
+        con = sqlite3.connect(f'file:{STATE_DB}?mode=ro', uri=True, timeout=2)
+        con.row_factory = sqlite3.Row
+        human_sources = tuple(sorted(HUMAN_CHAT_SOURCES))
+        placeholders = ','.join('?' for _ in human_sources)
+        rows = con.execute(f"""
+            SELECT id,title,source,model,started_at,message_count,tool_call_count,input_tokens,output_tokens
+            FROM sessions
+            WHERE lower(coalesce(source,'')) IN ({placeholders})
+            ORDER BY started_at DESC
+            LIMIT ?
+        """, (*human_sources, limit)).fetchall()
+        con.close()
+    except Exception:
+        rows = []
+
+    base_sessions = []
+    for row in rows:
+        item = {
+            'id': row['id'],
+            'title': row['title'] or row['id'],
+            'source': row['source'] or 'unknown',
+            'model': row['model'] or 'â€”',
+            'started_at': iso(row['started_at']),
+            'messages': row['message_count'] or 0,
+            'tools': row['tool_call_count'] or 0,
+            'tokens': (row['input_tokens'] or 0) + (row['output_tokens'] or 0),
+        }
+        item.update(classify_run_trace(item))
+        item['title'] = human_session_title(item)
+        base_sessions.append(item)
+
+    session_ids = {item['id'] for item in base_sessions}
+    links = canonical_project_session_links(session_ids=session_ids, limit=max(limit * 3, 50))
+    links_by_session = {}
+    for link in links:
+        links_by_session.setdefault(link.get('id'), []).append(link)
+
+    allowed_project_ids = None
+    if identity and not is_admin_identity(identity):
+        try:
+            visible = list_workspace_projects({}, identity).get('projects', [])
+            allowed_project_ids = {str(project.get('id') or '').lower() for project in visible if project.get('id')}
+        except Exception:
+            allowed_project_ids = set()
+
+    sessions = []
+    project_records = {}
+    for item in base_sessions:
+        candidates = links_by_session.get(item['id']) or []
+        if allowed_project_ids is not None:
+            candidates = [link for link in candidates if str(link.get('project_id') or '').lower() in allowed_project_ids]
+        linked = candidates[0] if candidates else None
+        if allowed_project_ids is not None and linked is None:
+            continue
+        project_id = (linked or {}).get('project_id') or 'general-chat'
+        project_name = (linked or {}).get('project_name') or 'General chat'
+        if allowed_project_ids is not None and project_id != 'general-chat' and project_id.lower() not in allowed_project_ids:
+            continue
+        clean = {
+            **item,
+            'project_id': project_id,
+            'project_name': project_name,
+            'relationship_type': (linked or {}).get('relationship_type') or 'discussion',
+            'summary': (linked or {}).get('summary') or '',
+            'linked_by': (linked or {}).get('linked_by') or '',
+            'linked_at': (linked or {}).get('linked_at') or '',
+            'link_source': (linked or {}).get('link_source') or 'recent',
+            'confidence': (linked or {}).get('confidence') if linked else 0,
+            'project_owner': (linked or {}).get('project_owner') or '',
+            'project_status': (linked or {}).get('project_status') or 'active',
+            'kanban_tenant': (linked or {}).get('kanban_tenant') or project_id,
+            'kanban_board': (linked or {}).get('kanban_board') or 'default',
+            'project_score': (linked or {}).get('project_score') or 0,
+        }
+        if project_filter and project_id.lower() != project_filter:
+            continue
+        if q and q not in text_blob(clean.get('title'), project_name, clean.get('source'), clean.get('model')):
+            continue
+        sessions.append(clean)
+        record = project_records.setdefault(project_id, {
+            'id': project_id,
+            'name': project_name,
+            'sessions': 0,
+            'chats': 0,
+            'owner': clean.get('project_owner'),
+            'status': clean.get('project_status'),
+            'kanban_tenant': clean.get('kanban_tenant'),
+            'kanban_board': clean.get('kanban_board'),
+        })
+        record['sessions'] += 1
+        record['chats'] += 1
+
+    projects = sorted(project_records.values(), key=lambda project: (-int(project.get('sessions') or 0), (project.get('name') or '').lower()))
+    canonical_count = sum(1 for item in sessions if item.get('link_source') == 'canonical')
+    return {
+        'projects': projects,
+        'sessions': sessions,
+        'summary': {
+            'projects': len(projects),
+            'sessions': len(sessions),
+            'chats': len(sessions),
+            'canonical_links': canonical_count,
+            'suggested_links': 0,
+            'heuristic_links': 0,
+            'fast_path': True,
+        },
+    }
+
+
 def project_chat_sessions_payload(filters=None, identity=None):
     filters = filters or {}
     q = (filters.get('q') or [''])[0].strip().lower()
@@ -20503,7 +20630,13 @@ class Handler(BaseHTTPRequestHandler):
         elif parsed.path in ('/api/projects', '/api/workspaces'):
             self.send_json(list_projects(parse_qs(parsed.query), current_identity_from_cookie(self.headers.get('Cookie', ''))))
         elif parsed.path == '/api/project-chats':
-            self.send_json(project_chat_sessions_payload(parse_qs(parsed.query), current_identity_from_cookie(self.headers.get('Cookie', ''))))
+            q = parse_qs(parsed.query)
+            identity = current_identity_from_cookie(self.headers.get('Cookie', ''))
+            chat_mode = (q.get('mode') or ['full'])[0].strip().lower()
+            if chat_mode == 'recent':
+                self.send_json(project_chat_recent_sessions_payload(q, identity))
+            else:
+                self.send_json(project_chat_sessions_payload(q, identity))
         elif parsed.path.startswith('/api/project-chats/') and parsed.path.endswith('/messages'):
             parts = parsed.path.strip('/').split('/')
             session_id = unquote(parts[2]) if len(parts) >= 3 else ''
