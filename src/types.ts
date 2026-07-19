@@ -669,6 +669,7 @@ export interface Message {
   ts?: number;
   source?: string;
   sessionId?: string;
+  sessionTitle?: string;
   projectId?: string;
   projectName?: string;
   requestId?: string;
@@ -733,6 +734,7 @@ export interface ProjectChatSession {
   ui_bucket?: string;
   origin?: string;
   human_initiated?: boolean;
+  profile_id?: string;
 }
 
 export interface ProjectChatResponse {
@@ -758,6 +760,8 @@ export interface ProjectChatMutationResponse {
   link?: ProjectChatSession;
   project_id?: string;
   session_id?: string;
+  title?: string;
+  profile_id?: string;
 }
 
 export type TaskStatus = "queued" | "running" | "blocked" | "done" | "error";

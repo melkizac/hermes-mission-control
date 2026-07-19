@@ -6,6 +6,7 @@ import { VoiceCoreOrb } from "../components/VoiceCoreOrb";
 import { TelegramMessage } from "../components/TelegramMessage";
 import { cachedJsonRequest } from "../services/queryCache";
 import { availableChatModels, chatModelOptionLabel } from "../services/modelSelection";
+import { activeChatSession, clearActiveChatSession, conversationFromMessages, notifyChatSessionsChanged, provisionalConversationTitle, rememberActiveChatSession } from "../services/chatSessions";
 import { buildChatIntentPreview, confidenceFromScore, routeChatIntent, serializeChatIntentDecision } from "../services/chatIntentRouter";
 import type { ChatIntentDecision, ChatIntentPreview, ChatIntentNextAction, ChatIntentType, ChatMissionContext, ChatRoutineContext, ChatWorkflowContext } from "../services/chatIntentRouter";
 import type { Attachment, AutomationsResponse, BoardResponse, BoardTask, Message, ModelRoutingSelection, ProjectChatMessagesResponse, ProjectChatResponse, ProjectChatSession, ProjectRecord, ProjectsResponse, ReplyContext, RouterConfig, WorkflowLaunchResponse, WorkflowLibraryResponse } from "../types";
@@ -457,7 +458,7 @@ function formatRunDuration(ms: number) {
 }
 
 export function MissionControl() {
-  const { agents, approvals, sendToAgent, uploadAttachmentToAgent, setView, stopProcessingForAgent, refreshAgent, getModelRouter } = useStore();
+  const { agents, approvals, sendToAgent, uploadAttachmentToAgent, setView, stopProcessingForAgent, refreshAgent, getModelRouter, renameProjectChat } = useStore();
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -744,10 +745,24 @@ export function MissionControl() {
         const data = await response.json().catch(() => ({})) as ProjectChatResponse;
         if (!response.ok) throw new Error(data.error || `Conversation history failed (${response.status}).`);
         setMobileProjectChats(data);
+        const rememberedId = activeChatSession(activeChatAgentId);
+        const remembered = !mobileSelectedSession ? data.sessions.find((session) => session.id === rememberedId) : undefined;
+        if (remembered) {
+          setMobileSelectedSession(remembered);
+          setHasStartedMainChat(true);
+          setMobileConversationLoading(true);
+          const page = await requestMobileConversationPage(remembered.id);
+          const messages = (page.messages ?? []).filter(isRenderableChatMessage);
+          mobileConversationCacheRef.current.set(remembered.id, { messages, pagination: page.pagination, cachedAt: Date.now() });
+          setMobileSessionMessages(messages);
+          setMobileSessionPagination(page.pagination);
+          setMobileConversationLoading(false);
+        }
       } catch (err) {
         setMobileHistoryError(err instanceof Error ? err.message : "Conversation history is unavailable.");
       } finally {
         setMobileHistoryLoading(false);
+        setMobileConversationLoading(false);
       }
     })();
     mobileHistoryRequestRef.current = request;
@@ -756,7 +771,7 @@ export function MissionControl() {
     } finally {
       if (mobileHistoryRequestRef.current === request) mobileHistoryRequestRef.current = null;
     }
-  }, []);
+  }, [activeChatAgentId, mobileSelectedSession]);
 
   useEffect(() => {
     if (!window.matchMedia("(max-width: 760px)").matches || mobileProjectChats) return;
@@ -771,6 +786,8 @@ export function MissionControl() {
     if (existing) return existing;
     const request = (async () => {
       const query = new URLSearchParams({ limit: "50" });
+      const profileId = mobileProjectChats?.sessions.find((session) => session.id === sessionId)?.profile_id;
+      if (profileId) query.set("profile", profileId);
       if (before) query.set("before", before);
       const response = await fetch(`${window.location.protocol}//${window.location.host}/api/project-chats/${encodeURIComponent(sessionId)}/messages?${query.toString()}`, {
         credentials: "include",
@@ -805,6 +822,10 @@ export function MissionControl() {
 
   async function openMobileConversation(session: ProjectChatSession) {
     setMobileHistoryError(null);
+    const sessionNeedle = [session.profile_id, session.project_owner, session.project_name, session.source, session.origin].filter(Boolean).join(" ").toLowerCase();
+    const sessionAgent = agents.find((agent) => sessionNeedle.includes(agent.id.toLowerCase()) || sessionNeedle.includes(agent.name.toLowerCase()));
+    if (sessionAgent) setMobileSelectedAgentId(sessionAgent.id);
+    rememberActiveChatSession(sessionAgent?.id || activeChatAgentId, session.id);
     const cached = mobileConversationCacheRef.current.get(session.id);
     setMobileSelectedSession(session);
     setHasStartedMainChat(true);
@@ -864,9 +885,10 @@ export function MissionControl() {
   }
 
   function startMobileChat(agentId = activeChatAgentId) {
+    clearActiveChatSession(agentId);
     setMobileSelectedAgentId(agentId);
     setMobileSelectedSession(null);
-    setMobileSessionMessages(null);
+    setMobileSessionMessages([]);
     setMobileSessionPagination(undefined);
     setMobileConversationLoading(false);
     setMainChatReplyTo(null);
@@ -876,8 +898,9 @@ export function MissionControl() {
   }
 
   function createNewMobileChat() {
+    clearActiveChatSession(activeChatAgentId);
     setMobileSelectedSession(null);
-    setMobileSessionMessages(null);
+    setMobileSessionMessages([]);
     setMobileSessionPagination(undefined);
     setMobileConversationLoading(false);
     setMainChatReplyTo(null);
@@ -885,6 +908,53 @@ export function MissionControl() {
     setAttachments([]);
     setHasStartedMainChat(false);
     setMobileNavigatorOpen(false);
+  }
+
+  function adoptMobileConversation(messages: Message[], firstMessage: string) {
+    const fallbackTitle = provisionalConversationTitle(firstMessage);
+    const conversation = conversationFromMessages(messages, fallbackTitle);
+    if (!conversation) return;
+    const existing = mobileProjectChats?.sessions.find((session) => session.id === conversation.sessionId);
+    const session: ProjectChatSession = existing ?? {
+      id: conversation.sessionId,
+      title: conversation.title,
+      project_id: selectedProject?.id || "general-chat",
+      project_name: selectedProject ? projectLabel(selectedProject) : "General chat",
+      source: "api_server",
+      model: modelMode,
+      started_at: new Date().toISOString(),
+      messages: messages.length,
+      tools: 0,
+      tokens: 0,
+      human_initiated: true,
+    };
+    const updatedSession = { ...session, title: conversation.title };
+    rememberActiveChatSession(activeChatAgentId, conversation.sessionId);
+    setMobileSelectedSession(updatedSession);
+    setMobileSessionMessages((current) => {
+      const combined = [...(current ?? []), ...messages];
+      return combined.filter((message, index) => combined.findIndex((candidate) => candidate.id === message.id && candidate.role === message.role) === index);
+    });
+    setMobileProjectChats((current) => current ? {
+      ...current,
+      sessions: [updatedSession, ...current.sessions.filter((item) => item.id !== updatedSession.id)],
+    } : { projects: [], sessions: [updatedSession], summary: { projects: 0, sessions: 1 } });
+    notifyChatSessionsChanged(conversation.sessionId);
+  }
+
+  async function renameMobileConversation(session: ProjectChatSession) {
+    const requested = window.prompt("Rename conversation", session.title || "Untitled conversation")?.trim();
+    if (!requested || requested === session.title) return;
+    try {
+      const result = await renameProjectChat(session.id, requested, activeChatAgentId);
+      if (!result.ok) throw new Error(result.error || "Conversation could not be renamed.");
+      const title = result.title || requested;
+      setMobileSelectedSession((current) => current?.id === session.id ? { ...current, title } : current);
+      setMobileProjectChats((current) => current ? { ...current, sessions: current.sessions.map((item) => item.id === session.id ? { ...item, title } : item) } : current);
+      notifyChatSessionsChanged(session.id);
+    } catch (err) {
+      setMobileHistoryError(err instanceof Error ? err.message : "Conversation could not be renamed.");
+    }
   }
 
   async function resolveMainModelRouting(): Promise<ModelRoutingSelection> {
@@ -1693,7 +1763,7 @@ export function MissionControl() {
   async function runRoutingActionFor(
     current: { instruction: string; decision: ChatIntentDecision; preview: ChatIntentPreview },
     action: ChatIntentRoutingActionId,
-    options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection; speakReply?: boolean } = {},
+    options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection; sessionId?: string; conversationTitle?: string; projectId?: string; speakReply?: boolean } = {},
   ) {
     if (routingActionBusy) return;
     const { speakReply = false, ...sendOptions } = options;
@@ -1701,6 +1771,7 @@ export function MissionControl() {
       setRoutingActionMessage(null);
       setRoutingActionError(null);
       const newMessages = await sendToAgent(activeChatAgentId, composeClarificationContext(current.instruction, current.decision, current.preview), activeMainUploadedAttachmentsRef.current, sendOptions);
+      adoptMobileConversation(newMessages, current.instruction);
       const directReply = [...newMessages].reverse().find((message) => message.role === "agent" && visibleChatText(message).trim());
       if (speakReply && directReply) speakAgentReply(directReply);
       updateDraft("");
@@ -1714,6 +1785,7 @@ export function MissionControl() {
     try {
       if (action === "send_to_agent") {
         const newMessages = await sendToAgent(activeChatAgentId, composeInstructionContext(current.instruction, current.decision), activeMainUploadedAttachmentsRef.current, sendOptions);
+        adoptMobileConversation(newMessages, current.instruction);
         const directReply = [...newMessages].reverse().find((message) => message.role === "agent" && visibleChatText(message).trim());
         if (speakReply && directReply) speakAgentReply(directReply);
         updateDraft("");
@@ -1845,12 +1917,6 @@ export function MissionControl() {
   async function submitInstruction(instructionText: string, options: { preserveDraft?: boolean; keepVoiceScreen?: boolean } = {}) {
     const instruction = instructionText.trim();
     if (!instruction || sending) return;
-    if (mobileSelectedSession) {
-      setMobileSelectedSession(null);
-      setMobileSessionMessages(null);
-      setMobileSessionPagination(undefined);
-      setMobileConversationLoading(false);
-    }
     if (!options.keepVoiceScreen) {
       // Plain text submits must never inherit a previous voice session's reply mode.
       // Voice reply is opt-in per voice-originated message only.
@@ -1904,6 +1970,9 @@ export function MissionControl() {
         requestId,
         replyTo: activeReplyTo ?? undefined,
         modelRouting,
+        sessionId: mobileSelectedSession?.id,
+        conversationTitle: provisionalConversationTitle(instruction),
+        projectId: mobileSelectedSession?.project_id || selectedProject?.id,
         speakReply: options.keepVoiceScreen === true,
       });
       if (options.keepVoiceScreen) setVoiceStatus("ready");
@@ -2001,11 +2070,14 @@ export function MissionControl() {
             {!mobileHistoryLoading && !mobileHistoryError && recentSessions.length === 0 && <p className="mobile-chat-history-note">No saved conversations yet.</p>}
             <div className="mobile-chat-session-list">
               {recentSessions.map((session) => (
-                <button type="button" key={session.id} onPointerDown={() => void prefetchMobileConversation(session)} onClick={() => void openMobileConversation(session)}>
-                  <strong>{session.title || "Untitled conversation"}</strong>
-                  <span>{session.project_name || "General"} · {session.messages} messages</span>
-                  <time>{session.started_at ? new Date(session.started_at).toLocaleDateString() : ""}</time>
-                </button>
+                <div className="mobile-chat-session-row" key={session.id}>
+                  <button type="button" onPointerDown={() => void prefetchMobileConversation(session)} onClick={() => void openMobileConversation(session)}>
+                    <strong>{session.title || "Untitled conversation"}</strong>
+                    <span>{session.project_name || "General"} · {session.messages} messages</span>
+                    <time>{session.started_at ? new Date(session.started_at).toLocaleDateString() : ""}</time>
+                  </button>
+                  <button type="button" onClick={() => void renameMobileConversation(session)} aria-label={`Rename ${session.title || "conversation"}`} title="Rename conversation"><Icon name="edit" size={14} /></button>
+                </div>
               ))}
             </div>
           </section>
@@ -2145,7 +2217,7 @@ export function MissionControl() {
           <button className="main-chat-details" type="button" onClick={openMobileNavigator} aria-label="Open agent and conversation details">Details</button>
         </header>
 
-        {mobileSelectedSession && <div className="mobile-chat-saved-banner"><span>Viewing saved conversation</span><button type="button" onClick={() => startMobileChat(activeChatAgentId)}>Return to live chat</button></div>}
+        {mobileSelectedSession && <div className="mobile-chat-saved-banner"><span>Active conversation · replies continue here</span><button type="button" onClick={() => void renameMobileConversation(mobileSelectedSession)}>Rename</button></div>}
         {mobileSelectedSession && (mobileConversationLoading || mobileSessionPagination?.has_more || mobileHistoryError) && (
           <div className="mobile-chat-pagination-bar" role="status" aria-live="polite">
             {mobileConversationLoading ? <span>Loading conversationâ€¦</span> : mobileHistoryError ? <span className="error">{mobileHistoryError}</span> : <span>Showing the latest messages</span>}

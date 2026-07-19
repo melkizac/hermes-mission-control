@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent } from "react";
 import { useStore } from "../services/store";
 import { availableChatModels, chatModelOptionLabel } from "../services/modelSelection";
+import { activeChatSession, clearActiveChatSession, conversationFromMessages, notifyChatSessionsChanged, provisionalConversationTitle, rememberActiveChatSession } from "../services/chatSessions";
 import { Icon } from "./Icon";
 import { AgentAvatar } from "./AgentAvatar";
 import { TelegramMessage } from "./TelegramMessage";
@@ -145,7 +146,7 @@ export function ChatThread({
   selectedProjectId?: string;
   selectedSessionId?: string;
 }) {
-  const { send, stopProcessing, uploadAttachment, refreshSelected, getModelRouter, me } = useStore();
+  const { send, stopProcessing, uploadAttachment, refreshSelected, getModelRouter, renameProjectChat, me } = useStore();
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [replyTo, setReplyTo] = useState<ReplyContext | null>(null);
@@ -161,14 +162,18 @@ export function ChatThread({
   const [lastSeenKey, setLastSeenKey] = useState<string | null | undefined>(undefined);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [agentActionMenuOpen, setAgentActionMenuOpen] = useState(false);
-  const [selectedChatTabId, setSelectedChatTabId] = useState<string>("start");
+  const [selectedChatTabId, setSelectedChatTabId] = useState<string>(() => activeChatSession(agent.id) || "start");
   const [sessionMessages, setSessionMessages] = useState<Record<string, Message[]>>({});
   const [sessionMessagePagination, setSessionMessagePagination] = useState<Record<string, ProjectChatMessagesResponse["pagination"]>>({});
   const [sessionMessageLoading, setSessionMessageLoading] = useState<Record<string, boolean>>({});
   const [sessionMessageErrors, setSessionMessageErrors] = useState<Record<string, string>>({});
   const [startPermissionMode, setStartPermissionMode] = useState<AgentStartPermissionMode>("full-policy");
   const [startProjectId, setStartProjectId] = useState("");
-  const [pinnedChatTabIds, setPinnedChatTabIds] = useState<string[]>(readPinnedChatTabIds);
+  const [pinnedChatTabIds, setPinnedChatTabIds] = useState<string[]>(() => {
+    const remembered = activeChatSession(agent.id);
+    return remembered ? pinChatTabId(readPinnedChatTabIds(), remembered) : readPinnedChatTabIds();
+  });
+  const [sessionTitleOverrides, setSessionTitleOverrides] = useState<Record<string, string>>({});
   const threadRef = useRef<HTMLDivElement | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -177,6 +182,7 @@ export function ChatThread({
   const unreadRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const sessionMessageFetchesRef = useRef<Set<string>>(new Set());
+  const previousAgentIdRef = useRef(agent.id);
   const p = statusPill[agent.status] || statusPill.degraded;
   const storageKey = `hmc:last-seen-message:${agent.id}`;
   const availableModels = useMemo(() => availableChatModels(routerConfig), [routerConfig]);
@@ -207,6 +213,7 @@ export function ChatThread({
     : selectedSessionId;
   const scopedSessionIds = useMemo(() => new Set(projectSessions.map((session) => session.id)), [projectSessions]);
   const scopedMessages = useMemo(() => {
+    if (selectedChatTabId === "start") return [];
     if (effectiveSelectedSessionId !== "all") {
       const loaded = agent.messages.filter((m) => m.sessionId === effectiveSelectedSessionId || m.requestId?.includes(effectiveSelectedSessionId));
       const fetched = sessionMessages[effectiveSelectedSessionId] ?? [];
@@ -216,7 +223,7 @@ export function ChatThread({
     }
     if (selectedProjectId !== "all") return agent.messages.filter((m) => m.projectId === selectedProjectId || (!m.projectId && (!m.sessionId || scopedSessionIds.has(m.sessionId))));
     return agent.messages;
-  }, [agent.messages, effectiveSelectedSessionId, scopedSessionIds, selectedProjectId, sessionMessages]);
+  }, [agent.messages, effectiveSelectedSessionId, scopedSessionIds, selectedChatTabId, selectedProjectId, sessionMessages]);
   const activeProjectName = useMemo(
     () => projectChats?.projects.find((project) => project.id === selectedProjectId)?.name,
     [projectChats, selectedProjectId],
@@ -226,7 +233,7 @@ export function ChatThread({
     () => projectSessions.find((session) => session.id === effectiveSelectedSessionId),
     [effectiveSelectedSessionId, projectSessions],
   );
-  const activeSessionTitle = activeSession?.title;
+  const activeSessionTitle = sessionTitleOverrides[effectiveSelectedSessionId] || activeSession?.title;
   const sortedMessages = useMemo(
     () =>
       [...scopedMessages].sort(
@@ -295,11 +302,20 @@ export function ChatThread({
   }, [draft]);
 
   useEffect(() => {
+    if (previousAgentIdRef.current === agent.id) return;
+    previousAgentIdRef.current = agent.id;
+    clearActiveChatSession(agent.id);
+    setSelectedChatTabId("start");
+    setReplyTo(null);
+  }, [agent.id]);
+
+  useEffect(() => {
     if (selectedSessionId !== "all") {
+      rememberActiveChatSession(agent.id, selectedSessionId);
       setPinnedChatTabIds((current) => pinChatTabId(current, selectedSessionId));
       setSelectedChatTabId(selectedSessionId);
     }
-  }, [selectedSessionId]);
+  }, [agent.id, selectedSessionId]);
 
   useEffect(() => {
     const pendingSessionId = window.sessionStorage.getItem(PENDING_OPEN_CHAT_SESSION_KEY);
@@ -324,7 +340,10 @@ export function ChatThread({
       delete next[sessionId];
       return next;
     });
-    fetch(`${window.location.protocol}//${window.location.host}/api/project-chats/${encodeURIComponent(sessionId)}/messages?limit=50`, {
+    const profileId = projectSessions.find((session) => session.id === sessionId)?.profile_id;
+    const query = new URLSearchParams({ limit: "50" });
+    if (profileId) query.set("profile", profileId);
+    fetch(`${window.location.protocol}//${window.location.host}/api/project-chats/${encodeURIComponent(sessionId)}/messages?${query.toString()}`, {
       credentials: "include",
       headers: { Accept: "application/json" },
     })
@@ -350,7 +369,7 @@ export function ChatThread({
     return () => {
       alive = false;
     };
-  }, [effectiveSelectedSessionId, sessionMessages]);
+  }, [effectiveSelectedSessionId, projectSessions, sessionMessages]);
 
   async function loadEarlierSessionMessages() {
     const sessionId = effectiveSelectedSessionId;
@@ -535,7 +554,6 @@ export function ChatThread({
     setDraft("");
     setAttachments([]);
     setReplyTo(null);
-    setSelectedChatTabId("all");
     setPendingMessage({ agentId: agent.id, text, attachments: sentAttachments, replyTo: sentReplyTo ?? undefined });
     const startedAt = Date.now();
     setProcessingStartedAt({ agentId: agent.id, startedAt });
@@ -544,7 +562,18 @@ export function ChatThread({
     setError(null);
     try {
       const modelRouting = await resolveModelRouting();
-      await send(text, sentAttachments, { signal: controller.signal, requestId, replyTo: sentReplyTo ?? undefined, modelRouting });
+      const conversationTitle = provisionalConversationTitle(text);
+      const sessionId = effectiveSelectedSessionId !== "all" ? effectiveSelectedSessionId : undefined;
+      const projectId = sessionId ? activeSession?.project_id : startProjectId || undefined;
+      const newMessages = await send(text, sentAttachments, { signal: controller.signal, requestId, replyTo: sentReplyTo ?? undefined, modelRouting, sessionId, conversationTitle, projectId });
+      const conversation = conversationFromMessages(newMessages, conversationTitle);
+      if (conversation) {
+        rememberActiveChatSession(agent.id, conversation.sessionId);
+        setSessionTitleOverrides((current) => ({ ...current, [conversation.sessionId]: conversation.title }));
+        setPinnedChatTabIds((current) => pinChatTabId(current, conversation.sessionId));
+        setSelectedChatTabId(conversation.sessionId);
+        notifyChatSessionsChanged(conversation.sessionId);
+      }
     } catch (err) {
       if (controller.signal.aborted) {
         setError("Stopped the current message before it was added to the chat.");
@@ -648,6 +677,27 @@ export function ChatThread({
     if (selectedChatTabId === sessionId) setSelectedChatTabId("all");
   }
 
+  function beginNewChat() {
+    clearActiveChatSession(agent.id);
+    setSelectedChatTabId("start");
+    setReplyTo(null);
+    setError(null);
+  }
+
+  async function renameChatSession(sessionId: string, currentTitle: string) {
+    const requested = window.prompt("Rename conversation", currentTitle)?.trim();
+    if (!requested || requested === currentTitle) return;
+    try {
+      const result = await renameProjectChat(sessionId, requested, agent.id);
+      if (!result.ok) throw new Error(result.error || "Conversation could not be renamed.");
+      const title = result.title || requested;
+      setSessionTitleOverrides((current) => ({ ...current, [sessionId]: title }));
+      notifyChatSessionsChanged(sessionId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Conversation could not be renamed.");
+    }
+  }
+
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const displayName = (me?.user?.name || "Melverick").split(/\s+/)[0] || "Melverick";
@@ -657,7 +707,7 @@ export function ChatThread({
       <div className="chat-session-tabs" role="tablist" aria-label="Open chat sessions">
         {openChatTabs.length > 0 ? (
           openChatTabs.map((session) => {
-            const label = chatTabLabel(session.title, session.project_name);
+            const label = chatTabLabel(sessionTitleOverrides[session.id] || session.title, session.project_name);
             const active = effectiveSelectedSessionId === session.id;
             return (
               <div className={"chat-session-tab" + (active ? " on" : "")} key={session.id}>
@@ -667,6 +717,7 @@ export function ChatThread({
                   aria-selected={active}
                   onClick={() => {
                     window.dispatchEvent(new CustomEvent("hmc:open-chat-session", { detail: { sessionId: session.id } }));
+                    rememberActiveChatSession(agent.id, session.id);
                     setPinnedChatTabIds((current) => pinChatTabId(current, session.id));
                     setSelectedChatTabId(session.id);
                   }}
@@ -674,6 +725,9 @@ export function ChatThread({
                 >
                   <span className="chat-session-tab-avatar">{chatTabInitial(label)}</span>
                   <b>{label}</b>
+                </button>
+                <button type="button" className="chat-session-tab-rename" onClick={() => void renameChatSession(session.id, label)} aria-label={`Rename ${label}`} title="Rename conversation">
+                  <Icon name="edit" size={12} />
                 </button>
                 <button type="button" className="chat-session-tab-close" onClick={() => closeChatTab(session.id)} aria-label={`Close ${label}`}>
                   x
@@ -687,7 +741,7 @@ export function ChatThread({
         <button
           type="button"
           className={"chat-session-tab-add" + (selectedChatTabId === "start" ? " on" : "")}
-          onClick={() => setSelectedChatTabId("start")}
+          onClick={beginNewChat}
           aria-label="Start a new chat"
           title="Start a new chat"
         >

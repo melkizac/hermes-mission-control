@@ -135,7 +135,7 @@ export class HttpHermesClient implements HermesClient {
     });
   }
 
-  async sendMessage(agentId: string, text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection } = {}): Promise<Message[]> {
+  async sendMessage(agentId: string, text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection; sessionId?: string; conversationTitle?: string; projectId?: string } = {}): Promise<Message[]> {
     const requestId = options.requestId ?? `ui-${agentId}-${Date.now()}`;
     const messagePath = `/api/agents/${encodeURIComponent(agentId)}/messages`;
     const startedAt = Date.now() / 1000;
@@ -151,6 +151,9 @@ export class HttpHermesClient implements HermesClient {
           requestId,
           replyTo: options.replyTo,
           modelRouting: options.modelRouting,
+          sessionId: options.sessionId,
+          conversationTitle: options.conversationTitle,
+          projectId: options.projectId,
           async: true,
         }),
       }, 30_000);
@@ -592,6 +595,13 @@ export class HttpHermesClient implements HermesClient {
 
   async confirmProjectChatSuggestion(input: { project_id: string; session_id: string; relationship_type?: string; summary?: string }): Promise<ProjectChatMutationResponse> {
     return request<ProjectChatMutationResponse>("/api/project-chats/confirm-suggestion", { method: "POST", body: JSON.stringify(input) });
+  }
+
+  async renameProjectChat(sessionId: string, title: string, agentId: string): Promise<ProjectChatMutationResponse> {
+    return request<ProjectChatMutationResponse>(`/api/project-chats/${encodeURIComponent(sessionId)}/rename`, {
+      method: "POST",
+      body: JSON.stringify({ title, agentId }),
+    });
   }
 
   async updateProjectStatus(projectId: string, status: string): Promise<{ ok: boolean; project_id: string; status: string; updated_at?: string; error?: string }> {

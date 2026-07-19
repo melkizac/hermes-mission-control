@@ -4,6 +4,7 @@ import { Icon } from "./Icon";
 import { AgentAvatar } from "./AgentAvatar";
 import logoUrl from "../assets/melverick-os-logo.jpg";
 import type { ProjectChatResponse, ProjectChatSession, ViewKey } from "../types";
+import { CHAT_SESSIONS_CHANGED_EVENT, notifyChatSessionsChanged } from "../services/chatSessions";
 
 type NavRouteItem = { key: ViewKey; label: string; icon: Parameters<typeof Icon>[0]["name"] };
 type NavActionItem = { action: "logout"; label: string; icon: Parameters<typeof Icon>[0]["name"] };
@@ -148,7 +149,7 @@ function sessionTimeLabel(value?: string) {
 }
 
 export function NavRail() {
-  const { view, setView, uiMode, agents, selected, selectedId, permissions, setUiMode, select } = useStore();
+  const { view, setView, uiMode, agents, selected, selectedId, permissions, setUiMode, select, renameProjectChat } = useStore();
   const [status, setStatus] = useState<RailStatus | null>(null);
   const [projectChats, setProjectChats] = useState<ProjectChatResponse | null>(null);
   const [visibleChatSessionCount, setVisibleChatSessionCount] = useState(INITIAL_CHAT_SESSION_COUNT);
@@ -201,6 +202,16 @@ export function NavRail() {
       window.clearTimeout(timer);
     };
   }, [uiMode]);
+
+  useEffect(() => {
+    const refreshChats = () => {
+      void requestProjectChats(Math.min(visibleChatSessionCount + 1, MAX_CHAT_SESSION_COUNT))
+        .then(setProjectChats)
+        .catch(() => undefined);
+    };
+    window.addEventListener(CHAT_SESSIONS_CHANGED_EVENT, refreshChats);
+    return () => window.removeEventListener(CHAT_SESSIONS_CHANGED_EVENT, refreshChats);
+  }, [visibleChatSessionCount]);
 
   useEffect(() => {
     window.localStorage.setItem("hmc-nav-collapsed", String(collapsed));
@@ -259,12 +270,27 @@ export function NavRail() {
   }
 
   function openChatSession(session: ProjectChatSession) {
-    const needle = [session.project_owner, session.project_name, session.source, session.origin].filter(Boolean).join(" ").toLowerCase();
+    const needle = [session.profile_id, session.project_owner, session.project_name, session.source, session.origin].filter(Boolean).join(" ").toLowerCase();
     const matchedAgent = agents.find((agent) => needle.includes(agent.id.toLowerCase()) || needle.includes(agent.name.toLowerCase()));
     if (matchedAgent) select(matchedAgent.id);
     pinChatSession(session.id);
     window.dispatchEvent(new CustomEvent("hmc:open-chat-session", { detail: { sessionId: session.id } }));
     setView("agents");
+  }
+
+  async function renameChatSession(session: ProjectChatSession) {
+    const requested = window.prompt("Rename conversation", session.title || "Untitled chat")?.trim();
+    if (!requested || requested === session.title) return;
+    try {
+      const needle = [session.profile_id, session.project_owner, session.project_name, session.source, session.origin].filter(Boolean).join(" ").toLowerCase();
+      const matchedAgent = agents.find((agent) => needle.includes(agent.id.toLowerCase()) || needle.includes(agent.name.toLowerCase()));
+      const result = await renameProjectChat(session.id, requested, matchedAgent?.id || activeProfile?.id || "default");
+      if (!result.ok) throw new Error(result.error || "Conversation could not be renamed.");
+      setProjectChats((current) => current ? { ...current, sessions: current.sessions.map((item) => item.id === session.id ? { ...item, title: result.title || requested } : item) } : current);
+      notifyChatSessionsChanged(session.id);
+    } catch {
+      setMoreChatSessionsError(true);
+    }
   }
 
   async function handleLogout() {
@@ -381,11 +407,16 @@ export function NavRail() {
             {!chatsCollapsed && (
               <div className="nav-chat-list">
                 {chatSessions.map((session) => (
-                  <button key={session.id} className="nav-chat-session" type="button" onClick={() => openChatSession(session)} title={session.title}>
-                    <span aria-hidden="true" />
-                    <b>{session.title || session.project_name || "Untitled chat"}</b>
-                    <small>{sessionTimeLabel(session.started_at)}</small>
-                  </button>
+                  <div key={session.id} className="nav-chat-session-row">
+                    <button className="nav-chat-session" type="button" onClick={() => openChatSession(session)} title={session.title}>
+                      <span aria-hidden="true" />
+                      <b>{session.title || session.project_name || "Untitled chat"}</b>
+                      <small>{sessionTimeLabel(session.started_at)}</small>
+                    </button>
+                    <button className="nav-chat-session-rename" type="button" onClick={() => void renameChatSession(session)} aria-label={`Rename ${session.title || "conversation"}`} title="Rename conversation">
+                      <Icon name="edit" size={12} />
+                    </button>
+                  </div>
                 ))}
                 {!chatSessions.length && <div className="nav-chat-empty">No saved chats yet</div>}
                 {canViewMoreChatSessions && (
