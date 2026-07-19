@@ -115,6 +115,86 @@ def test_manual_route_executes_hermes_cli_with_provider_and_model(tmp_path, monk
     assert result["choices"][0]["message"]["content"] == "Selected model reply."
 
 
+def test_agent_default_uses_profile_model_and_forces_exact_cli_route(tmp_path, monkeypatch):
+    app = load_app(tmp_path, monkeypatch)
+    default_model = {
+        "id": "codex-default",
+        "label": "Hermes profile default",
+        "provider": "openai-codex",
+        "model": "gpt-5.6",
+        "tier": "frontier",
+        "enabled": True,
+        "authorized": True,
+    }
+    monkeypatch.setattr(app, "read_model_router_config", lambda: {
+        "enabled": True,
+        "models": [default_model],
+        "available_models": [default_model],
+    })
+    monkeypatch.setattr(app, "profile_model_config", lambda profile: {
+        "provider": "openai-codex",
+        "model": "gpt-5.6",
+        "base_url": "",
+    })
+    monkeypatch.setattr(app, "agent_runtime_assignment", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("agent assignment must not override the Hermes profile default")))
+
+    selected = app.resolve_message_model(
+        {"modelRouting": {"mode": "auto"}},
+        "hello",
+        agent_id="melkizac",
+        runtime_route={"profile_name": "default"},
+    )
+
+    assert selected["mode"] == "auto"
+    assert selected["api_provider"] == "openai-codex"
+    assert selected["api_model"] == "gpt-5.6"
+    assert selected["selected_model"] == default_model
+    assert selected["force_cli"] is True
+    assert "Hermes profile default" in selected["reason"]
+
+
+def test_smart_routing_selects_a_healthy_model_and_forces_exact_cli_route(tmp_path, monkeypatch):
+    app = load_app(tmp_path, monkeypatch)
+    healthy_model = {
+        "id": "openrouter-auto",
+        "label": "OpenRouter Auto",
+        "provider": "openrouter",
+        "model": "openrouter/auto",
+        "tier": "balanced",
+        "enabled": True,
+        "authorized": True,
+    }
+    stale_model = {
+        "id": "stale",
+        "label": "Stale",
+        "provider": "openai",
+        "model": "gpt-x",
+        "tier": "frontier",
+        "enabled": True,
+        "authorized": False,
+    }
+    monkeypatch.setattr(app, "read_model_router_config", lambda: {
+        "enabled": True,
+        "models": [stale_model],
+        "available_models": [healthy_model],
+        "summary": {},
+        "policy": {},
+    })
+
+    selected = app.resolve_message_model(
+        {"modelRouting": {"mode": "smart"}},
+        "Handle this standard task and verify the result",
+        runtime_route={"profile_name": "default"},
+    )
+
+    assert selected["mode"] == "smart"
+    assert selected["selected_model"] == healthy_model
+    assert selected["api_provider"] == "openrouter"
+    assert selected["api_model"] == "openrouter/auto"
+    assert selected["force_cli"] is True
+    assert "smart-selected by complexity" in selected["reason"]
+
+
 def test_both_chat_interfaces_share_available_model_filter():
     helper = (ROOT / "src/services/modelSelection.ts").read_text(encoding="utf-8")
     agent_chat = (ROOT / "src/components/ChatThread.tsx").read_text(encoding="utf-8")
@@ -128,3 +208,9 @@ def test_both_chat_interfaces_share_available_model_filter():
     assert "availableChatModels(modelRouterConfig)" in main_chat
     assert "key missing" not in agent_chat
     assert "key missing" not in main_chat
+    assert 'option value="auto">' in agent_chat and "Agent default" in agent_chat
+    assert 'option value="smart">Smart routing' in agent_chat
+    assert 'option value="auto">' in main_chat and "Agent default" in main_chat
+    assert 'option value="smart">Smart routing' in main_chat
+    assert 'return { mode: "smart" }' in agent_chat
+    assert 'return { mode: "smart" }' in main_chat

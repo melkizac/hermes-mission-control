@@ -59,6 +59,9 @@ HMC_SLOW_API_MS = int(os.environ.get('HMC_SLOW_API_MS', '750'))
 PROJECTS_CACHE_TTL_SECONDS = int(os.environ.get('HMC_PROJECTS_CACHE_TTL_SECONDS', '30'))
 _PROJECTS_CACHE = {'expires_at': 0.0, 'payload': None}
 _PROJECTS_CACHE_LOCK = threading.Lock()
+INBOX_SYNC_TTL_SECONDS = int(os.environ.get('HMC_INBOX_SYNC_TTL_SECONDS', '30'))
+_INBOX_SYNC_STATE = {'last_at': 0.0}
+_INBOX_SYNC_LOCK = threading.Lock()
 HERMES_WORKSPACE = Path(os.environ.get('HERMES_WORKSPACE', HERMES_HOME / 'workspace'))
 OPENCLAW_HOME = Path(os.environ.get('OPENCLAW_HOME', HOME / '.openclaw'))
 SECOND_BRAIN_ROOT = Path(os.environ.get('HMC_SECOND_BRAIN_ROOT', HERMES_WORKSPACE / 'kb'))
@@ -4847,6 +4850,21 @@ def sync_cron_outputs_to_inbox(con):
     return created
 
 
+def maybe_sync_cron_outputs_to_inbox(con):
+    """Bound filesystem/cron reconciliation during concurrent UI refreshes."""
+    now = time.time()
+    if now - float(_INBOX_SYNC_STATE.get('last_at') or 0) < INBOX_SYNC_TTL_SECONDS:
+        return 0
+    with _INBOX_SYNC_LOCK:
+        now = time.time()
+        if now - float(_INBOX_SYNC_STATE.get('last_at') or 0) < INBOX_SYNC_TTL_SECONDS:
+            return 0
+        try:
+            return sync_cron_outputs_to_inbox(con)
+        finally:
+            _INBOX_SYNC_STATE['last_at'] = time.time()
+
+
 def inbox_row(r):
     meta = {}
     try:
@@ -4868,9 +4886,11 @@ def list_inbox(filters=None, identity=None):
         return list_workspace_inbox(filters, identity)
     filters = filters or {}
     con = ensure_approvals_tables()
-    sync_cron_outputs_to_inbox(con)
+    maybe_sync_cron_outputs_to_inbox(con)
     q = (filters.get('q') or [''])[0].strip()
     status = (filters.get('status') or [''])[0].strip()
+    mode = (filters.get('mode') or ['full'])[0].strip().lower()
+    summary_only = mode == 'summary'
     where, params = [], []
     if status and status != 'all':
         where.append('status = ?')
@@ -4880,7 +4900,7 @@ def list_inbox(filters=None, identity=None):
         where.append('(title LIKE ? OR description LIKE ? OR body LIKE ? OR source LIKE ? OR destination LIKE ? OR agent_name LIKE ?)')
         params.extend([like, like, like, like, like, like])
     where_sql = (' WHERE ' + ' AND '.join(where)) if where else ''
-    rows = con.execute(f'SELECT * FROM approvals {where_sql} ORDER BY created_at DESC LIMIT 200', params).fetchall()
+    rows = [] if summary_only else con.execute(f'SELECT * FROM approvals {where_sql} ORDER BY created_at DESC LIMIT 200', params).fetchall()
     summary_rows = con.execute('SELECT status, count(*) c FROM approvals GROUP BY status').fetchall()
     summary = {'drafted': 0, 'ready': 0, 'sent': 0, 'rejected': 0, 'total': 0, 'high_risk': 0}
     for sr in summary_rows:
@@ -4891,7 +4911,7 @@ def list_inbox(filters=None, identity=None):
         summary['total'] += sr['c']
     summary['high_risk'] = con.execute("SELECT count(*) FROM approvals WHERE risk in ('high','critical') AND status in ('drafted','ready')").fetchone()[0]
     sources = [r[0] for r in con.execute('SELECT DISTINCT source FROM approvals WHERE source IS NOT NULL ORDER BY source').fetchall()]
-    out = {'items': [inbox_row(r) for r in rows], 'summary': summary, 'sources': sources, 'statuses': ['drafted', 'ready', 'sent', 'rejected']}
+    out = {'items': [] if summary_only else [inbox_row(r) for r in rows], 'summary': summary, 'sources': [] if summary_only else sources, 'statuses': ['drafted', 'ready', 'sent', 'rejected']}
     con.close()
     return out
 
@@ -8143,6 +8163,65 @@ def read_state_project_records():
     return records
 
 
+def project_picker_payload(filters=None, identity=None):
+    """Return only the small project identity records needed by chat composers."""
+    filters = filters or {}
+    if identity and not is_admin_identity(identity):
+        return list_workspace_projects(filters, identity)
+    records = {}
+    state_records = read_state_project_records()
+    for project_id, metadata in CANONICAL_PROJECTS.items():
+        records[project_id] = {
+            'id': project_id,
+            'name': metadata.get('name') or project_id.replace('-', ' ').title(),
+            'kind': metadata.get('kind') or 'project',
+            'status': 'active',
+            'health': 90,
+            'progress': 0,
+            'summary': metadata.get('summary') or '',
+            'path': metadata.get('path') or '',
+            'source': 'canonical',
+            'updated_at': 'â€”',
+            'portfolio_group': metadata.get('portfolio_group') or 'Operations',
+            'actions': {'open': 0, 'running': 0, 'blocked': 0, 'done': 0},
+            'risks': [], 'knowledge': [], 'sessions': [], 'artifacts': [],
+            'workspaces': [], 'activity': [], 'tags': list(metadata.get('tags') or []),
+            'workspace_count': 1 if metadata.get('path') else 0,
+        }
+    for project_id, state in state_records.items():
+        current = records.get(project_id, {})
+        current.update({
+            'id': project_id,
+            'name': state.get('name') or current.get('name') or project_id.replace('-', ' ').title(),
+            'kind': current.get('kind') or 'project',
+            'status': state.get('status') or current.get('status') or 'active',
+            'health': current.get('health', 90), 'progress': current.get('progress', 0),
+            'summary': current.get('summary', ''), 'path': current.get('path', ''),
+            'source': current.get('source') or 'state-db',
+            'updated_at': state.get('updated_at') or current.get('updated_at') or 'â€”',
+            'portfolio_group': current.get('portfolio_group') or 'Operations',
+            'actions': current.get('actions') or {'open': 0, 'running': 0, 'blocked': 0, 'done': 0},
+            'risks': current.get('risks') or [], 'knowledge': current.get('knowledge') or [],
+            'sessions': current.get('sessions') or [], 'artifacts': current.get('artifacts') or [],
+            'workspaces': current.get('workspaces') or [], 'activity': current.get('activity') or [],
+            'tags': current.get('tags') or [], 'workspace_count': current.get('workspace_count', 0),
+        })
+        records[project_id] = current
+    q = (filters.get('q') or [''])[0].strip().lower()
+    rows = [row for row in records.values() if not is_support_artifact_project(row.get('id') or '')]
+    if q:
+        rows = [row for row in rows if q in text_blob(row.get('id'), row.get('name'), row.get('summary'))]
+    rows.sort(key=lambda row: (row.get('status') != 'active', (row.get('name') or '').lower()))
+    return {
+        'projects': rows,
+        'summary': {'total': len(rows), 'active': sum(1 for row in rows if row.get('status') == 'active'), 'open_actions': 0, 'blocked': 0, 'knowledge': 0, 'workspaces': sum(1 for row in rows if row.get('path'))},
+        'kinds': sorted({row.get('kind') or 'project' for row in rows}),
+        'project_areas': sorted({row.get('portfolio_group') or 'Operations' for row in rows}),
+        'sources': sorted({row.get('source') or 'canonical' for row in rows}),
+        'fast_path': True,
+    }
+
+
 def ensure_project_sessions_table():
     STATE_DB.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(STATE_DB, timeout=SQLITE_BUSY_TIMEOUT_MS / 1000)
@@ -11011,9 +11090,16 @@ def select_model_for_score(cfg, score, purpose=''):
 
 def model_router_plan(payload):
     cfg = read_model_router_config()
+    # Chat routing must use only the live, credential-healthy routes exposed to
+    # the selector.  The persisted registry can contain stale or unavailable
+    # entries that are still useful for administration but unsafe to execute.
+    routing_cfg = dict(cfg)
+    available_models = cfg.get('available_models')
+    if isinstance(available_models, list):
+        routing_cfg['models'] = available_models
     text = str(payload.get('instruction') or payload.get('text') or '')
     score = task_complexity_score(text)
-    main_model = select_model_for_score(cfg, score, 'planning' if score >= 65 else 'execution')
+    main_model = select_model_for_score(routing_cfg, score, 'planning' if score >= 65 else 'execution')
     steps = []
     if score >= 65:
         step_defs = [
@@ -11026,27 +11112,29 @@ def model_router_plan(payload):
     else:
         step_defs = [('simple_task', 'Answer, format, classify, or extract with a low-cost model', 20)]
     for idx, (purpose, title, s) in enumerate(step_defs, 1):
-        model = select_model_for_score(cfg, s, purpose)
+        model = select_model_for_score(routing_cfg, s, purpose)
         steps.append({'id': f'step-{idx}', 'purpose': purpose, 'title': title, 'complexity': s, 'assigned_model': model, 'spawn_subagent': purpose in ('execution', 'verification') and score >= 65})
     return {'ok': True, 'enabled': cfg.get('enabled', True), 'instruction': text[:2000], 'complexity': score, 'complexity_label': 'frontier' if score >= 85 else 'complex' if score >= 65 else 'standard' if score >= 35 else 'easy', 'planner_model': main_model, 'steps': steps, 'cost_control': {'frontier_only_for': cfg.get('policy', {}).get('goal'), 'estimated_savings': 'Routes easy/standard subtasks to lower-cost models; reserves frontier model for planning, strategy, complex reasoning, and review.'}, 'registry_summary': cfg.get('summary', {})}
 
 
-def resolve_message_model(payload, text, agent_id=None, identity=None):
+def resolve_message_model(payload, text, agent_id=None, identity=None, runtime_route=None):
     cfg = read_model_router_config()
     routing = payload.get('modelRouting') if isinstance(payload.get('modelRouting'), dict) else {}
     mode = str(routing.get('mode') or 'auto').lower()
+    if mode not in ('auto', 'smart', 'manual'):
+        mode = 'auto'
     selected = None
     plan = None
     runtime_account = {}
     runtime_assignment = {}
+    available_models = cfg.get('available_models')
+    if not isinstance(available_models, list):
+        available_models = [
+            model for model in cfg.get('models', [])
+            if model.get('enabled') and model.get('authorized')
+        ]
     if mode == 'manual':
         model_id = safe_id(routing.get('modelId') or '')
-        available_models = cfg.get('available_models')
-        if not isinstance(available_models, list):
-            available_models = [
-                model for model in cfg.get('models', [])
-                if model.get('enabled') and model.get('authorized')
-            ]
         selected = next((m for m in available_models if m.get('id') == model_id), None)
         if not selected:
             return {
@@ -11061,24 +11149,65 @@ def resolve_message_model(payload, text, agent_id=None, identity=None):
                 'force_cli': False,
                 'error': 'The selected model is no longer available with a healthy Hermes OAuth credential or API key. Refresh the model list and choose another model.',
             }
-    if selected:
+    if mode == 'manual':
         reason = 'manual selector override from Mission Control chat UI'
-    elif agent_id:
-        try:
-            runtime_assignment, runtime_account, runtime_model = agent_runtime_assignment(agent_id, identity)
-            if runtime_model and runtime_model.get('enabled'):
-                selected = runtime_model
-                reason = f"agent runtime assignment ({runtime_account.get('label') or runtime_assignment.get('account_id') or 'default account'})"
-            else:
-                reason = 'agent runtime assignment has no enabled model; falling back to router'
-        except Exception as e:
-            reason = f'agent runtime assignment unavailable: {e}'
-    if not selected and cfg.get('enabled', True):
+    elif mode == 'auto':
+        route = runtime_route or {}
+        profile = safe_id(route.get('profile_name') or route.get('shared_agent_ref') or '')
+        if not profile:
+            profile = runtime_agent_profile(agent_id, identity) if agent_id else 'default'
+        profile = profile or 'default'
+        profile_cfg = profile_model_config(profile)
+        provider = str(profile_cfg.get('provider') or '').strip()
+        model = str(profile_cfg.get('model') or '').strip()
+        selected = next((
+            item for item in available_models
+            if str(item.get('provider') or '').strip().lower() == provider.lower()
+            and str(item.get('model') or '').strip().lower() == model.lower()
+        ), None)
+        if not selected and provider and model:
+            selected = {
+                'id': safe_id(f'{provider}-{model}') or 'hermes-profile-default',
+                'label': f'Hermes profile default ({profile})',
+                'provider': provider,
+                'model': model,
+                'tier': 'profile-default',
+                'enabled': True,
+                'authorized': True,
+                'active': True,
+            }
+        reason = f'Hermes profile default ({profile})'
+    elif mode == 'smart' and cfg.get('enabled', True):
         plan = model_router_plan({'instruction': text})
         selected = plan.get('planner_model') if isinstance(plan, dict) else None
-        reason = f"auto-selected by complexity ({plan.get('complexity_label') if isinstance(plan, dict) else 'unknown'})"
-    elif not selected:
-        reason = 'router disabled; using default Hermes API model'
+        reason = f"smart-selected by complexity ({plan.get('complexity_label') if isinstance(plan, dict) else 'unknown'})"
+        if not selected:
+            return {
+                'api_model': 'hermes-agent',
+                'api_provider': '',
+                'selected_model': None,
+                'runtime_account': {},
+                'runtime_assignment': {},
+                'mode': 'smart',
+                'reason': 'smart routing has no healthy executable model',
+                'plan': plan,
+                'force_cli': False,
+                'error': 'Smart routing cannot find a healthy Hermes model with valid OAuth or API credentials. Choose Agent default or restore a model credential.',
+            }
+    else:
+        reason = 'smart router disabled'
+        return {
+            'api_model': 'hermes-agent',
+            'api_provider': '',
+            'selected_model': None,
+            'runtime_account': {},
+            'runtime_assignment': {},
+            'mode': 'smart',
+            'reason': reason,
+            'plan': None,
+            'force_cli': False,
+            'error': 'Smart routing is disabled. Choose Agent default or a specific model.',
+        }
     api_model = str(selected.get('model') or 'hermes-agent') if isinstance(selected, dict) else 'hermes-agent'
     return {
         'api_model': api_model,
@@ -11086,10 +11215,12 @@ def resolve_message_model(payload, text, agent_id=None, identity=None):
         'selected_model': selected,
         'runtime_account': runtime_account,
         'runtime_assignment': runtime_assignment,
-        'mode': 'manual' if mode == 'manual' and selected else 'assignment' if runtime_assignment and selected else 'auto' if cfg.get('enabled', True) else 'default',
+        'mode': mode,
         'reason': reason,
         'plan': plan,
-        'force_cli': bool(mode == 'manual' and selected),
+        # Every selector mode executes through the profile-aware Hermes CLI so
+        # the provider/model recorded by HMC is the one Hermes actually runs.
+        'force_cli': True,
     }
 
 
@@ -20838,7 +20969,13 @@ class Handler(BaseHTTPRequestHandler):
             result, status = project_brief_payload(parts[2] if len(parts) >= 3 else '')
             self.send_json(result, status)
         elif parsed.path in ('/api/projects', '/api/workspaces'):
-            self.send_json(list_projects(parse_qs(parsed.query), current_identity_from_cookie(self.headers.get('Cookie', ''))))
+            project_filters = parse_qs(parsed.query)
+            project_identity = current_identity_from_cookie(self.headers.get('Cookie', ''))
+            project_mode = (project_filters.get('mode') or ['full'])[0].strip().lower()
+            if project_mode == 'picker':
+                self.send_json(project_picker_payload(project_filters, project_identity))
+            else:
+                self.send_json(list_projects(project_filters, project_identity))
         elif parsed.path == '/api/project-chats':
             q = parse_qs(parsed.query)
             identity = current_identity_from_cookie(self.headers.get('Cookie', ''))
@@ -21306,7 +21443,7 @@ class Handler(BaseHTTPRequestHandler):
             user_msg = {'id': f'ui-user-{now_ms}', 'role': 'user', 'text': text, 'attachments': attachments, 'replyTo': reply_to, 'at': 'now', 'ts': now, 'source': 'web-ui', 'requestId': request_id}
             context = source_context_for_prompt(runtime_channel_id)
             route_context = runtime_route_prompt_block(runtime_route)
-            routing_selection = resolve_message_model(payload, text, agent_id=agent_id, identity=identity)
+            routing_selection = resolve_message_model(payload, text, agent_id=agent_id, identity=identity, runtime_route=runtime_route)
             if routing_selection.get('error'):
                 unregister_processing(request_id)
                 update_chat_delivery(request_id, 'failed', routing_selection.get('error'))

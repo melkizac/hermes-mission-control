@@ -8,22 +8,89 @@ declare global {
   }
 }
 
-async function rawJsonRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const url = `${window.location.protocol}//${window.location.host}${path}`;
-  const res = await fetch(url, {
-    credentials: "include",
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
+class HttpRequestError extends Error {
+  constructor(message: string, readonly status = 0) {
+    super(message);
+    this.name = "HttpRequestError";
+  }
+}
+
+function isRetryableConnectionError(error: unknown) {
+  if (error instanceof HttpRequestError) {
+    return error.status === 0 || [408, 425, 429, 500, 502, 503, 504].includes(error.status);
+  }
+  return error instanceof TypeError || (error instanceof DOMException && error.name === "TimeoutError");
+}
+
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) return reject(new DOMException("Aborted", "AbortError"));
+    const onAbort = () => {
+      window.clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    const timer = window.setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
+
+async function rawJsonRequest<T>(path: string, init?: RequestInit, timeoutMs = 0): Promise<T> {
+  const url = `${window.location.protocol}//${window.location.host}${path}`;
+  const timeoutController = timeoutMs > 0 ? new AbortController() : null;
+  let timedOut = false;
+  const relayAbort = () => timeoutController?.abort(init?.signal?.reason);
+  if (init?.signal?.aborted) relayAbort();
+  else init?.signal?.addEventListener("abort", relayAbort, { once: true });
+  const timeout = timeoutController
+    ? window.setTimeout(() => {
+        timedOut = true;
+        timeoutController.abort(new DOMException("Request timed out", "TimeoutError"));
+      }, timeoutMs)
+    : null;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      credentials: "include",
+      ...init,
+      signal: timeoutController?.signal ?? init?.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (error) {
+    if (timedOut) throw new HttpRequestError("Request timed out", 0);
+    throw error;
+  } finally {
+    if (timeout !== null) window.clearTimeout(timeout);
+    init?.signal?.removeEventListener("abort", relayAbort);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const detail = typeof data?.error === "string" ? data.error : res.statusText;
-    throw new Error(detail);
+    throw new HttpRequestError(detail, res.status);
   }
   return data as T;
+}
+
+async function retryingJsonRequest<T>(
+  path: string,
+  init?: RequestInit,
+  options: { attempts: number; timeoutMs: number } = { attempts: 3, timeoutMs: 20_000 },
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < options.attempts; attempt += 1) {
+    try {
+      return await rawJsonRequest<T>(path, init, options.timeoutMs);
+    } catch (error) {
+      if (init?.signal?.aborted || !isRetryableConnectionError(error)) throw error;
+      lastError = error;
+      if (attempt + 1 < options.attempts) await sleep(Math.min(300 * 3 ** attempt, 2_700), init?.signal ?? undefined);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new HttpRequestError("Connection failed", 0);
 }
 
 function isCacheableRequest(init?: RequestInit) {
@@ -33,27 +100,13 @@ function isCacheableRequest(init?: RequestInit) {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!isCacheableRequest(init)) {
-    const data = await rawJsonRequest<T>(path, init);
+    const data = await rawJsonRequest<T>(path, init, 30_000);
     if (String(init?.method ?? "GET").toUpperCase() !== "GET") invalidateQueryCache(/^GET /);
     return data;
   }
   const force = ["manual", "poll", "focus", "event"].includes(window.__hmcRefreshMode || "");
-  return cachedJsonRequest<T>(`GET ${path}`, () => rawJsonRequest<T>(path, init), { force });
+  return cachedJsonRequest<T>(`GET ${path}`, () => retryingJsonRequest<T>(path, init), { force });
 }
-
-const sleep = (ms: number, signal?: AbortSignal) =>
-  new Promise<void>((resolve, reject) => {
-    if (signal?.aborted) return reject(new DOMException("Aborted", "AbortError"));
-    const timer = window.setTimeout(resolve, ms);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        window.clearTimeout(timer);
-        reject(new DOMException("Aborted", "AbortError"));
-      },
-      { once: true },
-    );
-  });
 
 export class HttpHermesClient implements HermesClient {
   async getMe(): Promise<MissionControlMe> {
@@ -84,33 +137,36 @@ export class HttpHermesClient implements HermesClient {
 
   async sendMessage(agentId: string, text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection } = {}): Promise<Message[]> {
     const requestId = options.requestId ?? `ui-${agentId}-${Date.now()}`;
-    const url = `${window.location.protocol}//${window.location.host}/api/agents/${encodeURIComponent(agentId)}/messages`;
+    const messagePath = `/api/agents/${encodeURIComponent(agentId)}/messages`;
     const startedAt = Date.now() / 1000;
-    const res = await fetch(url, {
-      method: "POST",
-      credentials: "include",
-      signal: options.signal,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        text,
-        attachments,
-        requestId,
-        replyTo: options.replyTo,
-        modelRouting: options.modelRouting,
-        async: true,
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok && res.status !== 202) {
-      const detail = typeof data?.error === "string" ? data.error : res.statusText;
-      throw new Error(detail);
+    let submissionUncertain = false;
+    let data: { accepted?: boolean } | Message[] = {};
+    try {
+      data = await rawJsonRequest<{ accepted?: boolean } | Message[]>(messagePath, {
+        method: "POST",
+        signal: options.signal,
+        body: JSON.stringify({
+          text,
+          attachments,
+          requestId,
+          replyTo: options.replyTo,
+          modelRouting: options.modelRouting,
+          async: true,
+        }),
+      }, 30_000);
+    } catch (error) {
+      if (options.signal?.aborted || !isRetryableConnectionError(error)) throw error;
+      // The server may have accepted the request before the response was lost.
+      // Do not repeat the POST: recover through the durable request ID instead.
+      submissionUncertain = true;
     }
-    if (!data?.accepted) {
+    if (!submissionUncertain && !("accepted" in data && data.accepted)) {
       return data as Message[];
     }
 
     const pollDelays = [250, 750, 1500, 3000];
     let pollIndex = 0;
+    let consecutivePollFailures = 0;
     const deadline = Date.now() + 60 * 60 * 1000;
     while (Date.now() < deadline) {
       await sleep(pollDelays[Math.min(pollIndex, pollDelays.length - 1)], options.signal);
@@ -119,9 +175,21 @@ export class HttpHermesClient implements HermesClient {
       // /api/agents/<id> detail loads are intentionally expensive and can be
       // competing with background dashboard refreshes; tying the composer to
       // those reads is what made a trivial “Hi” wait ~20s in the UI.
-      const status = await rawJsonRequest<{ messages?: Message[]; processingRequests?: string[]; delivery?: { status?: string; error?: string } }>(
-        `/api/agents/${encodeURIComponent(agentId)}/messages/status?requestId=${encodeURIComponent(requestId)}`,
-      );
+      let status: { messages?: Message[]; processingRequests?: string[]; delivery?: { status?: string; error?: string } };
+      try {
+        status = await retryingJsonRequest(
+          `/api/agents/${encodeURIComponent(agentId)}/messages/status?requestId=${encodeURIComponent(requestId)}`,
+          { signal: options.signal },
+          { attempts: 3, timeoutMs: 10_000 },
+        );
+        consecutivePollFailures = 0;
+      } catch (err) {
+        if (options.signal?.aborted) throw err;
+        if (!isRetryableConnectionError(err)) throw err;
+        consecutivePollFailures += 1;
+        await sleep(Math.min(1_000 * 2 ** Math.min(consecutivePollFailures - 1, 3), 10_000), options.signal);
+        continue;
+      }
       const requestMessages = (status?.messages ?? []).filter((m) => m.requestId === requestId);
       const reply = requestMessages.find((m) => m.role === "agent");
       const requestedUser = requestMessages.find((m) => m.role === "user");
@@ -135,6 +203,9 @@ export class HttpHermesClient implements HermesClient {
       }
       const activeRequests = new Set(status?.processingRequests ?? []);
       const requestKnown = requestMessages.length > 0;
+      if (submissionUncertain && !requestKnown && Date.now() - startedAt * 1000 > 30_000) {
+        throw new Error("Could not confirm that the message reached Mission Control. Your message was not automatically resent to avoid a duplicate; reconnect and send it again.");
+      }
       const backendNoLongerRunning = requestKnown && !activeRequests.has(requestId) && Date.now() - startedAt * 1000 > 10000;
       if (backendNoLongerRunning) {
         throw new Error("Message processing ended without an assistant reply. The backend may have restarted or the worker was interrupted; refresh the chat to confirm the latest state.");
