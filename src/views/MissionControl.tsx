@@ -570,7 +570,7 @@ export function MissionControl() {
         setContextHydrating(true);
         async function loadContext() {
           const [projectResult, boardResult, automationResult] = await Promise.allSettled([
-            cachedRequest<ProjectsResponse>("main-chat:projects", "/api/projects", { staleAfterMs: 60_000 }),
+            cachedRequest<ProjectsResponse>("main-chat:projects", "/api/projects?mode=picker", { staleAfterMs: 60_000 }),
             cachedRequest<BoardResponse>("main-chat:tasks", "/api/tasks", { staleAfterMs: 30_000 }),
             cachedRequest<AutomationsResponse>("main-chat:automations", "/api/automations", { staleAfterMs: 45_000 }),
           ]);
@@ -622,12 +622,13 @@ export function MissionControl() {
   );
   const availableModels = useMemo(() => availableChatModels(modelRouterConfig), [modelRouterConfig]);
   const selectedModel = availableModels.find((model) => model.id === modelMode) ?? null;
-  const selectedModelLabel = selectedModel ? (selectedModel.label || selectedModel.model) : "Auto";
+  const selectedModelValue = modelMode === "smart" ? "smart" : selectedModel?.id ?? "auto";
+  const selectedModelLabel = selectedModel ? (selectedModel.label || selectedModel.model) : modelMode === "smart" ? "Smart routing" : "Agent default";
   const selectedModelPromptLabel = selectedModel
     ? chatModelOptionLabel(selectedModel)
-    : modelRouterConfig?.enabled === false
-      ? "Default Hermes model"
-      : "AUTO - Melkizac decides";
+    : modelMode === "smart"
+      ? "Smart routing - HMC chooses by task complexity"
+      : "Agent default - Hermes profile decides";
   const selectedPermission = permissionModeOptions.find((option) => option.value === permissionMode) ?? permissionModeOptions[0];
   const greeting = singaporeDaypartGreeting();
   const heroPrompt = selectedProject ? `What should we work on in “${projectLabel(selectedProject)}”?` : `${greeting}, Melverick!`;
@@ -684,7 +685,7 @@ export function MissionControl() {
       const cfg = await getModelRouter();
       if (!alive) return cfg;
       setModelRouterConfig(cfg);
-      const exists = modelMode === "auto" || availableChatModels(cfg).some((model) => model.id === modelMode);
+      const exists = modelMode === "auto" || modelMode === "smart" || availableChatModels(cfg).some((model) => model.id === modelMode);
       if (!exists) setModelMode("auto");
       return cfg;
     } catch {
@@ -702,7 +703,7 @@ export function MissionControl() {
       .then((cfg) => {
         if (!alive) return;
         setModelRouterConfig(cfg);
-        const exists = modelMode === "auto" || availableChatModels(cfg).some((model) => model.id === modelMode);
+        const exists = modelMode === "auto" || modelMode === "smart" || availableChatModels(cfg).some((model) => model.id === modelMode);
         if (!exists) setModelMode("auto");
       })
       .catch(() => {
@@ -888,6 +889,7 @@ export function MissionControl() {
 
   async function resolveMainModelRouting(): Promise<ModelRoutingSelection> {
     if (modelMode === "auto") return { mode: "auto" };
+    if (modelMode === "smart") return { mode: "smart" };
     const cfg = modelRouterConfig ?? await ensureModelRouter();
     const manualModel = availableChatModels(cfg).find((model) => model.id === modelMode);
     return manualModel ? { mode: "manual", modelId: manualModel.id } : { mode: "auto" };
@@ -2023,9 +2025,10 @@ export function MissionControl() {
           </button>
           <label className="clean-chat-model-button clean-chat-top-model-select" aria-label="AI model selector">
             <strong>{modelMode === "auto" ? "Melkizac" : selectedModelLabel}</strong>
-            <span>{modelMode === "auto" ? "Auto" : ""}</span>
-            <select value={selectedModel ? selectedModel.id : "auto"} onChange={(event) => setModelMode(event.target.value)} onFocus={() => void ensureModelRouter()} onPointerDown={() => void ensureModelRouter()}>
-              <option value="auto">{modelRouterLoading ? "Auto · loading models..." : "Auto"}</option>
+            <span>{modelMode === "auto" ? "Agent default" : modelMode === "smart" ? "HMC chooses" : ""}</span>
+            <select value={selectedModelValue} onChange={(event) => setModelMode(event.target.value)} onFocus={() => void ensureModelRouter()} onPointerDown={() => void ensureModelRouter()}>
+              <option value="auto">{modelRouterLoading ? "Agent default - loading models..." : "Agent default"}</option>
+              <option value="smart">Smart routing - HMC chooses</option>
               {availableModels.map((model) => <option key={model.id} value={model.id}>{chatModelOptionLabel(model)}</option>)}
             </select>
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -2092,8 +2095,9 @@ export function MissionControl() {
 
             <div className="clean-chat-right-controls">
               <label className="clean-select">
-                <select value={selectedModel ? selectedModel.id : "auto"} onChange={(event) => setModelMode(event.target.value)} onFocus={() => void ensureModelRouter()} onPointerDown={() => void ensureModelRouter()} aria-label="AI model selector">
-                  <option value="auto">{modelRouterLoading ? "Auto · loading models..." : "Auto"}</option>
+                <select value={selectedModelValue} onChange={(event) => setModelMode(event.target.value)} onFocus={() => void ensureModelRouter()} onPointerDown={() => void ensureModelRouter()} aria-label="AI model selector">
+                  <option value="auto">{modelRouterLoading ? "Agent default - loading models..." : "Agent default"}</option>
+                  <option value="smart">Smart routing - HMC chooses</option>
                   {availableModels.map((model) => <option key={model.id} value={model.id}>{chatModelOptionLabel(model)}</option>)}
                 </select>
               </label>
@@ -2341,8 +2345,9 @@ export function MissionControl() {
 
             <div className="main-chat-right-controls">
               <label className="clean-select">
-                <select value={selectedModel ? selectedModel.id : "auto"} onChange={(event) => setModelMode(event.target.value)} onFocus={() => void ensureModelRouter()} onPointerDown={() => void ensureModelRouter()} aria-label="AI model selector">
-                  <option value="auto">{modelRouterLoading ? "Auto · loading models..." : "Auto"}</option>
+                <select value={selectedModelValue} onChange={(event) => setModelMode(event.target.value)} onFocus={() => void ensureModelRouter()} onPointerDown={() => void ensureModelRouter()} aria-label="AI model selector">
+                  <option value="auto">{modelRouterLoading ? "Agent default - loading models..." : "Agent default"}</option>
+                  <option value="smart">Smart routing - HMC chooses</option>
                   {availableModels.map((model) => <option key={model.id} value={model.id}>{chatModelOptionLabel(model)}</option>)}
                 </select>
               </label>

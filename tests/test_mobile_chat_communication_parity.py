@@ -33,3 +33,13 @@ def test_mobile_navigation_is_safe_area_aware_and_does_not_overflow() -> None:
     assert "env(safe-area-inset-top" in css
     assert "overflow-x: hidden" in css
     assert "min(88vw, 360px)" in css
+
+
+def test_iphone_chat_composer_keeps_send_button_inside_viewport() -> None:
+    css = APP_CSS.read_text(encoding="utf-8")
+
+    assert ".mobile-chat-only-main .main-chat-right-controls" in css
+    assert "grid-template-columns: minmax(0, 1fr) 40px 48px;" in css
+    assert ".mobile-chat-only-main .main-chat-right-controls .clean-select" in css
+    assert "text-overflow: ellipsis;" in css
+    assert ".mobile-chat-only-main .main-chat-right-controls .clean-chat-send" in css

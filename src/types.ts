@@ -571,7 +571,7 @@ export interface ReplyContext {
 }
 
 export interface ModelRoutingSelection {
-  mode: "auto" | "manual";
+  mode: "auto" | "smart" | "manual";
   modelId?: string;
 }
 

@@ -181,13 +181,14 @@ export function ChatThread({
   const storageKey = `hmc:last-seen-message:${agent.id}`;
   const availableModels = useMemo(() => availableChatModels(routerConfig), [routerConfig]);
   const selectedModel = useMemo(() => availableModels.find((model) => model.id === modelSelection), [availableModels, modelSelection]);
+  const selectedModelValue = modelSelection === "smart" ? "smart" : selectedModel?.id ?? "auto";
   const modelSelectorLabel = selectedModel
     ? chatModelOptionLabel(selectedModel)
-    : modelRouterLoading
-      ? "Loading model options…"
-    : routerConfig?.enabled === false
-      ? "Default Hermes model"
-      : "Auto-select by complexity";
+    : modelSelection === "smart"
+      ? "Smart routing - HMC chooses by task complexity"
+      : modelRouterLoading
+        ? "Loading model options…"
+        : "Agent default - Hermes profile decides";
   const projectSessions = useMemo(
     () => (projectChats?.sessions ?? []).filter((session) => selectedProjectId === "all" || session.project_id === selectedProjectId),
     [projectChats, selectedProjectId],
@@ -430,7 +431,7 @@ export function ChatThread({
       const cfg = await getModelRouter();
       if (!alive) return cfg;
       setRouterConfig(cfg);
-      const exists = modelSelection === "auto" || availableChatModels(cfg).some((model) => model.id === modelSelection);
+      const exists = modelSelection === "auto" || modelSelection === "smart" || availableChatModels(cfg).some((model) => model.id === modelSelection);
       if (!exists) setModelSelection("auto");
       return cfg;
     } catch {
@@ -449,7 +450,7 @@ export function ChatThread({
       .then((cfg) => {
         if (!alive) return;
         setRouterConfig(cfg);
-        const exists = modelSelection === "auto" || availableChatModels(cfg).some((model) => model.id === modelSelection);
+        const exists = modelSelection === "auto" || modelSelection === "smart" || availableChatModels(cfg).some((model) => model.id === modelSelection);
         if (!exists) setModelSelection("auto");
       })
       .catch(() => {
@@ -469,6 +470,7 @@ export function ChatThread({
 
   const resolveModelRouting = async (): Promise<ModelRoutingSelection> => {
     if (modelSelection === "auto") return { mode: "auto" };
+    if (modelSelection === "smart") return { mode: "smart" };
     const cfg = routerConfig ?? await ensureModelRouter();
     const manualModel = availableChatModels(cfg).find((model) => model.id === modelSelection);
     return manualModel ? { mode: "manual", modelId: manualModel.id } : { mode: "auto" };
@@ -906,14 +908,15 @@ export function ChatThread({
               <div className="clean-chat-right-controls">
                 <label className="clean-select agent-start-model-select" title={modelSelectorLabel}>
                   <select
-                    value={selectedModel ? selectedModel.id : "auto"}
+                    value={selectedModelValue}
                     onChange={(e) => setModelSelection(e.target.value)}
                     onFocus={() => void ensureModelRouter()}
                     onPointerDown={() => void ensureModelRouter()}
                     disabled={isProcessing || uploading}
                     aria-label="Select AI model for this message"
                   >
-                    <option value="auto">{modelRouterLoading ? "Auto · loading models..." : "Auto"}</option>
+                    <option value="auto">{modelRouterLoading ? "Agent default - loading models..." : "Agent default"}</option>
+                    <option value="smart">Smart routing - HMC chooses</option>
                     {availableModels.map((model) => (
                       <option key={model.id} value={model.id}>
                         {chatModelOptionLabel(model)}
@@ -994,14 +997,15 @@ export function ChatThread({
             <label className="model-selector-row" title={modelSelectorLabel}>
               <span className="sr-only">Model</span>
               <select
-                  value={selectedModel ? selectedModel.id : "auto"}
+                  value={selectedModelValue}
                   onChange={(e) => setModelSelection(e.target.value)}
                 onFocus={() => void ensureModelRouter()}
                 onPointerDown={() => void ensureModelRouter()}
                 disabled={isProcessing || uploading}
                 aria-label="Select AI model for this message"
               >
-                <option value="auto">{modelRouterLoading ? "Auto · loading models..." : "Auto"}</option>
+                <option value="auto">{modelRouterLoading ? "Agent default - loading models..." : "Agent default"}</option>
+                <option value="smart">Smart routing - HMC chooses</option>
                 {availableModels.map((model) => (
                   <option key={model.id} value={model.id}>
                     {chatModelOptionLabel(model)}

@@ -48,7 +48,7 @@ type InboxItem = { status?: string };
 type InboxPayload = { summary?: InboxSummary; items?: InboxItem[] };
 
 async function requestApprovalCount(fallbackCount: number): Promise<number> {
-  const res = await fetch(`${window.location.protocol}//${window.location.host}/api/inbox`, { credentials: "include", headers: { Accept: "application/json" } });
+  const res = await fetch(`${window.location.protocol}//${window.location.host}/api/inbox?mode=summary`, { credentials: "include", headers: { Accept: "application/json" } });
   if (!res.ok) throw new Error(res.statusText);
   const inbox = await res.json() as InboxPayload;
   if (inbox.summary) return Number(inbox.summary.drafted ?? 0) + Number(inbox.summary.ready ?? 0);

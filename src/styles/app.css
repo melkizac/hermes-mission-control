@@ -8202,6 +8202,42 @@ button.voice-activation {
   .mobile-chat-only-main .main-chat-right-controls {
     gap: 12px;
   }
+
+  .mobile-chat-only-main .main-chat-right-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 40px 48px;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+    gap: 10px;
+  }
+
+  .mobile-chat-only-main .main-chat-right-controls .clean-select {
+    display: inline-flex;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .mobile-chat-only-main .main-chat-right-controls .clean-select select {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mobile-chat-only-main .main-chat-right-controls .clean-chat-mic,
+  .mobile-chat-only-main .main-chat-right-controls .clean-chat-send {
+    justify-self: end;
+    flex: 0 0 auto;
+  }
+
+  .mobile-chat-only-main .main-chat-right-controls .clean-chat-send {
+    width: 48px;
+    height: 48px;
+  }
 }
 
 /* Dashboard: agent operating metrics, not chat intake. */
