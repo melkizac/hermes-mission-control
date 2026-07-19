@@ -205,18 +205,21 @@ export class MockHermesClient implements HermesClient {
     };
   }
 
-  async sendMessage(agentId: string, text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection } = {}): Promise<Message[]> {
+  async sendMessage(agentId: string, text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection; sessionId?: string; conversationTitle?: string; projectId?: string } = {}): Promise<Message[]> {
     if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
     await delay(120);
     if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
     const agent = this.agents.find((a) => a.id === agentId);
     if (!agent) return [];
-    const userMsg: Message = { id: uid(), role: "user", text, attachments, replyTo: options.replyTo, at: "now" };
+    const sessionId = options.sessionId || `mock-session-${uid()}`;
+    const userMsg: Message = { id: uid(), role: "user", text, attachments, replyTo: options.replyTo, at: "now", sessionId, sessionTitle: options.conversationTitle };
     const reply: Message = {
       id: uid(),
       role: "agent",
       text: `Got it — queuing that now. (Mock reply: wire HermesClient.sendMessage to the gateway session for ${agent.name}.)`,
       at: "now",
+      sessionId,
+      sessionTitle: options.conversationTitle,
     };
     agent.messages.push(userMsg, reply);
     agent.activity = text.slice(0, 48);
@@ -985,6 +988,11 @@ export class MockHermesClient implements HermesClient {
   async confirmProjectChatSuggestion(): Promise<ProjectChatMutationResponse> {
     await delay(50);
     return { ok: true };
+  }
+
+  async renameProjectChat(sessionId: string, title: string): Promise<ProjectChatMutationResponse> {
+    await delay(50);
+    return { ok: true, session_id: sessionId, title };
   }
 
   async updateProjectStatus(_projectId: string, status: string): Promise<{ ok: boolean; project_id: string; status: string; updated_at?: string }> {

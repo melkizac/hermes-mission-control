@@ -2257,6 +2257,12 @@ def clean_cli_chat_output(output):
     return '\n'.join(lines).strip()
 
 
+def cli_session_id(output):
+    """Extract the machine-readable Hermes session id emitted on stderr."""
+    match = re.search(r'(?m)^\s*session_id:\s*([^\s]+)\s*$', str(output or ''))
+    return match.group(1).strip() if match else ''
+
+
 def resolve_hermes_cli_bin():
     env_bin = os.environ.get('HMC_HERMES_BIN')
     if env_bin:
@@ -2290,7 +2296,7 @@ def profile_streaming_chat_completion(messages, model='hermes-agent', request_id
     )
 
 
-def profile_cli_chat_completion(messages, model='hermes-agent', provider='', request_id=None, runtime_route=None):
+def profile_cli_chat_completion(messages, model='hermes-agent', provider='', request_id=None, runtime_route=None, session_id=None):
     profile = safe_id((runtime_route or {}).get('profile_name') or (runtime_route or {}).get('shared_agent_ref') or 'default') or 'default'
     hermes_bin = resolve_hermes_cli_bin()
     prompt = messages_to_cli_prompt(messages)
@@ -2298,6 +2304,8 @@ def profile_cli_chat_completion(messages, model='hermes-agent', provider='', req
     if profile != 'default':
         cmd.extend(['--profile', profile])
     cmd.extend(['chat', '-q', prompt, '--source', 'api_server', '-Q'])
+    if session_id:
+        cmd.extend(['--resume', str(session_id)])
     if provider:
         cmd.extend(['--provider', str(provider)])
     if model and model not in ('hermes-agent', 'auto'):
@@ -2322,8 +2330,10 @@ def profile_cli_chat_completion(messages, model='hermes-agent', provider='', req
         detail = clean_cli_chat_output(proc.stderr) or clean_cli_chat_output(proc.stdout) or f'Hermes profile {profile} exited with {proc.returncode}'
         raise RuntimeError(detail)
     content = clean_cli_chat_output(proc.stdout)
+    resolved_session_id = cli_session_id(proc.stderr) or str(session_id or '')
     return {
         'id': f'chatcmpl-hmc-{profile}-{int(time.time() * 1000)}',
+        'session_id': resolved_session_id,
         'object': 'chat.completion',
         'created': int(time.time()),
         'model': model or 'hermes-agent',
@@ -2344,14 +2354,14 @@ CHAT_COMPLETION_STREAM_READ_TIMEOUT = env_float('HMC_CHAT_COMPLETION_STREAM_READ
 CHAT_COMPLETION_FALLBACK_TIMEOUT = env_float('HMC_CHAT_COMPLETION_TIMEOUT_SECONDS', 1800)
 
 
-def api_chat_completion(messages, model='hermes-agent', provider='', force_cli=False, request_id=None, runtime_route=None):
-    if force_cli:
-        return profile_cli_chat_completion(messages, model=model, provider=provider, request_id=request_id, runtime_route=runtime_route)
+def api_chat_completion(messages, model='hermes-agent', provider='', force_cli=False, request_id=None, runtime_route=None, session_id=None):
+    if force_cli or session_id:
+        return profile_cli_chat_completion(messages, model=model, provider=provider, request_id=request_id, runtime_route=runtime_route, session_id=session_id)
     if route_is_profile_backed(runtime_route):
         try:
             return profile_streaming_chat_completion(messages, model=model, request_id=request_id, runtime_route=runtime_route)
         except Exception:
-            return profile_cli_chat_completion(messages, model=model, provider=provider, request_id=request_id, runtime_route=runtime_route)
+            return profile_cli_chat_completion(messages, model=model, provider=provider, request_id=request_id, runtime_route=runtime_route, session_id=session_id)
     payload = {'model': model, 'messages': messages, 'stream': True}
     headers = {'Idempotency-Key': request_id} if request_id else {}
     if runtime_route:
@@ -8396,21 +8406,34 @@ def project_chat_session_record(session_id):
     return indexed.get(session_id)
 
 
-def project_chat_session_messages_payload(session_id, identity=None, limit=50, before=None):
+def project_chat_session_messages_payload(session_id, identity=None, limit=50, before=None, profile_id=None):
     session_id = str(session_id or '').strip()
     if not session_id:
         return {'ok': False, 'error': 'session_id is required'}, 400
-    if not STATE_DB.exists():
-        return {'ok': False, 'error': 'session not found'}, 404
+    candidates = hermes_state_db_candidates()
+    if profile_id:
+        preferred = safe_id(profile_id) or 'default'
+        candidates.sort(key=lambda item: 0 if item[0] == preferred else 1)
+    session = None
+    resolved_profile_id = 'default'
+    con = None
     try:
-        con = sqlite3.connect(f'file:{STATE_DB}?mode=ro', uri=True, timeout=2)
-        con.row_factory = sqlite3.Row
-        session = con.execute(
-            'SELECT id,title,source,model,started_at,message_count FROM sessions WHERE id=?',
-            (session_id,),
-        ).fetchone()
-        if not session:
-            con.close()
+        for candidate_profile, db_path in candidates:
+            if not db_path.exists():
+                continue
+            candidate_con = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True, timeout=2)
+            candidate_con.row_factory = sqlite3.Row
+            candidate_session = candidate_con.execute(
+                'SELECT id,title,source,model,started_at,message_count FROM sessions WHERE id=?',
+                (session_id,),
+            ).fetchone()
+            if candidate_session:
+                con = candidate_con
+                session = candidate_session
+                resolved_profile_id = candidate_profile
+                break
+            candidate_con.close()
+        if not session or con is None:
             return {'ok': False, 'error': 'session not found'}, 404
         cursor_clause = ''
         cursor_params = []
@@ -8491,6 +8514,7 @@ def project_chat_session_messages_payload(session_id, identity=None, limit=50, b
             'started_at': iso(session['started_at']),
             'project_id': project_id,
             'project_name': project_name,
+            'profile_id': resolved_profile_id,
         },
         'messages': messages,
         'summary': {'messages': len(messages), 'total_messages': int(session['message_count'] or len(messages))},
@@ -8586,27 +8610,34 @@ def project_chat_recent_sessions_payload(filters=None, identity=None):
         limit = 20
     q = (filters.get('q') or [''])[0].strip().lower()
     project_filter = (filters.get('project') or [''])[0].strip().lower()
-    if not STATE_DB.exists():
+    if not any(db_path.exists() for _profile_id, db_path in hermes_state_db_candidates()):
         return {'projects': [], 'sessions': [], 'summary': {'projects': 0, 'sessions': 0, 'chats': 0, 'canonical_links': 0, 'suggested_links': 0, 'heuristic_links': 0, 'fast_path': True}}
 
-    try:
-        con = sqlite3.connect(f'file:{STATE_DB}?mode=ro', uri=True, timeout=2)
-        con.row_factory = sqlite3.Row
-        human_sources = tuple(sorted(HUMAN_CHAT_SOURCES))
-        placeholders = ','.join('?' for _ in human_sources)
-        rows = con.execute(f"""
-            SELECT id,title,source,model,started_at,message_count,tool_call_count,input_tokens,output_tokens
-            FROM sessions
-            WHERE lower(coalesce(source,'')) IN ({placeholders})
-            ORDER BY started_at DESC
-            LIMIT ?
-        """, (*human_sources, limit)).fetchall()
-        con.close()
-    except Exception:
-        rows = []
+    rows = []
+    human_sources = tuple(sorted(HUMAN_CHAT_SOURCES))
+    placeholders = ','.join('?' for _ in human_sources)
+    for profile_id, db_path in hermes_state_db_candidates():
+        if not db_path.exists():
+            continue
+        try:
+            con = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True, timeout=2)
+            con.row_factory = sqlite3.Row
+            profile_rows = con.execute(f"""
+                SELECT id,title,source,model,started_at,message_count,tool_call_count,input_tokens,output_tokens
+                FROM sessions
+                WHERE lower(coalesce(source,'')) IN ({placeholders})
+                ORDER BY started_at DESC
+                LIMIT ?
+            """, (*human_sources, limit)).fetchall()
+            con.close()
+            rows.extend((profile_id, row) for row in profile_rows)
+        except Exception:
+            continue
+    rows.sort(key=lambda item: float(item[1]['started_at'] or 0), reverse=True)
+    rows = rows[:limit]
 
     base_sessions = []
-    for row in rows:
+    for profile_id, row in rows:
         item = {
             'id': row['id'],
             'title': row['title'] or row['id'],
@@ -8616,6 +8647,7 @@ def project_chat_recent_sessions_payload(filters=None, identity=None):
             'messages': row['message_count'] or 0,
             'tools': row['tool_call_count'] or 0,
             'tokens': (row['input_tokens'] or 0) + (row['output_tokens'] or 0),
+            'profile_id': profile_id,
         }
         item.update(classify_run_trace(item))
         item['title'] = human_session_title(item)
@@ -8640,7 +8672,7 @@ def project_chat_recent_sessions_payload(filters=None, identity=None):
     for item in base_sessions:
         candidates = links_by_session.get(item['id']) or []
         if allowed_project_ids is not None:
-            candidates = [link for link in candidates if str(link.get('project_id') or '').lower() in allowed_project_ids]
+            candidates = [link for link in candidates if str(link.get('project_id') or '').lower() == 'general-chat' or str(link.get('project_id') or '').lower() in allowed_project_ids]
         linked = candidates[0] if candidates else None
         if allowed_project_ids is not None and linked is None:
             continue
@@ -13130,6 +13162,117 @@ def state_db_for_profile(profile_id='default'):
     default profile's database.
     """
     return profile_root(profile_id) / 'state.db'
+
+
+def hermes_state_db_candidates():
+    """Return default and named-profile session stores without exposing secrets."""
+    candidates = [('default', STATE_DB)]
+    profiles_root = HERMES_HOME / 'profiles'
+    if profiles_root.exists():
+        for db_path in sorted(profiles_root.glob('*/state.db')):
+            profile_id = safe_id(db_path.parent.name)
+            if profile_id and db_path != STATE_DB:
+                candidates.append((profile_id, db_path))
+    return candidates
+
+
+def session_exists_in_profile(profile_id, session_id):
+    db_path = state_db_for_profile(profile_id)
+    if not db_path.exists() or not session_id:
+        return False
+    try:
+        con = sqlite3.connect(f'file:{db_path}?mode=ro', uri=True, timeout=2)
+        row = con.execute('SELECT 1 FROM sessions WHERE id=?', (str(session_id),)).fetchone()
+        con.close()
+        return bool(row)
+    except Exception:
+        return False
+
+
+def provisional_chat_title(message, max_length=60):
+    """Build a fast, deterministic title from the operator's first message."""
+    text = visible_user_message_from_cli_prompt(str(message or '')).strip()
+    text = re.sub(r'```.*?```', ' ', text, flags=re.S)
+    text = re.sub(r'[`*_#>]+', ' ', text)
+    text = re.sub(r'https?://\S+', 'link', text)
+    text = re.sub(r'\s+', ' ', text).strip(' -:;,.!?')
+    if not text:
+        return 'New conversation'
+    sentence = re.split(r'(?<=[.!?])\s+', text, maxsplit=1)[0].strip(' -:;,.!?') or text
+    words = sentence.split()
+    if len(words) > 10:
+        sentence = ' '.join(words[:10])
+    if len(sentence) > max_length:
+        sentence = sentence[:max(1, max_length - 1)].rstrip() + '…'
+    return sentence[:1].upper() + sentence[1:] if sentence else 'New conversation'
+
+
+def set_profile_session_title(profile_id, session_id, title, *, overwrite=False):
+    """Set a unique Hermes title while preserving an existing manual title."""
+    clean = re.sub(r'\s+', ' ', str(title or '')).strip(' \t\r\n')[:80]
+    if not clean:
+        return None
+    db_path = state_db_for_profile(profile_id)
+    if not db_path.exists():
+        return None
+    con = sqlite3.connect(str(db_path), timeout=5)
+    try:
+        con.execute(f'PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}')
+        row = con.execute('SELECT title FROM sessions WHERE id=?', (str(session_id),)).fetchone()
+        if not row:
+            return None
+        if row[0] and not overwrite:
+            return str(row[0])
+        candidate = clean
+        suffix = 2
+        while con.execute('SELECT 1 FROM sessions WHERE title=? AND id!=?', (candidate, str(session_id))).fetchone():
+            suffix_text = f' ({suffix})'
+            candidate = clean[:max(1, 80 - len(suffix_text))].rstrip() + suffix_text
+            suffix += 1
+        con.execute('UPDATE sessions SET title=? WHERE id=?', (candidate, str(session_id)))
+        con.commit()
+        return candidate
+    finally:
+        con.close()
+
+
+def ensure_session_project_link(session_id, project_id, identity=None):
+    """Make a newly-created HMC conversation visible in navigation."""
+    resolved_project_id = safe_id(project_id or 'general-chat') or 'general-chat'
+    con = ensure_project_sessions_table()
+    try:
+        con.execute("""
+            INSERT INTO project_sessions (project_id, session_id, relationship_type, summary, linked_by, linked_at, confidence, link_source)
+            VALUES (?,?,?,?,?,?,?,?)
+            ON CONFLICT(project_id, session_id) DO NOTHING
+        """, (resolved_project_id, str(session_id), 'discussion', '', project_chat_actor(identity), time.time(), 1.0, 'canonical'))
+        con.commit()
+    finally:
+        con.close()
+    return resolved_project_id
+
+
+def rename_project_chat_payload(payload, identity=None):
+    session_id = str(payload.get('session_id') or payload.get('sessionId') or '').strip()
+    title = str(payload.get('title') or '').strip()
+    agent_id = safe_id(payload.get('agent_id') or payload.get('agentId') or 'default') or 'default'
+    if not session_id or not title:
+        return {'ok': False, 'error': 'session_id and title are required'}, 400
+    if len(title) > 80:
+        return {'ok': False, 'error': 'title must be 80 characters or fewer'}, 400
+    route, route_status = resolve_agent_runtime_route(identity, agent_id, provision_runtime=False)
+    profile_id = safe_id((route or {}).get('profile_name') or (route or {}).get('shared_agent_ref') or 'default') or 'default'
+    candidates = [(profile_id, state_db_for_profile(profile_id))]
+    if route_status != 200 or not session_exists_in_profile(profile_id, session_id):
+        if not is_admin_identity(identity):
+            return {'ok': False, 'error': 'session is not available for this agent profile'}, 404
+        candidates = hermes_state_db_candidates()
+    for candidate_profile, _db_path in candidates:
+        renamed = set_profile_session_title(candidate_profile, session_id, title, overwrite=True)
+        if renamed:
+            clear_projects_cache()
+            return {'ok': True, 'session_id': session_id, 'title': renamed, 'profile_id': candidate_profile}, 200
+    return {'ok': False, 'error': 'session not found'}, 404
 
 
 def read_config_files(profile_id='default', identity=None, agent_id=None, agent_name=''):
@@ -20993,7 +21136,8 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 limit = 50
             before = (q.get('before') or [None])[0]
-            result, status = project_chat_session_messages_payload(session_id, current_identity_from_cookie(self.headers.get('Cookie', '')), limit=limit, before=before)
+            profile_id = (q.get('profile') or [None])[0]
+            result, status = project_chat_session_messages_payload(session_id, current_identity_from_cookie(self.headers.get('Cookie', '')), limit=limit, before=before, profile_id=profile_id)
             self.send_json(result, status)
         elif parsed.path == '/api/files':
             result, status = file_browser_payload(parse_qs(parsed.query), current_identity_from_cookie(self.headers.get('Cookie', '')))
@@ -21183,6 +21327,11 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(permission, permission_status)
         if parsed.path == '/api/intent/create-kanban':
             result, status = agent_os_create_kanban_from_intent(payload)
+            return self.send_json(result, status)
+        if parsed.path.startswith('/api/project-chats/') and parsed.path.endswith('/rename'):
+            parts = parsed.path.strip('/').split('/')
+            payload['session_id'] = unquote(parts[2]) if len(parts) >= 3 else ''
+            result, status = rename_project_chat_payload(payload, identity)
             return self.send_json(result, status)
         if parsed.path == '/api/project-chats/link':
             result, status = project_chat_link_payload(payload, identity)
@@ -21412,6 +21561,8 @@ class Handler(BaseHTTPRequestHandler):
             if route_status != 200:
                 return self.send_json(runtime_route, route_status)
             runtime_channel_id = runtime_route.get('channel_id') or agent_id
+            runtime_profile_id = safe_id(runtime_route.get('profile_name') or runtime_route.get('shared_agent_ref') or 'default') or 'default'
+            requested_session_id = str(payload.get('sessionId') or payload.get('session_id') or '').strip()
             requested_id = safe_id(payload.get('requestId')) or f'req-{int(time.time() * 1000)}'
             delivery = register_chat_delivery(requested_id, runtime_channel_id, {
                 'text': payload.get('text') or '',
@@ -21424,6 +21575,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({'accepted': True, 'duplicate': True, 'requestId': requested_id, 'delivery': delivery, 'messages': existing}, 202)
             request_id = register_processing(runtime_channel_id, requested_id)
             text = payload.get('text') or ''
+            if requested_session_id and not session_exists_in_profile(runtime_profile_id, requested_session_id):
+                unregister_processing(request_id)
+                update_chat_delivery(request_id, 'failed', 'Selected conversation is not available for this agent profile.')
+                return self.send_json({'error': 'Selected conversation is not available for this agent profile.'}, 409)
             attachments = normalize_message_attachments(runtime_channel_id, payload.get('attachments') or [])
             reply_to = payload.get('replyTo') if isinstance(payload.get('replyTo'), dict) else None
             if reply_to:
@@ -21441,7 +21596,9 @@ class Handler(BaseHTTPRequestHandler):
             now = time.time()
             now_ms = int(now*1000)
             user_msg = {'id': f'ui-user-{now_ms}', 'role': 'user', 'text': text, 'attachments': attachments, 'replyTo': reply_to, 'at': 'now', 'ts': now, 'source': 'web-ui', 'requestId': request_id}
-            context = source_context_for_prompt(runtime_channel_id)
+            if requested_session_id:
+                user_msg['sessionId'] = requested_session_id
+            context = '' if requested_session_id else source_context_for_prompt(runtime_channel_id)
             route_context = runtime_route_prompt_block(runtime_route)
             routing_selection = resolve_message_model(payload, text, agent_id=agent_id, identity=identity, runtime_route=runtime_route)
             if routing_selection.get('error'):
@@ -21490,13 +21647,23 @@ class Handler(BaseHTTPRequestHandler):
                             force_cli=bool(routing_selection.get('force_cli')),
                             request_id=request_id,
                             runtime_route=api_runtime_route,
+                            session_id=requested_session_id or None,
                         )
                         if is_processing_cancelled(request_id):
                             raise MessageProcessingStopped()
                         content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+                        resolved_session_id = str(data.get('session_id') or requested_session_id or '').strip()
+                        title_seed = payload.get('conversationTitle') or payload.get('conversation_title') or text
+                        session_title = set_profile_session_title(runtime_profile_id, resolved_session_id, provisional_chat_title(title_seed), overwrite=False) if resolved_session_id else None
+                        if resolved_session_id:
+                            project_id = ensure_session_project_link(resolved_session_id, payload.get('projectId') or payload.get('project_id') or 'general-chat', identity)
+                            user_msg['sessionId'] = resolved_session_id
+                            user_msg['sessionTitle'] = session_title or provisional_chat_title(title_seed)
+                            user_msg['projectId'] = project_id
                         reply_ts = time.time()
-                        reply = {'id': data.get('id') or f'ui-agent-{now_ms}', 'role': 'agent', 'text': content, 'at': 'now', 'ts': reply_ts, 'source': 'web-ui', 'requestId': request_id}
-                        append_ui_chat_messages(runtime_channel_id, [reply])
+                        reply = {'id': data.get('id') or f'ui-agent-{now_ms}', 'role': 'agent', 'text': content, 'at': 'now', 'ts': reply_ts, 'source': 'web-ui', 'requestId': request_id, 'sessionId': resolved_session_id or None, 'sessionTitle': session_title, 'projectId': user_msg.get('projectId')}
+                        append_ui_chat_messages(runtime_channel_id, [user_msg, reply])
+                        clear_projects_cache()
                         update_chat_delivery(request_id, 'completed')
                     except MessageProcessingStopped:
                         update_chat_delivery(request_id, 'cancelled', 'Stopped by operator.')
@@ -21527,14 +21694,24 @@ class Handler(BaseHTTPRequestHandler):
                     force_cli=bool(routing_selection.get('force_cli')),
                     request_id=request_id,
                     runtime_route=api_runtime_route,
+                    session_id=requested_session_id or None,
                 )
                 if is_processing_cancelled(request_id):
                     raise MessageProcessingStopped()
                 content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
+                resolved_session_id = str(data.get('session_id') or requested_session_id or '').strip()
+                title_seed = payload.get('conversationTitle') or payload.get('conversation_title') or text
+                session_title = set_profile_session_title(runtime_profile_id, resolved_session_id, provisional_chat_title(title_seed), overwrite=False) if resolved_session_id else None
+                if resolved_session_id:
+                    project_id = ensure_session_project_link(resolved_session_id, payload.get('projectId') or payload.get('project_id') or 'general-chat', identity)
+                    user_msg['sessionId'] = resolved_session_id
+                    user_msg['sessionTitle'] = session_title or provisional_chat_title(title_seed)
+                    user_msg['projectId'] = project_id
                 reply_ts = time.time()
-                reply = {'id': data.get('id') or f'ui-agent-{now_ms}', 'role': 'agent', 'text': content, 'at': 'now', 'ts': reply_ts, 'source': 'web-ui', 'requestId': request_id}
+                reply = {'id': data.get('id') or f'ui-agent-{now_ms}', 'role': 'agent', 'text': content, 'at': 'now', 'ts': reply_ts, 'source': 'web-ui', 'requestId': request_id, 'sessionId': resolved_session_id or None, 'sessionTitle': session_title, 'projectId': user_msg.get('projectId')}
                 new_messages = [user_msg, reply]
                 append_ui_chat_messages(runtime_channel_id, new_messages)
+                clear_projects_cache()
                 self.send_json(new_messages)
             except MessageProcessingStopped:
                 self.send_json({'error': 'message processing stopped', 'stopped': True, 'requestId': request_id}, 499)

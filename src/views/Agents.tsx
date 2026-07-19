@@ -4,18 +4,19 @@ import { ChatThread } from "../components/ChatThread";
 import { ContextPanel } from "../components/ContextPanel";
 import { WorkerTranscriptDrawer } from "../components/WorkerTranscriptDrawer";
 import { cachedJsonRequest } from "../services/queryCache";
+import { CHAT_SESSIONS_CHANGED_EVENT } from "../services/chatSessions";
 import type { Agent, ModelUsageLimitSummary, ModelUsageWindow, ProjectChatResponse } from "../types";
 
-async function fetchProjectChats(): Promise<ProjectChatResponse> {
+async function fetchProjectChats(force = false): Promise<ProjectChatResponse> {
   return cachedJsonRequest(
     "chat-page:project-chats",
     async () => {
-      const res = await fetch(`${window.location.protocol}//${window.location.host}/api/project-chats`, { credentials: "include" });
+      const res = await fetch(`${window.location.protocol}//${window.location.host}/api/project-chats?mode=recent&limit=50`, { credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(typeof data?.error === "string" ? data.error : "Failed to load project chats");
       return data as ProjectChatResponse;
     },
-    { staleAfterMs: 60_000 },
+    { staleAfterMs: 60_000, force },
   );
 }
 
@@ -177,6 +178,14 @@ export function Agents() {
   }, [selected?.id, selected?.sessionCount]);
 
   useEffect(() => {
+    const refreshChats = () => {
+      void fetchProjectChats(true).then(setProjectChats).catch((err) => console.warn("Could not refresh project chats", err));
+    };
+    window.addEventListener(CHAT_SESSIONS_CHANGED_EVENT, refreshChats);
+    return () => window.removeEventListener(CHAT_SESSIONS_CHANGED_EVENT, refreshChats);
+  }, []);
+
+  useEffect(() => {
     const openManage = () => setManageProfilesOpen(true);
     const openChat = () => setManageProfilesOpen(false);
     const openChatSession = (event: Event) => {
@@ -184,7 +193,7 @@ export function Agents() {
       if (!sessionId) return;
       const session = projectChats?.sessions.find((item) => item.id === sessionId);
       if (session) {
-        const needle = [session.project_owner, session.project_name, session.source, session.origin].filter(Boolean).join(" ").toLowerCase();
+        const needle = [session.profile_id, session.project_owner, session.project_name, session.source, session.origin].filter(Boolean).join(" ").toLowerCase();
         const matchedAgent = agents.find((agent) => needle.includes(agent.id.toLowerCase()) || needle.includes(agent.name.toLowerCase()));
         if (matchedAgent) select(matchedAgent.id);
       }

@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Agent, AgentRuntimeAssignment, AgentRuntimeSwitcher, Approval, Attachment, CapabilityAssignmentMutationResponse, CapabilityMatrixResponse, ConfigFile, Message, MissionControlMe, ModelRoutingSelection, ReplyContext, RouterConfig, Skill, ViewKey } from "../types";
+import type { Agent, AgentRuntimeAssignment, AgentRuntimeSwitcher, Approval, Attachment, CapabilityAssignmentMutationResponse, CapabilityMatrixResponse, ConfigFile, Message, MissionControlMe, ModelRoutingSelection, ProjectChatMutationResponse, ReplyContext, RouterConfig, Skill, ViewKey } from "../types";
 import type { UiPermissions } from "./uiPermissions";
 import { adminOnlyViews, canAccessView, permissionsForRole, safeDefaultViewForRole } from "./uiPermissions";
 import type { HermesClient } from "./hermesClient";
@@ -47,8 +47,8 @@ interface StoreValue {
   select: (id: string) => void;
   uploadAttachment: (file: File) => Promise<Attachment>;
   uploadAttachmentToAgent: (agentId: string, file: File) => Promise<Attachment>;
-  send: (text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection }) => Promise<Message[]>;
-  sendToAgent: (agentId: string, text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection }) => Promise<Message[]>;
+  send: (text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection; sessionId?: string; conversationTitle?: string; projectId?: string }) => Promise<Message[]>;
+  sendToAgent: (agentId: string, text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection; sessionId?: string; conversationTitle?: string; projectId?: string }) => Promise<Message[]>;
   getModelRouter: () => Promise<RouterConfig>;
   getAgentRuntimes: () => Promise<AgentRuntimeSwitcher>;
   saveAgentRuntime: (agentId: string, input: AgentRuntimeAssignment) => Promise<AgentRuntimeSwitcher>;
@@ -56,6 +56,7 @@ interface StoreValue {
   stopProcessingForAgent: (agentId: string, requestId?: string) => Promise<void>;
   refreshSelected: () => Promise<void>;
   refreshAgent: (agentId: string) => Promise<void>;
+  renameProjectChat: (sessionId: string, title: string, agentId: string) => Promise<ProjectChatMutationResponse>;
   createAgent: (i: { name: string; squad: string; model: string }) => Promise<void>;
   deleteAgent: (id: string) => Promise<void>;
   saveFile: (file: ConfigFile) => Promise<void>;
@@ -191,7 +192,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const sendToAgent = useCallback(
-    async (agentId: string, text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection } = {}) => {
+    async (agentId: string, text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection; sessionId?: string; conversationTitle?: string; projectId?: string } = {}) => {
       if (!agentId || (!text.trim() && attachments.length === 0)) return [];
       const requestId = options.requestId ?? `ui-${agentId}-${Date.now()}`;
       const optimisticUserMessage: Message = {
@@ -204,6 +205,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ts: Date.now() / 1000,
         source: "web-ui",
         requestId,
+        sessionId: options.sessionId,
+        projectId: options.projectId,
       };
       setAgents((cur) =>
         cur.map((agent) =>
@@ -275,7 +278,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const send = useCallback(
-    async (text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection } = {}) => {
+    async (text: string, attachments: Attachment[] = [], options: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection; sessionId?: string; conversationTitle?: string; projectId?: string } = {}) => {
       if (!selectedId) return [];
       return sendToAgent(selectedId, text, attachments, options);
     },
@@ -391,6 +394,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const renameProjectChat = useCallback(
+    async (sessionId: string, title: string, agentId: string) => client.renameProjectChat(sessionId, title, agentId),
+    [],
+  );
+
   const value: StoreValue = {
     agents,
     approvals,
@@ -416,6 +424,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     stopProcessingForAgent,
     refreshSelected,
     refreshAgent,
+    renameProjectChat,
     createAgent,
     deleteAgent,
     saveFile,

@@ -20,7 +20,7 @@ export interface HermesClient {
   listAgents(): Promise<Agent[]>;
   getAgent(id: string): Promise<Agent | undefined>;
   uploadAttachment(agentId: string, file: File): Promise<Attachment>;
-  sendMessage(agentId: string, text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection }): Promise<Message[]>;
+  sendMessage(agentId: string, text: string, attachments?: Attachment[], options?: { signal?: AbortSignal; requestId?: string; replyTo?: ReplyContext; modelRouting?: ModelRoutingSelection; sessionId?: string; conversationTitle?: string; projectId?: string }): Promise<Message[]>;
   getModelRouter(): Promise<RouterConfig>;
   getAgentRuntimes(): Promise<AgentRuntimeSwitcher>;
   saveAgentRuntime(agentId: string, input: AgentRuntimeAssignment): Promise<AgentRuntimeSwitcher>;
@@ -80,6 +80,7 @@ export interface HermesClient {
   linkProjectChat(input: { project_id: string; session_id: string; relationship_type?: string; summary?: string }): Promise<ProjectChatMutationResponse>;
   unlinkProjectChat(input: { project_id: string; session_id: string }): Promise<ProjectChatMutationResponse>;
   confirmProjectChatSuggestion(input: { project_id: string; session_id: string; relationship_type?: string; summary?: string }): Promise<ProjectChatMutationResponse>;
+  renameProjectChat(sessionId: string, title: string, agentId: string): Promise<ProjectChatMutationResponse>;
   updateProjectStatus(projectId: string, status: string): Promise<{ ok: boolean; project_id: string; status: string; updated_at?: string; error?: string }>;
   getProjectBrief(projectId: string): Promise<ProjectBriefResponse>;
   createProjectTask(projectId: string, input: Partial<{ title: string; body: string; assignee: string; priority: number; skills: string[] }>): Promise<BoardTaskMutationResponse>;
